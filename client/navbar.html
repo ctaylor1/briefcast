@@ -1,0 +1,220 @@
+{{define "navbar"}}
+<style>
+    /* Larger than tablet */
+    @media (min-width: 750px) {
+
+  .navbar + .docs-section {
+    border-top-width: 0; }
+  .navbar,
+  .navbar-spacer {
+    display: block;
+    width: 100%;
+    height: 6.5rem;
+    background:var(--background);
+    z-index: 99;
+    border-top: 1px solid #eee;
+    border-bottom: 1px solid #eee; }
+  .navbar-spacer {
+    display: none; }
+  .navbar > .container {
+    width: 100%; }
+  .navbar-list {
+    list-style: none;
+    margin-bottom: 0; }
+  .navbar-item {
+    position: relative;
+    float: left;
+    margin-bottom: 0; }
+  .navbar-link {
+    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .2rem;
+    margin-right: 35px;
+    text-decoration: none;
+    line-height: 6.5rem;
+    color: var(--text-color);}
+  .navbar-link.active {
+    color: #33C3F0; }
+  .has-docked-nav .navbar {
+    position: fixed;
+    top: 0;
+    left: 0; }
+  .has-docked-nav .navbar-spacer {
+    display: block; }
+  /* Re-overiding the width 100% declaration to match size of % based container */
+  .has-docked-nav .navbar > .container {
+    width: 80%; }
+/* } */
+ 
+}
+
+#overlay, .drawer{
+  display: none;
+}
+
+@media (max-width: 750px) {
+
+.drawer {
+  height: 100%;
+  width: 160px;
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: -160px;
+  overflow-x: hidden;
+  padding-top: 20px;
+  overflow-x: hidden; /* Disable horizontal scroll */
+ display: block;
+  transition: 0.25s ease; /* 0.5 second transition effect to slide in the sidenav */
+  
+}
+
+.drawer li{
+  list-style: none;
+  display: block;
+}
+
+.drawer li>a {
+  padding-top: 10px;
+  padding-left: 10px;
+  text-decoration: none;
+  display: block;
+
+  text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .2rem;
+    line-height: 2.5rem;
+   
+}
+
+div#overlay{
+  background-color: var(--overlay);
+  opacity: 0.5;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+  z-index: 990;
+  top: 0;
+  left: 0;
+  display: none;
+}
+#burger{
+  position: absolute;
+ margin-top:10px;
+  left: 10px;
+}
+
+#burger div{
+  width: 30px;
+  height: 2px;
+  background-color: var(--text-color);;
+  margin: 6px 0;
+}
+.bar1, .bar2, .bar3 {
+  width: 15px;
+  height: 2px;
+  background-color: var(--text-color);;
+  margin: 6px 0;
+}
+#closeDrawer{
+  display: inline-block;
+  position: absolute;
+    top: 5px;
+    right: 5px;
+}
+#closeDrawer .bar1{
+  -webkit-transform: rotate(-45deg) translate(-7px, 6px) ;
+  transform: rotate(-45deg) translate(-7x, 6px) ;
+}
+#closeDrawer .bar3{
+  -webkit-transform: rotate(45deg) translate(1px, 1px) ;
+  transform: rotate(45deg) translate(1px, 1px) ;
+}
+}
+
+</style>
+<section class="header">
+  <a id="burger" onclick="toggleMenu()" >
+    <div></div>
+<div></div>
+<div></div>
+  </a>
+  <h1 id="pageTitle">{{ .title }}</h1>
+  {{if .podcastId }}
+  <button
+  class="button"
+  title="Download all episode files"
+  onclick="downloadAllEpisodes({{ .podcastId }})"
+>
+  <i class="fas fa-download"></i>
+</button>
+
+<button
+class="button"
+title="Play all episodes"
+onclick="playPodcast({{ .podcastId }})"
+>
+<i class="fas fa-play"></i>
+</button>
+
+<button
+class="button  button-enqueue"
+title="Add all episodes to existing player playlist"
+onclick="enquePodcast({{ .podcastId }})"
+>
+<i class="fas fa-plus"></i>
+</button>
+  {{end}}
+</section>
+<nav class="navbar">
+    <div class="container">
+      <ul class="navbar-list">
+        <li class="navbar-item"><a class="navbar-link" href="/">Home</a></li>
+        <li class="navbar-item"><a class="navbar-link" href="/episodes">Episodes</a></li>
+        <li class="navbar-item"><a class="navbar-link" href="/add">Add Podcast</a></li>
+        <li class="navbar-item"><a class="navbar-link" href="/player">Player</a></li>
+        <li class="navbar-item"><a class="navbar-link" href="/allTags">Tags</a></li>
+        <li class="navbar-item"><a class="navbar-link" href="/settings">Settings</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="drawer" id="sideDrawer">
+    <ul>
+      <li><a  href="/">Home</a></li>
+      <li><a  href="/episodes">Episodes</a></li>
+      <li><a href="/add">Add Podcast</a></li>
+      <li><a href="/player">Player</a></li>
+      <li><a href="/allTags">Tags</a></li>
+      <li><a  href="/settings">Settings</a></li>
+    </ul>
+    <div id="closeDrawer" onclick="toggleMenu()" >
+      <div class="bar1"></div>
+  <div class="bar3"></div>
+ 
+    </div>
+  </div>
+  <div id="overlay" onclick="toggleMenu()"></div>
+
+  <script>
+
+    function setPageTitle(content){
+      document.getElementById('pageTitle').innerText=content;
+    }
+
+    function toggleMenu(){
+    var sideDrawer= document.getElementById('sideDrawer')
+    var overlay= document.getElementById('overlay')
+    if(overlay.style.display==="block"){
+      sideDrawer.style.left="-160px"
+      overlay.style.display="none"
+    }else{
+      sideDrawer.style.left="0px"
+      overlay.style.display="block"
+    }
+    }
+  </script>
+
+  {{end}}

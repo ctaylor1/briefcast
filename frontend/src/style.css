@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+:root {
+  --bc-bg: #f4f8fc;
+  --bc-text: #0f172a;
+  --bc-focus: #0891b2;
+  --space-1: clamp(0.5rem, 0.44rem + 0.28vw, 0.72rem);
+  --space-2: clamp(0.75rem, 0.64rem + 0.42vw, 1.05rem);
+  --space-3: clamp(1rem, 0.82rem + 0.72vw, 1.45rem);
+  --space-4: clamp(1.25rem, 0.98rem + 1.1vw, 2rem);
+  --space-5: clamp(1.75rem, 1.25rem + 1.8vw, 2.8rem);
+  --space-6: clamp(2.25rem, 1.6rem + 2.6vw, 3.8rem);
+  --content-max: 86rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --nav-height: clamp(3.7rem, 3.3rem + 1vw, 4.4rem);
+  color: var(--bc-text);
+  font-family: "Plus Jakarta Sans", "Avenir Next", "Segoe UI", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--bc-text);
+  background:
+    radial-gradient(circle at top left, #dbeafe 0%, transparent 40%),
+    radial-gradient(circle at top right, #cffafe 0%, transparent 35%),
+    var(--bc-bg);
+  line-height: 1.45;
+}
+
+#app {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-container {
+  width: min(var(--content-max), calc(100% - (var(--space-4) * 2)));
+  margin-inline: auto;
+}
+
+.app-main {
+  padding-block: var(--space-4);
+}
+
+.stack-2 > * + * {
+  margin-top: var(--space-2);
+}
+
+.stack-3 > * + * {
+  margin-top: var(--space-3);
+}
+
+.stack-4 > * + * {
+  margin-top: var(--space-4);
+}
+
+.fluid-title-xl {
+  font-size: clamp(1.4rem, 1.15rem + 1.15vw, 2rem);
+  line-height: 1.15;
+}
+
+.fluid-subtle {
+  font-size: clamp(0.84rem, 0.79rem + 0.16vw, 0.95rem);
+}
+
+@media (min-width: 640px) {
+  .app-main {
+    padding-block: var(--space-5);
+  }
+}

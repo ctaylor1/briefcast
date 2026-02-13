@@ -1,0 +1,31 @@
+version: "2.1"
+services:
+  briefcast:
+    image: akhilrex/briefcast
+    container_name: briefcast
+    environment:
+      - CHECK_FREQUENCY=240
+      - DATABASE_URL=sqlite:///config/briefcast.db
+      # For postgres use:
+      # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
+      # - DB_DRIVER=postgres
+    volumes:
+      - /path/to/config:/config
+      - /path/to/data:/assets
+    ports:
+      - 8080:8080
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      - POSTGRES_USER=briefcast
+      - POSTGRES_PASSWORD=briefcast
+      - POSTGRES_DB=briefcast
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
