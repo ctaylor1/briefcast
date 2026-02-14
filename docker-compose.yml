@@ -11,8 +11,8 @@ services:
       # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
       # - DB_DRIVER=postgres
     volumes:
-      - /path/to/config:/config
-      - /path/to/data:/assets
+      - C:/DevRepo/Projects/briefcast/config:/config
+      - C:/DevRepo/Projects/briefcast/data:/assets
     ports:
       - 8080:8080
     restart: unless-stopped

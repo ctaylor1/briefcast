@@ -3,6 +3,7 @@ import AddPodcastView from "../views/AddPodcastView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
 import PlayerView from "../views/PlayerView.vue";
+import SettingsView from "../views/SettingsView.vue";
 
 const router = createRouter({
   history: createWebHashHistory("/app/"),
@@ -30,6 +31,12 @@ const router = createRouter({
       name: "player",
       component: PlayerView,
       meta: { title: "Player" },
+    },
+    {
+      path: "/settings",
+      name: "settings",
+      component: SettingsView,
+      meta: { title: "Settings" },
     },
   ],
 });

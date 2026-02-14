@@ -357,8 +357,18 @@ func GetOrCreateSetting() *Setting {
 	var setting Setting
 	result := DB.First(&setting)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		DB.Save(&Setting{})
+		setting = Setting{
+			RetentionKeepAll:          true,
+			RetentionDeleteOnlyPlayed: true,
+		}
+		DB.Save(&setting)
 		DB.First(&setting)
+		return &setting
+	}
+	if !setting.RetentionKeepAll && setting.RetentionKeepLatest == 0 && setting.RetentionDeleteAfterDays == 0 && !setting.RetentionDeleteOnlyPlayed {
+		setting.RetentionKeepAll = true
+		setting.RetentionDeleteOnlyPlayed = true
+		DB.Save(&setting)
 	}
 	return &setting
 }

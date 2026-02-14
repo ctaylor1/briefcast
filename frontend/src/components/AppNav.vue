@@ -10,6 +10,7 @@ const links = [
   { to: "/", label: "Podcasts" },
   { to: "/episodes", label: "Episodes" },
   { to: "/add", label: "Add Podcast" },
+  { to: "/settings", label: "Settings" },
 ];
 
 const isActive = (target: string) => {

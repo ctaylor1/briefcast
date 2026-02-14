@@ -23,6 +23,7 @@ func GetPodcastItemChapters(c *gin.Context) {
 		return
 	}
 
+	service.RefreshChaptersFromID3(&item)
 	response := service.BuildChapterResponse(item)
 	c.JSON(http.StatusOK, response)
 }

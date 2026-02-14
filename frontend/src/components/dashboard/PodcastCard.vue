@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (event: "play", podcastId: string): void;
   (event: "download-all", podcast: Podcast): void;
   (event: "toggle-pause", podcast: Podcast): void;
+  (event: "toggle-retention", podcast: Podcast): void;
   (event: "delete", podcast: Podcast): void;
 }>();
 
@@ -46,6 +47,14 @@ function getPodcastImage(id: string): string {
         <UiBadge>
           Total: {{ podcast.AllEpisodesCount }}
         </UiBadge>
+      </div>
+      <div class="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+        <span>
+          Retention: {{ podcast.RetentionKeepAll ? "Keep all" : "Global" }}
+        </span>
+        <UiButton size="sm" variant="ghost" :disabled="busy" @click="emit('toggle-retention', podcast)">
+          {{ podcast.RetentionKeepAll ? "Use global" : "Keep all" }}
+        </UiButton>
       </div>
       <div class="grid grid-cols-2 gap-[var(--space-1)]">
         <UiButton size="sm" :disabled="busy" @click="emit('play', podcast.ID)">

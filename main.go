@@ -80,6 +80,7 @@ func main() {
 	router.DELETE("/podcasts/:id/podcast", controllers.DeleteOnlyPodcastById)
 	router.GET("/podcasts/:id/pause", controllers.PausePodcastById)
 	router.GET("/podcasts/:id/unpause", controllers.UnpausePodcastById)
+	router.PATCH("/podcasts/:id/retention", controllers.PatchPodcastRetention)
 	router.GET("/podcasts/:id/rss", controllers.GetRssForPodcastById)
 
 	router.GET("/podcastitems", controllers.GetAllPodcastItems)
@@ -111,6 +112,8 @@ func main() {
 	router.DELETE("/podcasts/:id/tags/:tagId", controllers.RemoveTagFromPodcast)
 
 	router.GET("/search", controllers.Search)
+	router.GET("/settings", controllers.GetSettings)
+	router.PATCH("/settings", controllers.PatchSettings)
 	router.POST("/settings", controllers.UpdateSetting)
 	router.POST("/opml", controllers.UploadOpml)
 	router.GET("/opml", controllers.GetOmpl)
@@ -171,6 +174,7 @@ func intiCron() {
 	minutes := fmt.Sprintf("@every %dm", checkFrequency)
 	add(minutes, "RefreshEpisodes", service.RefreshEpisodes)
 	add(minutes, "CheckMissingFiles", service.CheckMissingFiles)
+	add("@every 24h", "RetentionCleanup", service.ApplyRetentionPolicies)
 	add(fmt.Sprintf("@every %dm", checkFrequency*2), "UnlockMissedJobs", func() error {
 		service.UnlockMissedJobs()
 		return nil

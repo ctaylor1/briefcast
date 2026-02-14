@@ -51,6 +51,10 @@ type PatchPodcastItem struct {
 	Title    string `form:"title" json:"title" query:"title"`
 }
 
+type PodcastRetentionPatch struct {
+	KeepAll *bool `json:"keepAll"`
+}
+
 type AddPodcastData struct {
 	Url string `binding:"required" form:"url" json:"url"`
 }
@@ -122,6 +126,32 @@ func UnpausePodcastById(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 	}
+}
+
+func PatchPodcastRetention(c *gin.Context) {
+	var searchByIdQuery SearchByIdQuery
+	if c.ShouldBindUri(&searchByIdQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var patch PodcastRetentionPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if patch.KeepAll == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "keepAll is required"})
+		return
+	}
+
+	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIdQuery.Id).
+		Update("retention_keep_all", *patch.KeepAll).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 func DeletePodcastById(c *gin.Context) {

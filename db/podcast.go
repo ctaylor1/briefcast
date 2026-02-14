@@ -35,6 +35,8 @@ type Podcast struct {
 	AllEpisodesSize         int64 `gorm:"-"`
 
 	IsPaused bool `gorm:"default:false"`
+
+	RetentionKeepAll bool `gorm:"default:false"`
 }
 
 // PodcastItem is
@@ -110,6 +112,11 @@ type Setting struct {
 	BaseUrl                       string
 	MaxDownloadConcurrency        int `gorm:"default:5"`
 	UserAgent                     string
+
+	RetentionKeepAll          bool `gorm:"default:true"`
+	RetentionKeepLatest       int  `gorm:"default:0"`
+	RetentionDeleteAfterDays  int  `gorm:"default:0"`
+	RetentionDeleteOnlyPlayed bool `gorm:"default:true"`
 }
 type Migration struct {
 	Base

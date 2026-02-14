@@ -13,6 +13,25 @@ def normalize_text(value):
     return str(value)
 
 
+def iter_subframes(frame):
+    subframes = getattr(frame, "sub_frames", None)
+    if subframes:
+        if hasattr(subframes, "values"):
+            for subframe in subframes.values():
+                yield subframe
+        else:
+            for subframe in subframes:
+                yield subframe
+    subframes = getattr(frame, "subframes", None)
+    if subframes:
+        if hasattr(subframes, "values"):
+            for subframe in subframes.values():
+                yield subframe
+        else:
+            for subframe in subframes:
+                yield subframe
+
+
 def extract_chapters(id3):
     chapters = []
     for key, frame in id3.items():
@@ -26,10 +45,10 @@ def extract_chapters(id3):
             "end_offset": getattr(frame, "end_offset", None),
             "title": "",
         }
-        if hasattr(frame, "subframes") and frame.subframes:
-            for subframe in frame.subframes:
-                if subframe.FrameID == "TIT2" and getattr(subframe, "text", None):
-                    chapter["title"] = normalize_text(subframe.text)
+        for subframe in iter_subframes(frame):
+            if subframe.FrameID in ("TIT2", "TIT3", "TIT1") and getattr(subframe, "text", None):
+                chapter["title"] = normalize_text(subframe.text)
+                break
         chapters.append(chapter)
     return chapters
 

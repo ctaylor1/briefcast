@@ -17,4 +17,7 @@ export const podcastsApi = {
   setPaused(id: string, paused: boolean): Promise<void> {
     return httpClient.get<void>(`/podcasts/${id}/${paused ? "pause" : "unpause"}`);
   },
+  setRetentionKeepAll(id: string, keepAll: boolean): Promise<void> {
+    return httpClient.patch<void, { keepAll: boolean }>(`/podcasts/${id}/retention`, { keepAll });
+  },
 };

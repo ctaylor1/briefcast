@@ -91,6 +91,14 @@ async function togglePause(podcast: Podcast): Promise<void> {
   );
 }
 
+async function toggleRetention(podcast: Podcast): Promise<void> {
+  await runAction(
+    podcast.ID,
+    () => podcastsApi.setRetentionKeepAll(podcast.ID, !podcast.RetentionKeepAll),
+    podcast.RetentionKeepAll ? "Retention override cleared." : "Retention override enabled.",
+  );
+}
+
 onMounted(loadPodcasts);
 </script>
 
@@ -136,6 +144,7 @@ onMounted(loadPodcasts);
           @play="openPlayer"
           @download-all="downloadAll"
           @toggle-pause="togglePause"
+          @toggle-retention="toggleRetention"
           @delete="requestDelete"
         />
       </div>
@@ -147,6 +156,7 @@ onMounted(loadPodcasts);
           @play="openPlayer"
           @download-all="downloadAll"
           @toggle-pause="togglePause"
+          @toggle-retention="toggleRetention"
           @delete="requestDelete"
         />
       </div>

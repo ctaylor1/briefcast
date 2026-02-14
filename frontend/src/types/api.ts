@@ -27,6 +27,7 @@ export interface Podcast {
   DownloadingEpisodesSize: number;
   AllEpisodesSize: number;
   IsPaused: boolean;
+  RetentionKeepAll: boolean;
 }
 
 export interface PodcastItemPodcast {
@@ -110,4 +111,11 @@ export interface SearchResult {
   already_saved: boolean;
   description: string;
   categories?: string[];
+}
+
+export interface RetentionSettings {
+  keepAllEpisodes: boolean;
+  keepLatestEpisodes: number;
+  deleteAfterDays: number;
+  deleteOnlyPlayed: boolean;
 }
