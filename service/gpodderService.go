@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/akhilrex/briefcast/model"
+	"github.com/ctaylor1/briefcast/model"
 )
 
 // type GoodReadsService struct {
@@ -52,3 +52,4 @@ func Tags(count int) []model.GPodcastTag {
 	json.Unmarshal(body, &response)
 	return response
 }
+

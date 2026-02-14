@@ -8,11 +8,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/akhilrex/briefcast/model"
-	"github.com/akhilrex/briefcast/service"
+	"github.com/ctaylor1/briefcast/model"
+	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-contrib/location"
 
-	"github.com/akhilrex/briefcast/db"
+	"github.com/ctaylor1/briefcast/db"
 	"github.com/gin-gonic/gin"
 )
 
@@ -381,6 +381,10 @@ func DownloadPodcastItem(c *gin.Context) {
 	var searchByIdQuery SearchByIdQuery
 
 	if c.ShouldBindUri(&searchByIdQuery) == nil {
+		if service.DownloadsPaused() {
+			c.JSON(http.StatusConflict, gin.H{"error": "Downloads are paused."})
+			return
+		}
 		go service.DownloadSingleEpisode(searchByIdQuery.Id)
 		c.JSON(200, gin.H{})
 	} else {

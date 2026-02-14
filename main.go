@@ -2,17 +2,17 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/akhilrex/briefcast/controllers"
-	"github.com/akhilrex/briefcast/db"
-	"github.com/akhilrex/briefcast/internal/logging"
-	"github.com/akhilrex/briefcast/service"
+	"github.com/ctaylor1/briefcast/controllers"
+	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-contrib/location"
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
@@ -26,10 +26,10 @@ func main() {
 	var err error
 	db.DB, err = db.Init()
 	if err != nil {
-		appLogger.Errorw("database initialization failed", "error", err)
-	} else {
-		db.Migrate()
+		appLogger.Fatalw("database initialization failed", "error", err)
+		return
 	}
+	db.Migrate()
 	r := gin.New()
 
 	r.Use(logging.RequestLoggerMiddleware())
@@ -37,104 +37,7 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(location.Default())
 
-	funcMap := template.FuncMap{
-		"intRange": func(start, end int) []int {
-			n := end - start + 1
-			result := make([]int, n)
-			for i := 0; i < n; i++ {
-				result[i] = start + i
-			}
-			return result
-		},
-		"removeStartingSlash": func(raw string) string {
-			if string(raw[0]) == "/" {
-				return raw
-			}
-			return "/" + raw
-		},
-		"isDateNull": func(raw time.Time) bool {
-			return raw == (time.Time{})
-		},
-		"formatDate": func(raw time.Time) string {
-			if raw == (time.Time{}) {
-				return ""
-			}
-
-			return raw.Format("Jan 2 2006")
-		},
-		"naturalDate": func(raw time.Time) string {
-			return service.NatualTime(time.Now(), raw)
-			//return raw.Format("Jan 2 2006")
-		},
-		"latestEpisodeDate": func(podcastItems []db.PodcastItem) string {
-			var latest time.Time
-			for _, item := range podcastItems {
-				if item.PubDate.After(latest) {
-					latest = item.PubDate
-				}
-			}
-			return latest.Format("Jan 2 2006")
-		},
-		"downloadedEpisodes": func(podcastItems []db.PodcastItem) int {
-			count := 0
-			for _, item := range podcastItems {
-				if item.DownloadStatus == db.Downloaded {
-					count++
-				}
-			}
-			return count
-		},
-		"downloadingEpisodes": func(podcastItems []db.PodcastItem) int {
-			count := 0
-			for _, item := range podcastItems {
-				if item.DownloadStatus == db.NotDownloaded {
-					count++
-				}
-			}
-			return count
-		},
-		"formatFileSize": func(inputSize int64) string {
-			size := float64(inputSize)
-			const divisor float64 = 1024
-			if size < divisor {
-				return fmt.Sprintf("%.0f bytes", size)
-			}
-			size = size / divisor
-			if size < divisor {
-				return fmt.Sprintf("%.2f KB", size)
-			}
-			size = size / divisor
-			if size < divisor {
-				return fmt.Sprintf("%.2f MB", size)
-			}
-			size = size / divisor
-			if size < divisor {
-				return fmt.Sprintf("%.2f GB", size)
-			}
-			size = size / divisor
-			return fmt.Sprintf("%.2f TB", size)
-		},
-		"formatDuration": func(total int) string {
-			if total <= 0 {
-				return ""
-			}
-			mins := total / 60
-			secs := total % 60
-			hrs := 0
-			if mins >= 60 {
-				hrs = mins / 60
-				mins = mins % 60
-			}
-			if hrs > 0 {
-				return fmt.Sprintf("%02d:%02d:%02d", hrs, mins, secs)
-			}
-			return fmt.Sprintf("%02d:%02d", mins, secs)
-		},
-	}
-	tmpl := template.Must(template.New("main").Funcs(funcMap).ParseGlob("client/*"))
-
-	//r.LoadHTMLGlob("client/*")
-	r.SetHTMLTemplate(tmpl)
+	// Legacy HTML templates removed; modern Vue app is the only UI.
 
 	pass := os.Getenv("PASSWORD")
 	var router *gin.RouterGroup
@@ -154,6 +57,16 @@ func main() {
 	router.Static(backupPath, backupPath)
 	router.Static("/app/assets", "./frontend/dist/assets")
 	router.StaticFile("/app/favicon.ico", "./frontend/dist/favicon.ico")
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/app")
+	})
+	router.GET("/player", func(c *gin.Context) {
+		target := "/app/#/player"
+		if c.Request.URL.RawQuery != "" {
+			target = target + "?" + c.Request.URL.RawQuery
+		}
+		c.Redirect(http.StatusFound, target)
+	})
 	router.GET("/app", serveModernApp)
 	router.GET("/app/", serveModernApp)
 	router.POST("/podcasts", controllers.AddPodcast)
@@ -179,7 +92,13 @@ func main() {
 	router.GET("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
 	router.PATCH("/podcastitems/:id", controllers.PatchPodcastItemById)
 	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem)
+	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
+
+	router.GET("/downloads/queue", controllers.GetDownloadQueue)
+	router.POST("/downloads/pause", controllers.PauseDownloads)
+	router.POST("/downloads/resume", controllers.ResumeDownloads)
+	router.POST("/downloads/cancel", controllers.CancelAllDownloads)
 
 	router.GET("/tags", controllers.GetAllTags)
 	router.GET("/tags/:id", controllers.GetTagById)
@@ -189,18 +108,10 @@ func main() {
 	router.POST("/podcasts/:id/tags/:tagId", controllers.AddTagToPodcast)
 	router.DELETE("/podcasts/:id/tags/:tagId", controllers.RemoveTagFromPodcast)
 
-	router.GET("/add", controllers.AddPage)
 	router.GET("/search", controllers.Search)
-	router.GET("/", controllers.HomePage)
-	router.GET("/podcasts/:id/view", controllers.PodcastPage)
-	router.GET("/episodes", controllers.AllEpisodesPage)
-	router.GET("/allTags", controllers.AllTagsPage)
-	router.GET("/settings", controllers.SettingsPage)
 	router.POST("/settings", controllers.UpdateSetting)
-	router.GET("/backups", controllers.BackupsPage)
 	router.POST("/opml", controllers.UploadOpml)
 	router.GET("/opml", controllers.GetOmpl)
-	router.GET("/player", controllers.PlayerPage)
 	router.GET("/rss", controllers.GetRss)
 
 	r.GET("/ws", controllers.Wshandler)
@@ -267,6 +178,15 @@ func intiCron() {
 		return nil
 	})
 	add(minutes, "DownloadMissingImages", service.DownloadMissingImages)
+	whisperxFrequency := checkFrequency
+	if raw := strings.TrimSpace(os.Getenv("WHISPERX_CHECK_FREQUENCY")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			whisperxFrequency = parsed
+		} else {
+			appLogger.Warnw("invalid WHISPERX_CHECK_FREQUENCY, using fallback", "value", raw, "fallback_minutes", whisperxFrequency)
+		}
+	}
+	add(fmt.Sprintf("@every %dm", whisperxFrequency), "TranscribePendingEpisodes", service.TranscribePendingEpisodes)
 	add("@every 48h", "CreateBackup", func() error {
 		_, err := service.CreateBackup()
 		return err

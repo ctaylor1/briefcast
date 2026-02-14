@@ -23,7 +23,7 @@ Following steps will only work if Go is installed and configured properly.
 ## Clone from Git
 
 ``` bash
-git clone --depth 1 https://github.com/akhilrex/briefcast
+git clone --depth 1 https://github.com/ctaylor1/briefcast
 ```
 
 ## Build and Copy dependencies
@@ -97,7 +97,7 @@ sudo systemctl stop Briefcast.service
 ## Clone from Git
 
 ``` bash
-git clone --depth 1 https://github.com/akhilrex/briefcast
+git clone --depth 1 https://github.com/ctaylor1/briefcast
 ```
 
 ## Build and Copy dependencies
@@ -121,3 +121,4 @@ Restart the service (if using)
 ``` bash
 sudo systemctl start Briefcast.service
 ```
+

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akhilrex/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/logging"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -67,3 +67,4 @@ func GetDB() *gorm.DB {
 func CurrentDriver() DatabaseDriver {
 	return activeDriver
 }
+

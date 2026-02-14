@@ -17,12 +17,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/akhilrex/briefcast/db"
-	"github.com/akhilrex/briefcast/internal/sanitize"
+	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/internal/sanitize"
 	stringy "github.com/gobeam/stringy"
 )
 
-func Download(link string, episodeTitle string, podcastName string, prefix string) (string, error) {
+var ErrDownloadCancelled = errors.New("download cancelled")
+
+func Download(downloadID string, link string, episodeTitle string, podcastName string, prefix string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
@@ -57,13 +59,31 @@ func Download(link string, episodeTitle string, podcastName string, prefix strin
 		return "", err
 	}
 	defer resp.Body.Close()
-	_, erra := io.Copy(file, resp.Body)
-	//fmt.Println(size)
-	defer file.Close()
-	if erra != nil {
-		Logger.Errorw("Error saving file"+link, err)
-		return "", erra
+	buffer := make([]byte, 32*1024)
+	for {
+		if downloadID != "" && IsDownloadCancelled(downloadID) {
+			_ = file.Close()
+			_ = resp.Body.Close()
+			_ = os.Remove(finalPath)
+			ClearDownloadCancellation(downloadID)
+			return "", ErrDownloadCancelled
+		}
+		n, readErr := resp.Body.Read(buffer)
+		if n > 0 {
+			if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
+				Logger.Errorw("Error saving file"+link, writeErr)
+				return "", writeErr
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			Logger.Errorw("Error saving file"+link, readErr)
+			return "", readErr
+		}
 	}
+	defer file.Close()
 	changeOwnership(finalPath)
 	return finalPath, nil
 

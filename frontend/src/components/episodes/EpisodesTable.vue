@@ -13,10 +13,49 @@ const emit = defineEmits<{
   (event: "toggle-played", item: PodcastItem): void;
   (event: "toggle-bookmark", item: PodcastItem): void;
   (event: "queue-download", item: PodcastItem): void;
+  (event: "cancel-download", item: PodcastItem): void;
 }>();
 
 function isBookmarked(value: string): boolean {
   return value !== "0001-01-01T00:00:00Z";
+}
+
+function downloadStatusLabel(status: number): string {
+  switch (status) {
+    case 0:
+      return "Queued";
+    case 1:
+      return "Downloading";
+    case 2:
+      return "Downloaded";
+    case 3:
+      return "Not queued";
+    default:
+      return "Unknown";
+  }
+}
+
+function downloadStatusClass(status: number): string {
+  switch (status) {
+    case 0:
+      return "bg-amber-100 text-amber-800";
+    case 1:
+      return "bg-blue-100 text-blue-800";
+    case 2:
+      return "bg-emerald-100 text-emerald-800";
+    case 3:
+      return "bg-slate-100 text-slate-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+function canCancel(status: number): boolean {
+  return status === 0 || status === 1;
+}
+
+function isDownloaded(status: number): boolean {
+  return status === 2;
 }
 </script>
 
@@ -63,6 +102,12 @@ function isBookmarked(value: string): boolean {
                 >
                   {{ isBookmarked(item.BookmarkDate) ? "Bookmarked" : "No Bookmark" }}
                 </span>
+                <span
+                  class="rounded-full px-2 py-1 font-medium"
+                  :class="downloadStatusClass(item.DownloadStatus)"
+                >
+                  {{ downloadStatusLabel(item.DownloadStatus) }}
+                </span>
               </div>
             </td>
             <td class="px-4 py-3">
@@ -76,8 +121,21 @@ function isBookmarked(value: string): boolean {
                 <UiButton size="sm" variant="outline" @click="emit('toggle-bookmark', item)">
                   {{ isBookmarked(item.BookmarkDate) ? "Unbookmark" : "Bookmark" }}
                 </UiButton>
-                <UiButton size="sm" variant="outline" @click="emit('queue-download', item)">
-                  Queue
+                <UiButton
+                  size="sm"
+                  variant="outline"
+                  :disabled="isDownloaded(item.DownloadStatus)"
+                  @click="emit('queue-download', item)"
+                >
+                  {{ isDownloaded(item.DownloadStatus) ? "Downloaded" : "Download" }}
+                </UiButton>
+                <UiButton
+                  v-if="canCancel(item.DownloadStatus)"
+                  size="sm"
+                  variant="danger"
+                  @click="emit('cancel-download', item)"
+                >
+                  Stop
                 </UiButton>
               </div>
             </td>

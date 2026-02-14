@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import AddPodcastView from "../views/AddPodcastView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
+import PlayerView from "../views/PlayerView.vue";
 
 const router = createRouter({
   history: createWebHashHistory("/app/"),
@@ -23,6 +24,12 @@ const router = createRouter({
       name: "add",
       component: AddPodcastView,
       meta: { title: "Add Podcast" },
+    },
+    {
+      path: "/player",
+      name: "player",
+      component: PlayerView,
+      meta: { title: "Player" },
     },
   ],
 });

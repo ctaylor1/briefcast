@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
+	"strings"
 
 	"github.com/TheHippo/podcastindex"
-	"github.com/akhilrex/briefcast/model"
+	"github.com/ctaylor1/briefcast/model"
 )
 
 type SearchService interface {
@@ -39,17 +41,23 @@ type PodcastIndexService struct {
 }
 
 const (
-	PODCASTINDEX_KEY    = "LNGTNUAFVL9W2AQKVZ49"
-	PODCASTINDEX_SECRET = "H8tq^CZWYmAywbnngTwB$rwQHwMSR8#fJb#Bhgb3"
+	PodcastIndexKeyEnv    = "PODCASTINDEX_KEY"
+	PodcastIndexSecretEnv = "PODCASTINDEX_SECRET"
 )
 
 func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultModel {
-
-	c := podcastindex.NewClient(PODCASTINDEX_KEY, PODCASTINDEX_SECRET)
 	var toReturn []*model.CommonSearchResultModel
+	key := strings.TrimSpace(os.Getenv(PodcastIndexKeyEnv))
+	secret := strings.TrimSpace(os.Getenv(PodcastIndexSecretEnv))
+	if key == "" || secret == "" {
+		log.Printf("podcastindex credentials missing; set %s and %s", PodcastIndexKeyEnv, PodcastIndexSecretEnv)
+		return toReturn
+	}
+
+	c := podcastindex.NewClient(key, secret)
 	podcasts, err := c.Search(q)
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Printf("podcastindex search failed: %v", err)
 		return toReturn
 	}
 
@@ -59,3 +67,4 @@ func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultMo
 
 	return toReturn
 }
+

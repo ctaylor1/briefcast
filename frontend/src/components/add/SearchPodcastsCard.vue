@@ -2,6 +2,8 @@
 import type { SearchResult, SearchSource } from "../../types/api";
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
+import UiInput from "../ui/UiInput.vue";
+import UiSelect from "../ui/UiSelect.vue";
 
 defineProps<{
   query: string;
@@ -22,22 +24,20 @@ const emit = defineEmits<{
   <UiCard>
     <h2 class="text-base font-semibold text-slate-900">Search</h2>
     <form class="mt-[var(--space-2)] grid gap-[var(--space-2)] sm:grid-cols-[1fr_180px_auto]" @submit.prevent="emit('search')">
-      <input
-        :value="query"
+      <UiInput
+        :model-value="query"
         type="search"
         required
         placeholder="Search podcast title"
-        class="min-h-10 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none"
-        @input="emit('update:query', ($event.target as HTMLInputElement).value)"
+        @update:model-value="emit('update:query', $event)"
       />
-      <select
-        :value="source"
-        class="min-h-10 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none"
-        @change="emit('update:source', ($event.target as HTMLSelectElement).value as SearchSource)"
+      <UiSelect
+        :model-value="source"
+        @update:model-value="emit('update:source', $event as SearchSource)"
       >
         <option value="itunes">iTunes</option>
         <option value="podcastindex">PodcastIndex</option>
-      </select>
+      </UiSelect>
       <UiButton type="submit" :disabled="working">
         Search
       </UiButton>

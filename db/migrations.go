@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/akhilrex/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/logging"
 	"gorm.io/gorm"
 )
 
@@ -41,3 +41,4 @@ func ExecuteAndSaveMigration(name string, query string) error {
 	}
 	return nil
 }
+

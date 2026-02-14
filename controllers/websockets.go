@@ -3,7 +3,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/akhilrex/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/logging"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -134,3 +134,4 @@ func HandleWebsocketMessages() {
 		}
 	}
 }
+

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akhilrex/briefcast/internal/logging"
-	"github.com/akhilrex/briefcast/model"
+	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -222,6 +222,32 @@ func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	result := DB.Preload(clause.Associations).Where("download_status=?", Downloaded).Find(&podcastItems)
 	return &podcastItems, result.Error
+}
+
+func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, error) {
+	var podcastItems []PodcastItem
+	query := DB.Where("download_status=?", Downloaded).
+		Where("transcript_status IN ?", statuses).
+		Where("download_path <> ''").
+		Where("(transcript_json IS NULL OR transcript_json = '')").
+		Order("download_date asc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	result := query.Find(&podcastItems)
+	return &podcastItems, result.Error
+}
+
+func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]PodcastItem, error) {
+	var podcastItems []PodcastItem
+	query := DB.Preload(clause.Associations).
+		Where("download_status IN ?", statuses).
+		Order("download_date desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	result := query.Find(&podcastItems)
+	return podcastItems, result.Error
 }
 
 func GetPodcastEpisodeStats() (*[]PodcastItemStatsModel, error) {

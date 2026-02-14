@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/TheHippo/podcastindex"
-	"github.com/akhilrex/briefcast/db"
-	"github.com/akhilrex/briefcast/internal/logging"
-	"github.com/akhilrex/briefcast/model"
 	"github.com/antchfx/xmlquery"
+	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/internal/feedmeta"
+	"github.com/ctaylor1/briefcast/internal/id3meta"
+	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/model"
 	strip "github.com/grokify/html-strip-tags-go"
 	"gorm.io/gorm"
 )
@@ -28,16 +30,6 @@ func ParseOpml(content string) (model.OpmlModel, error) {
 	return response, err
 }
 
-// FetchURL is
-func FetchURL(url string) (model.PodcastData, []byte, error) {
-	body, err := makeQuery(url)
-	if err != nil {
-		return model.PodcastData{}, nil, err
-	}
-	var response model.PodcastData
-	err = xml.Unmarshal(body, &response)
-	return response, body, err
-}
 func GetPodcastById(id string) *db.Podcast {
 	var podcast db.Podcast
 
@@ -208,18 +200,24 @@ func AddPodcast(url string) (db.Podcast, error) {
 	err := db.GetPodcastByURL(url, &podcast)
 	setting := db.GetOrCreateSetting()
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		data, body, err := FetchURL(url)
+		parsed, body, err := FetchFeedWithFeedparser(url)
 		if err != nil {
 			Logger.Errorw("Error adding podcast", "url", url, "error", err)
 			return db.Podcast{}, err
 		}
 
+		feed := parsed.Feed
+		showNotesHTML := feedmeta.ExtractFeedShowNotesHTML(feed)
+		showNotesText := strip.StripTags(showNotesHTML)
+
 		podcast := db.Podcast{
-			Title:   data.Channel.Title,
-			Summary: strip.StripTags(data.Channel.Summary),
-			Author:  data.Channel.Author,
-			Image:   data.Channel.Image.URL,
-			URL:     url,
+			Title:        feedmeta.PickFirstNonEmpty(feedmeta.GetString(feed, "title"), feedmeta.GetString(feed, "itunes_title"), url),
+			Summary:      showNotesText,
+			SummaryHTML:  showNotesHTML,
+			Author:       feedmeta.PickFirstNonEmpty(feedmeta.GetString(feed, "itunes_author"), feedmeta.GetString(feed, "author")),
+			Image:        feedmeta.ExtractImageURL(feed),
+			URL:          url,
+			FeedMetadata: feedmeta.MarshalMetadata(feed),
 		}
 
 		if podcast.Image == "" {
@@ -250,20 +248,24 @@ func AddPodcast(url string) (db.Podcast, error) {
 
 func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	//fmt.Println("Creating: " + podcast.ID)
-	data, _, err := FetchURL(podcast.URL)
+	parsed, _, err := FetchFeedWithFeedparser(podcast.URL)
 	if err != nil {
 		//log.Fatal(err)
 		return err
 	}
+	feed := parsed.Feed
+	feedImage := feedmeta.ExtractImageURL(feed)
 	setting := db.GetOrCreateSetting()
 	limit := setting.InitialDownloadCount
 	// if len(data.Channel.Item) < limit {
 	// 	limit = len(data.Channel.Item)
 	// }
 	var allGuids []string
-	for i := 0; i < len(data.Channel.Item); i++ {
-		obj := data.Channel.Item[i]
-		allGuids = append(allGuids, obj.Guid.Text)
+	for i := 0; i < len(parsed.Entries); i++ {
+		entry := parsed.Entries[i]
+		if guid := feedmeta.ExtractEntryGUID(entry); guid != "" {
+			allGuids = append(allGuids, guid)
+		}
 	}
 
 	existingItems, err := db.GetPodcastItemsByPodcastIdAndGUIDs(podcast.ID, allGuids)
@@ -274,36 +276,20 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	}
 	var latestDate = time.Time{}
 	var itemsAdded = make(map[string]string)
-	for i := 0; i < len(data.Channel.Item); i++ {
-		obj := data.Channel.Item[i]
+	for i := 0; i < len(parsed.Entries); i++ {
+		entry := parsed.Entries[i]
 		var podcastItem db.PodcastItem
-		_, keyExists := keyMap[obj.Guid.Text]
+		guid := feedmeta.ExtractEntryGUID(entry)
+		if guid == "" {
+			continue
+		}
+		_, keyExists := keyMap[guid]
 		if !keyExists {
-			duration, _ := strconv.Atoi(obj.Duration)
-			toParse := strings.TrimSpace(obj.PubDate)
-
-			pubDate, _ := time.Parse(time.RFC1123Z, toParse)
-			if (pubDate == time.Time{}) {
-				pubDate, _ = time.Parse(time.RFC1123, toParse)
-			}
-			if (pubDate == time.Time{}) {
-				//	RFC1123     = "Mon, 02 Jan 2006 15:04:05 MST"
-				modifiedRFC1123 := "Mon, 2 Jan 2006 15:04:05 MST"
-				pubDate, _ = time.Parse(modifiedRFC1123, toParse)
-			}
-			if (pubDate == time.Time{}) {
-				//	RFC1123Z    = "Mon, 02 Jan 2006 15:04:05 -0700" // RFC1123 with numeric zone
-				modifiedRFC1123Z := "Mon, 2 Jan 2006 15:04:05 -0700"
-				pubDate, _ = time.Parse(modifiedRFC1123Z, toParse)
-			}
-			if (pubDate == time.Time{}) {
-				//	RFC1123Z    = "Mon, 02 Jan 2006 15:04:05 -0700" // RFC1123 with numeric zone
-				modifiedRFC1123Z := "Mon, 02 Jan 2006 15:04:05 -0700"
-				pubDate, _ = time.Parse(modifiedRFC1123Z, toParse)
-			}
+			duration := feedmeta.ParseDurationSeconds(feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_duration"), feedmeta.GetString(entry, "duration")))
+			pubDate := feedmeta.ParseEntryDate(entry)
 
 			if (pubDate == time.Time{}) {
-				Logger.Warnw("could not parse podcast episode date", "raw_date", obj.PubDate, "podcast_id", podcast.ID, "podcast_title", podcast.Title)
+				Logger.Warnw("could not parse podcast episode date", "podcast_id", podcast.ID, "podcast_title", podcast.Title)
 			}
 
 			if latestDate.Before(pubDate) {
@@ -333,22 +319,58 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				downloadStatus = db.Deleted
 			}
 
-			summary := strip.StripTags(obj.Summary)
-			if summary == "" {
-				summary = strip.StripTags(obj.Description)
+			showNotesHTML := feedmeta.ExtractEntryShowNotesHTML(entry)
+			showNotesText := strip.StripTags(showNotesHTML)
+			chaptersURL, chaptersType := feedmeta.ExtractPodcastChapters(entry)
+			chaptersJSON := ""
+			if chaptersURL != "" {
+				if chaptersBody, err := makeQuery(chaptersURL); err == nil {
+					chaptersJSON = string(chaptersBody)
+				} else {
+					Logger.Warnw("failed to fetch podcast chapters", "url", chaptersURL, "podcast_id", podcast.ID, "error", err)
+				}
+			}
+
+			transcriptAssets := feedmeta.ExtractTranscripts(entry)
+			transcriptStatus := "pending_whisperx"
+			transcriptJSON := ""
+			if len(transcriptAssets) > 0 {
+				for i := range transcriptAssets {
+					if transcriptAssets[i].URL == "" {
+						continue
+					}
+					body, err := makeQuery(transcriptAssets[i].URL)
+					if err != nil {
+						Logger.Warnw("failed to fetch podcast transcript", "url", transcriptAssets[i].URL, "podcast_id", podcast.ID, "error", err)
+						continue
+					}
+					transcriptAssets[i].Content = string(body)
+				}
+				transcriptJSON = feedmeta.MarshalMetadata(transcriptAssets)
+				transcriptStatus = "available"
+			} else {
+				// TODO: Queue WhisperX transcription when available.
+				Logger.Infow("podcast transcript missing; queued for WhisperX", "podcast_id", podcast.ID, "episode_guid", guid)
 			}
 
 			podcastItem = db.PodcastItem{
-				PodcastID:      podcast.ID,
-				Title:          obj.Title,
-				Summary:        summary,
-				EpisodeType:    obj.EpisodeType,
-				Duration:       duration,
-				PubDate:        pubDate,
-				FileURL:        obj.Enclosure.URL,
-				GUID:           obj.Guid.Text,
-				Image:          obj.Image.Href,
-				DownloadStatus: downloadStatus,
+				PodcastID:        podcast.ID,
+				Title:            feedmeta.GetString(entry, "title"),
+				Summary:          showNotesText,
+				SummaryHTML:      showNotesHTML,
+				EpisodeType:      feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_episodetype"), feedmeta.GetString(entry, "episodetype")),
+				Duration:         duration,
+				PubDate:          pubDate,
+				FileURL:          feedmeta.ExtractEnclosureURL(entry),
+				GUID:             guid,
+				Image:            feedmeta.ExtractEntryImage(entry, feedImage),
+				DownloadStatus:   downloadStatus,
+				ChaptersURL:      chaptersURL,
+				ChaptersType:     chaptersType,
+				ChaptersJSON:     chaptersJSON,
+				ItemMetadata:     feedmeta.MarshalMetadata(entry),
+				TranscriptJSON:   transcriptJSON,
+				TranscriptStatus: transcriptStatus,
 			}
 			db.CreatePodcastItem(&podcastItem)
 			itemsAdded[podcastItem.ID] = podcastItem.FileURL
@@ -398,6 +420,16 @@ func SetPodcastItemAsQueuedForDownload(id string) error {
 	}
 	podcastItem.DownloadStatus = db.NotDownloaded
 
+	return db.UpdatePodcastItem(&podcastItem)
+}
+
+func SetPodcastItemAsDownloading(id string) error {
+	var podcastItem db.PodcastItem
+	err := db.GetPodcastItemById(id, &podcastItem)
+	if err != nil {
+		return err
+	}
+	podcastItem.DownloadStatus = db.Downloading
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
@@ -465,6 +497,32 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 	podcastItem.DownloadDate = time.Now()
 	podcastItem.DownloadPath = location
 	podcastItem.DownloadStatus = db.Downloaded
+	if podcastItem.TranscriptStatus == "" && podcastItem.TranscriptJSON == "" {
+		podcastItem.TranscriptStatus = "pending_whisperx"
+	}
+
+	if id3meta.ShouldExtract(podcastItem.ChaptersJSON, podcastItem.ID3TagsJSON, podcastItem.ID3ChaptersJSON) {
+		raw, extractErr := ExtractID3Metadata(location)
+		if extractErr != nil {
+			Logger.Warnw("id3 metadata extraction failed", "podcast_item_id", id, "error", extractErr)
+		} else {
+			tagsJSON, chaptersJSON, hasTags, hasChapters, splitErr := id3meta.SplitRaw(raw)
+			if splitErr != nil {
+				Logger.Warnw("id3 metadata parse failed", "podcast_item_id", id, "error", splitErr)
+			} else {
+				if hasTags {
+					podcastItem.ID3TagsJSON = tagsJSON
+				}
+				if hasChapters {
+					podcastItem.ID3ChaptersJSON = chaptersJSON
+					if podcastItem.ChaptersJSON == "" {
+						podcastItem.ChaptersJSON = chaptersJSON
+						podcastItem.ChaptersType = "id3"
+					}
+				}
+			}
+		}
+	}
 
 	return db.UpdatePodcastItem(&podcastItem)
 }
@@ -527,6 +585,11 @@ func DownloadMissingEpisodes() error {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
+	if DownloadsPaused() {
+		jobLogger.Infow("downloads_paused")
+		return nil
+	}
+
 	lock := db.GetLock(JOB_NAME)
 	if lock.IsLocked() {
 		jobLogger.Infow("job_skipped_lock_exists")
@@ -568,9 +631,28 @@ func DownloadMissingEpisodes() error {
 	}
 
 	runWorkerPool(items, workers, func(item db.PodcastItem) {
-		url, downloadErr := Download(item.FileURL, item.Title, item.Podcast.Title, GetPodcastPrefix(&item, &settingSnapshot))
+		if DownloadsPaused() {
+			return
+		}
+		if IsDownloadCancelled(item.ID) {
+			ClearDownloadCancellation(item.ID)
+			_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+			return
+		}
+
+		if err := SetPodcastItemAsDownloading(item.ID); err != nil {
+			jobLogger.Warnw("failed to mark episode downloading", "podcast_item_id", item.ID, "error", err)
+		}
+
+		url, downloadErr := Download(item.ID, item.FileURL, item.Title, item.Podcast.Title, GetPodcastPrefix(&item, &settingSnapshot))
 		if downloadErr != nil {
+			if downloadErr == ErrDownloadCancelled {
+				jobLogger.Infow("download cancelled", "podcast_item_id", item.ID)
+				_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+				return
+			}
 			jobLogger.Errorw("failed to download episode", "podcast_item_id", item.ID, "error", downloadErr)
+			_ = SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
 			setError(downloadErr)
 			return
 		}
@@ -642,12 +724,22 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	}
 
 	setting := db.GetOrCreateSetting()
-	SetPodcastItemAsQueuedForDownload(podcastItemId)
+	if DownloadsPaused() {
+		return errors.New("downloads are paused")
+	}
+	if err := SetPodcastItemAsDownloading(podcastItemId); err != nil {
+		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemId, "error", err)
+	}
 
-	url, err := Download(podcastItem.FileURL, podcastItem.Title, podcastItem.Podcast.Title, GetPodcastPrefix(&podcastItem, setting))
+	url, err := Download(podcastItem.ID, podcastItem.FileURL, podcastItem.Title, podcastItem.Podcast.Title, GetPodcastPrefix(&podcastItem, setting))
 
 	if err != nil {
+		if err == ErrDownloadCancelled {
+			_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
+			return nil
+		}
 		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemId, "error", err)
+		_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.NotDownloaded)
 		return err
 	}
 	err = SetPodcastItemAsDownloaded(podcastItem.ID, url)

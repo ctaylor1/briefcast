@@ -1,4 +1,4 @@
-import type { EpisodeSorting, EpisodesResponse } from "../../types/api";
+import type { EpisodeSorting, EpisodesResponse, PodcastItem } from "../../types/api";
 import { httpClient } from "./http";
 
 export interface EpisodeListQuery {
@@ -27,6 +27,9 @@ export const episodesApi = {
       params.isPlayed = query.isPlayed;
     }
     return httpClient.get<EpisodesResponse>("/podcastitems", { params });
+  },
+  getById(id: string): Promise<PodcastItem> {
+    return httpClient.get<PodcastItem>(`/podcastitems/${id}`);
   },
   setPlayed(id: string, played: boolean): Promise<void> {
     return httpClient.get<void>(`/podcastitems/${id}/${played ? "markPlayed" : "markUnplayed"}`);

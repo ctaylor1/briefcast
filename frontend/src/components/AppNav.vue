@@ -56,12 +56,6 @@ watch(
         >
           {{ link.label }}
         </RouterLink>
-        <a
-          href="/"
-          class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
-        >
-          Legacy UI
-        </a>
       </nav>
     </div>
 
@@ -89,12 +83,6 @@ watch(
             >
               {{ link.label }}
             </RouterLink>
-            <a
-              href="/"
-              class="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
-            >
-              Legacy UI
-            </a>
           </div>
         </div>
       </nav>

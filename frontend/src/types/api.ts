@@ -51,6 +51,18 @@ export interface PodcastItem {
   BookmarkDate: string;
 }
 
+export interface DownloadCounts {
+  queued: number;
+  downloading: number;
+  downloaded: number;
+}
+
+export interface DownloadQueueResponse {
+  paused: boolean;
+  counts: DownloadCounts;
+  items: PodcastItem[];
+}
+
 export interface EpisodesFilter {
   page: number;
   count: number;

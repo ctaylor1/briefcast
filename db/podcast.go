@@ -4,18 +4,21 @@ import (
 	"time"
 )
 
-//Podcast is
+// Podcast is
 type Podcast struct {
 	Base
 	Title string
 
-	Summary string `gorm:"type:text"`
+	Summary     string `gorm:"type:text"`
+	SummaryHTML string `gorm:"type:text"`
 
 	Author string
 
 	Image string
 
 	URL string
+
+	FeedMetadata string `gorm:"type:text" json:"-"`
 
 	LastEpisode *time.Time
 
@@ -34,13 +37,14 @@ type Podcast struct {
 	IsPaused bool `gorm:"default:false"`
 }
 
-//PodcastItem is
+// PodcastItem is
 type PodcastItem struct {
 	Base
-	PodcastID string
-	Podcast   Podcast
-	Title     string
-	Summary   string `gorm:"type:text"`
+	PodcastID   string
+	Podcast     Podcast
+	Title       string
+	Summary     string `gorm:"type:text"`
+	SummaryHTML string `gorm:"type:text"`
 
 	EpisodeType string
 
@@ -53,6 +57,12 @@ type PodcastItem struct {
 	GUID  string
 	Image string
 
+	ChaptersURL     string
+	ChaptersType    string
+	ChaptersJSON    string `gorm:"type:text" json:"-"`
+	ID3TagsJSON     string `gorm:"type:text" json:"-"`
+	ID3ChaptersJSON string `gorm:"type:text" json:"-"`
+
 	DownloadDate   time.Time
 	DownloadPath   string
 	DownloadStatus DownloadStatus `gorm:"default:0"`
@@ -64,6 +74,10 @@ type PodcastItem struct {
 	LocalImage string
 
 	FileSize int64
+
+	ItemMetadata     string `gorm:"type:text" json:"-"`
+	TranscriptJSON   string `gorm:"type:text" json:"-"`
+	TranscriptStatus string `gorm:"type:text"`
 }
 
 type DownloadStatus int

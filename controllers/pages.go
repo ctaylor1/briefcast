@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akhilrex/briefcast/db"
-	"github.com/akhilrex/briefcast/model"
-	"github.com/akhilrex/briefcast/service"
+	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/model"
+	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -347,11 +347,11 @@ func GetOmpl(c *gin.Context) {
 }
 func UploadOpml(c *gin.Context) {
 	file, _, err := c.Request.FormFile("file")
-	defer file.Close()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request"})
 		return
 	}
+	defer file.Close()
 
 	buf := bytes.NewBuffer(nil)
 	if _, err := io.Copy(buf, file); err != nil {
@@ -389,3 +389,4 @@ func AddNewPodcast(c *gin.Context) {
 	}
 
 }
+

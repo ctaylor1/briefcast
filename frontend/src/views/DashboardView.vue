@@ -31,7 +31,8 @@ const sortedPodcasts = computed(() =>
 );
 
 function openPlayer(podcastId: string): void {
-  window.open(`/player?podcastId=${podcastId}`, "briefcast_player");
+  const target = `/app/#/player?podcastId=${encodeURIComponent(podcastId)}`;
+  window.open(target, "briefcast_player");
 }
 
 function requestDelete(podcast: Podcast): void {

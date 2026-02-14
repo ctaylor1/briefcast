@@ -1,9 +1,12 @@
-import type { Podcast } from "../../types/api";
+import type { Podcast, PodcastItem } from "../../types/api";
 import { httpClient } from "./http";
 
 export const podcastsApi = {
   list(): Promise<Podcast[]> {
     return httpClient.get<Podcast[]>("/podcasts");
+  },
+  items(id: string): Promise<PodcastItem[]> {
+    return httpClient.get<PodcastItem[]>(`/podcasts/${id}/items`);
   },
   deleteById(id: string): Promise<void> {
     return httpClient.del<void>(`/podcasts/${id}`);
