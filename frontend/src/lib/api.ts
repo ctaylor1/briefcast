@@ -1,1 +1,1 @@
-export { discoveryApi, episodesApi, getErrorMessage, podcastsApi } from "./api/index";
+export { discoveryApi, downloadsApi, episodesApi, getErrorMessage, podcastsApi } from "./api/index";

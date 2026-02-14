@@ -17,6 +17,7 @@ const activeIndex = ref(0);
 const isPlaying = ref(false);
 const playbackRate = ref(1);
 const audioRef = ref<HTMLAudioElement | null>(null);
+const pendingStart = ref<number | null>(null);
 
 const speedOptions = [
   0.75, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2,
@@ -68,6 +69,23 @@ function parseItemIds(): string[] {
   return Array.from(new Set(ids));
 }
 
+function parseStartSeconds(): number | null {
+  const raw = route.query.start ?? route.query.t;
+  if (typeof raw === "string") {
+    const value = Number(raw);
+    if (!Number.isNaN(value) && value >= 0) {
+      return value;
+    }
+  }
+  if (Array.isArray(raw) && raw.length > 0) {
+    const value = Number(raw[0]);
+    if (!Number.isNaN(value) && value >= 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
 async function loadItems(): Promise<void> {
   isLoading.value = true;
   errorMessage.value = "";
@@ -107,8 +125,9 @@ async function loadItems(): Promise<void> {
     }
 
     activeIndex.value = 0;
+    pendingStart.value = parseStartSeconds();
     await nextTick();
-    await playAt(0);
+    await playAt(0, pendingStart.value ?? undefined);
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load items for playback.");
   } finally {
@@ -116,7 +135,7 @@ async function loadItems(): Promise<void> {
   }
 }
 
-async function playAt(index: number): Promise<void> {
+async function playAt(index: number, startSeconds?: number): Promise<void> {
   if (index < 0 || index >= items.value.length) {
     return;
   }
@@ -127,11 +146,37 @@ async function playAt(index: number): Promise<void> {
     return;
   }
   audio.playbackRate = playbackRate.value;
+  if (typeof startSeconds === "number" && startSeconds >= 0) {
+    await seekTo(startSeconds);
+    pendingStart.value = null;
+  }
   try {
     await audio.play();
   } catch {
     // Autoplay can be blocked until the user interacts with the page.
   }
+}
+
+async function seekTo(seconds: number): Promise<void> {
+  const audio = audioRef.value;
+  if (!audio) {
+    return;
+  }
+  const applySeek = () => {
+    audio.currentTime = Math.max(0, seconds);
+  };
+  if (audio.readyState >= 1) {
+    applySeek();
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const handle = () => {
+      audio.removeEventListener("loadedmetadata", handle);
+      resolve();
+    };
+    audio.addEventListener("loadedmetadata", handle);
+  });
+  applySeek();
 }
 
 function playNext(): void {

@@ -47,6 +47,11 @@ export interface PodcastItem {
   LocalImage: string;
   DownloadPath: string;
   DownloadStatus: number;
+  DownloadedBytes: number;
+  DownloadTotalBytes: number;
+  TranscriptStatus: string;
+  HasChapters: boolean;
+  HasTranscript: boolean;
   IsPlayed: boolean;
   BookmarkDate: string;
 }
@@ -55,12 +60,29 @@ export interface DownloadCounts {
   queued: number;
   downloading: number;
   downloaded: number;
+  paused: number;
 }
 
 export interface DownloadQueueResponse {
   paused: boolean;
   counts: DownloadCounts;
   items: PodcastItem[];
+}
+
+export interface Chapter {
+  title: string;
+  startSeconds: number;
+  endSeconds?: number;
+}
+
+export interface ChaptersResponse {
+  source: string;
+  chapters: Chapter[];
+}
+
+export interface TranscriptResponse {
+  status: string;
+  transcript?: unknown;
 }
 
 export interface EpisodesFilter {

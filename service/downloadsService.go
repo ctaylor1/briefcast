@@ -10,9 +10,11 @@ func CancelEpisodeDownload(id string) error {
 
 	switch item.DownloadStatus {
 	case db.NotDownloaded:
-		return SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+		return SetPodcastItemAsPaused(item.ID)
 	case db.Downloading:
-		CancelDownload(item.ID)
+		PauseDownload(item.ID)
+		return nil
+	case db.Paused:
 		return nil
 	default:
 		return nil
@@ -20,12 +22,17 @@ func CancelEpisodeDownload(id string) error {
 }
 
 func CancelAllDownloads() error {
+	return PauseAllDownloads()
+}
+
+func PauseAllDownloads() error {
+	PauseDownloads()
 	queued, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded}, 0)
 	if err != nil {
 		return err
 	}
 	for _, item := range queued {
-		_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+		_ = SetPodcastItemAsPaused(item.ID)
 	}
 
 	downloading, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.Downloading}, 0)
@@ -33,7 +40,20 @@ func CancelAllDownloads() error {
 		return err
 	}
 	for _, item := range downloading {
-		CancelDownload(item.ID)
+		PauseDownload(item.ID)
+	}
+	return nil
+}
+
+func ResumeAllDownloads() error {
+	ResumeDownloads()
+	paused, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.Paused}, 0)
+	if err != nil {
+		return err
+	}
+	for _, item := range paused {
+		ClearDownloadPause(item.ID)
+		_ = SetPodcastItemAsQueuedPreserveProgress(item.ID)
 	}
 	return nil
 }

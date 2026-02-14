@@ -250,6 +250,16 @@ func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]
 	return podcastItems, result.Error
 }
 
+func UpdatePodcastItemDownloadProgress(podcastItemId string, downloadedBytes int64, totalBytes int64) error {
+	updates := map[string]interface{}{
+		"downloaded_bytes": downloadedBytes,
+	}
+	if totalBytes > 0 {
+		updates["download_total_bytes"] = totalBytes
+	}
+	return DB.Model(&PodcastItem{}).Where("id=?", podcastItemId).Updates(updates).Error
+}
+
 func GetPodcastEpisodeStats() (*[]PodcastItemStatsModel, error) {
 	var stats []PodcastItemStatsModel
 	result := DB.Model(&PodcastItem{}).Select("download_status,podcast_id, count(1) as count,sum(file_size) as size").Group("podcast_id,download_status").Find(&stats)

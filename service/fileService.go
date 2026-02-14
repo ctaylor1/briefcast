@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
@@ -22,7 +23,10 @@ import (
 	stringy "github.com/gobeam/stringy"
 )
 
-var ErrDownloadCancelled = errors.New("download cancelled")
+var (
+	ErrDownloadCancelled = errors.New("download cancelled")
+	ErrDownloadPaused    = errors.New("download paused")
+)
 
 func Download(downloadID string, link string, episodeTitle string, podcastName string, prefix string) (string, error) {
 	if link == "" {
@@ -34,13 +38,6 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	if err != nil {
 		Logger.Errorw("Error creating request: "+link, err)
 	}
-
-	resp, err := doRequestWithHostLimit(client, req)
-	if err != nil {
-		Logger.Errorw("Error getting response: "+link, err)
-		return "", err
-	}
-
 	fileName := getFileName(link, episodeTitle, ".mp3")
 	if prefix != "" {
 		fileName = fmt.Sprintf("%s-%s", prefix, fileName)
@@ -48,19 +45,58 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	folder := createDataFolderIfNotExists(podcastName)
 	finalPath := path.Join(folder, fileName)
 
-	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
-		changeOwnership(finalPath)
-		return finalPath, nil
+	var resumeOffset int64
+	if info, statErr := os.Stat(finalPath); statErr == nil {
+		resumeOffset = info.Size()
+	}
+	if resumeOffset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
 	}
 
-	file, err := os.Create(finalPath)
+	resp, err := doRequestWithHostLimit(client, req)
+	if err != nil {
+		Logger.Errorw("Error getting response: "+link, err)
+		return "", err
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		resp.Body.Close()
+		return "", fmt.Errorf("download failed with status %s", resp.Status)
+	}
+
+	var file *os.File
+	if resumeOffset > 0 && resp.StatusCode == http.StatusPartialContent {
+		file, err = os.OpenFile(finalPath, os.O_WRONLY|os.O_APPEND, 0o644)
+	} else {
+		resumeOffset = 0
+		file, err = os.Create(finalPath)
+	}
 	if err != nil {
 		Logger.Errorw("Error creating file"+link, err)
 		return "", err
 	}
 	defer resp.Body.Close()
+
 	buffer := make([]byte, 32*1024)
+	downloadedBytes := resumeOffset
+	totalBytes := resolveTotalBytes(resp, resumeOffset)
+	if downloadID != "" && totalBytes > 0 {
+		_ = db.UpdatePodcastItemDownloadProgress(downloadID, downloadedBytes, totalBytes)
+	}
+
+	lastReport := time.Now()
+	lastReportedBytes := downloadedBytes
+	const minReportBytes = int64(256 * 1024)
+	const minReportInterval = 750 * time.Millisecond
 	for {
+		if DownloadsPaused() || (downloadID != "" && IsDownloadPaused(downloadID)) {
+			_ = file.Close()
+			_ = resp.Body.Close()
+			if downloadID != "" {
+				ClearDownloadPause(downloadID)
+			}
+			return "", ErrDownloadPaused
+		}
 		if downloadID != "" && IsDownloadCancelled(downloadID) {
 			_ = file.Close()
 			_ = resp.Body.Close()
@@ -70,9 +106,17 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		}
 		n, readErr := resp.Body.Read(buffer)
 		if n > 0 {
+			downloadedBytes += int64(n)
 			if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
 				Logger.Errorw("Error saving file"+link, writeErr)
 				return "", writeErr
+			}
+			if downloadID != "" {
+				if downloadedBytes-lastReportedBytes >= minReportBytes || time.Since(lastReport) >= minReportInterval {
+					_ = db.UpdatePodcastItemDownloadProgress(downloadID, downloadedBytes, totalBytes)
+					lastReport = time.Now()
+					lastReportedBytes = downloadedBytes
+				}
 			}
 		}
 		if readErr != nil {
@@ -83,10 +127,48 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 			return "", readErr
 		}
 	}
+	if downloadID != "" {
+		_ = db.UpdatePodcastItemDownloadProgress(downloadID, downloadedBytes, totalBytes)
+	}
 	defer file.Close()
 	changeOwnership(finalPath)
 	return finalPath, nil
 
+}
+
+func resolveTotalBytes(resp *http.Response, resumeOffset int64) int64 {
+	if resp == nil {
+		return 0
+	}
+	if contentRange := resp.Header.Get("Content-Range"); contentRange != "" {
+		if total := parseContentRangeTotal(contentRange); total > 0 {
+			return total
+		}
+	}
+	if resp.ContentLength > 0 {
+		if resp.StatusCode == http.StatusPartialContent && resumeOffset > 0 {
+			return resumeOffset + resp.ContentLength
+		}
+		return resp.ContentLength
+	}
+	return 0
+}
+
+func parseContentRangeTotal(contentRange string) int64 {
+	// format: bytes start-end/total
+	parts := strings.Split(contentRange, "/")
+	if len(parts) != 2 {
+		return 0
+	}
+	totalPart := strings.TrimSpace(parts[1])
+	if totalPart == "*" {
+		return 0
+	}
+	total, err := strconv.ParseInt(totalPart, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return total
 }
 
 func GetPodcastLocalImagePath(link string, podcastName string) string {

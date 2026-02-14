@@ -419,7 +419,19 @@ func SetPodcastItemAsQueuedForDownload(id string) error {
 		return err
 	}
 	podcastItem.DownloadStatus = db.NotDownloaded
+	podcastItem.DownloadedBytes = 0
+	podcastItem.DownloadTotalBytes = 0
 
+	return db.UpdatePodcastItem(&podcastItem)
+}
+
+func SetPodcastItemAsQueuedPreserveProgress(id string) error {
+	var podcastItem db.PodcastItem
+	err := db.GetPodcastItemById(id, &podcastItem)
+	if err != nil {
+		return err
+	}
+	podcastItem.DownloadStatus = db.NotDownloaded
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
@@ -430,6 +442,16 @@ func SetPodcastItemAsDownloading(id string) error {
 		return err
 	}
 	podcastItem.DownloadStatus = db.Downloading
+	return db.UpdatePodcastItem(&podcastItem)
+}
+
+func SetPodcastItemAsPaused(id string) error {
+	var podcastItem db.PodcastItem
+	err := db.GetPodcastItemById(id, &podcastItem)
+	if err != nil {
+		return err
+	}
+	podcastItem.DownloadStatus = db.Paused
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
@@ -497,6 +519,10 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 	podcastItem.DownloadDate = time.Now()
 	podcastItem.DownloadPath = location
 	podcastItem.DownloadStatus = db.Downloaded
+	if podcastItem.FileSize > 0 {
+		podcastItem.DownloadedBytes = podcastItem.FileSize
+		podcastItem.DownloadTotalBytes = podcastItem.FileSize
+	}
 	if podcastItem.TranscriptStatus == "" && podcastItem.TranscriptJSON == "" {
 		podcastItem.TranscriptStatus = "pending_whisperx"
 	}
@@ -535,6 +561,8 @@ func SetPodcastItemAsNotDownloaded(id string, downloadStatus db.DownloadStatus) 
 	podcastItem.DownloadDate = time.Time{}
 	podcastItem.DownloadPath = ""
 	podcastItem.DownloadStatus = downloadStatus
+	podcastItem.DownloadedBytes = 0
+	podcastItem.DownloadTotalBytes = 0
 
 	return db.UpdatePodcastItem(&podcastItem)
 }
@@ -651,6 +679,11 @@ func DownloadMissingEpisodes() error {
 				_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
 				return
 			}
+			if downloadErr == ErrDownloadPaused {
+				jobLogger.Infow("download paused", "podcast_item_id", item.ID)
+				_ = SetPodcastItemAsPaused(item.ID)
+				return
+			}
 			jobLogger.Errorw("failed to download episode", "podcast_item_id", item.ID, "error", downloadErr)
 			_ = SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
 			setError(downloadErr)
@@ -736,6 +769,10 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	if err != nil {
 		if err == ErrDownloadCancelled {
 			_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
+			return nil
+		}
+		if err == ErrDownloadPaused {
+			_ = SetPodcastItemAsPaused(podcastItem.ID)
 			return nil
 		}
 		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemId, "error", err)

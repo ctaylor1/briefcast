@@ -75,6 +75,12 @@ type PodcastItem struct {
 
 	FileSize int64
 
+	DownloadedBytes    int64
+	DownloadTotalBytes int64
+
+	HasChapters   bool `gorm:"-"`
+	HasTranscript bool `gorm:"-"`
+
 	ItemMetadata     string `gorm:"type:text" json:"-"`
 	TranscriptJSON   string `gorm:"type:text" json:"-"`
 	TranscriptStatus string `gorm:"type:text"`
@@ -87,6 +93,7 @@ const (
 	Downloading
 	Downloaded
 	Deleted
+	Paused
 )
 
 type Setting struct {

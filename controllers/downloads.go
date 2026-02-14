@@ -19,7 +19,7 @@ func GetDownloadQueue(c *gin.Context) {
 		query.Limit = 50
 	}
 
-	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading}, query.Limit)
+	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading, db.Paused}, query.Limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load download queue."})
 		return
@@ -29,6 +29,7 @@ func GetDownloadQueue(c *gin.Context) {
 		"queued":      0,
 		"downloading": 0,
 		"downloaded":  0,
+		"paused":      0,
 	}
 	if stats, err := db.GetPodcastEpisodeStats(); err == nil {
 		for _, stat := range *stats {
@@ -39,6 +40,8 @@ func GetDownloadQueue(c *gin.Context) {
 				counts["downloading"] = stat.Count
 			case db.Downloaded:
 				counts["downloaded"] = stat.Count
+			case db.Paused:
+				counts["paused"] = stat.Count
 			}
 		}
 	}
@@ -51,18 +54,24 @@ func GetDownloadQueue(c *gin.Context) {
 }
 
 func PauseDownloads(c *gin.Context) {
-	service.PauseDownloads()
+	if err := service.PauseAllDownloads(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pause downloads."})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{})
 }
 
 func ResumeDownloads(c *gin.Context) {
-	service.ResumeDownloads()
+	if err := service.ResumeAllDownloads(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resume downloads."})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{})
 }
 
 func CancelAllDownloads(c *gin.Context) {
 	if err := service.CancelAllDownloads(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel downloads."})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop downloads."})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{})

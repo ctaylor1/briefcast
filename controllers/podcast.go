@@ -180,6 +180,9 @@ func GetPodcastItemsByPodcastId(c *gin.Context) {
 
 		err := db.GetAllPodcastItemsByPodcastId(searchByIdQuery.Id, &podcastItems)
 		fmt.Println(err)
+		for i := range podcastItems {
+			decoratePodcastItem(&podcastItems[i])
+		}
 		c.JSON(200, podcastItems)
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -208,6 +211,9 @@ func GetAllPodcastItems(c *gin.Context) {
 	}
 	filter.VerifyPaginationValues()
 	if podcastItems, totalCount, err := db.GetPaginatedPodcastItemsNew(filter); err == nil {
+		for i := range *podcastItems {
+			decoratePodcastItem(&(*podcastItems)[i])
+		}
 		filter.SetCounts(totalCount)
 		toReturn := gin.H{
 			"podcastItems": podcastItems,
@@ -229,6 +235,7 @@ func GetPodcastItemById(c *gin.Context) {
 
 		err := db.GetPodcastItemById(searchByIdQuery.Id, &podcast)
 		fmt.Println(err)
+		decoratePodcastItem(&podcast)
 		c.JSON(200, podcast)
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -565,6 +572,17 @@ func GetRss(c *gin.Context) {
 
 	c.XML(200, createRss(items, title, description, "", c))
 
+}
+
+func decoratePodcastItem(item *db.PodcastItem) {
+	if item == nil {
+		return
+	}
+	item.HasChapters = item.ChaptersJSON != "" || item.ID3ChaptersJSON != ""
+	item.HasTranscript = item.TranscriptJSON != "" || item.TranscriptStatus == "available"
+	if strings.TrimSpace(item.TranscriptStatus) == "" {
+		item.TranscriptStatus = "missing"
+	}
 }
 func DeleteTagById(c *gin.Context) {
 	var searchByIdQuery SearchByIdQuery

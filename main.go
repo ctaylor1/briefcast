@@ -92,6 +92,8 @@ func main() {
 	router.GET("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
 	router.PATCH("/podcastitems/:id", controllers.PatchPodcastItemById)
 	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem)
+	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
+	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
 
