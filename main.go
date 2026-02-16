@@ -112,6 +112,7 @@ func main() {
 	router.DELETE("/podcasts/:id/tags/:tagId", controllers.RemoveTagFromPodcast)
 
 	router.GET("/search", controllers.Search)
+	router.GET("/search/local", controllers.SearchLocalRecords)
 	router.GET("/settings", controllers.GetSettings)
 	router.PATCH("/settings", controllers.PatchSettings)
 	router.POST("/settings", controllers.UpdateSetting)

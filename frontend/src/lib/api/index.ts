@@ -4,3 +4,4 @@ export { episodesApi } from "./episodes";
 export { getErrorMessage } from "./http";
 export { podcastsApi } from "./podcasts";
 export { settingsApi } from "./settings";
+export { searchApi } from "./search";

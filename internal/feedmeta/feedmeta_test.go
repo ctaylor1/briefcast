@@ -120,6 +120,19 @@ func TestExtractTranscriptsDedup(t *testing.T) {
 	}
 }
 
+func TestExtractTranscriptsSingleString(t *testing.T) {
+	entry := map[string]interface{}{
+		"transcript": "https://example.com/t-single.vtt",
+	}
+	assets := ExtractTranscripts(entry)
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 transcript, got %d", len(assets))
+	}
+	if assets[0].URL != "https://example.com/t-single.vtt" {
+		t.Fatalf("unexpected transcript url %q", assets[0].URL)
+	}
+}
+
 func TestExtractEnclosureURL(t *testing.T) {
 	entry := map[string]interface{}{
 		"enclosures": []interface{}{

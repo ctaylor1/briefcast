@@ -36,7 +36,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 
 	req, err := getRequest(link)
 	if err != nil {
-		Logger.Errorw("Error creating request: "+link, err)
+		logError("error creating request", err, "url", link)
 	}
 	fileName := getFileName(link, episodeTitle, ".mp3")
 	if prefix != "" {
@@ -55,7 +55,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 
 	resp, err := doRequestWithHostLimit(client, req)
 	if err != nil {
-		Logger.Errorw("Error getting response: "+link, err)
+		logError("error getting response", err, "url", link)
 		return "", err
 	}
 
@@ -72,7 +72,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		file, err = os.Create(finalPath)
 	}
 	if err != nil {
-		Logger.Errorw("Error creating file"+link, err)
+		logError("error creating file", err, "path", finalPath, "url", link)
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -108,7 +108,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		if n > 0 {
 			downloadedBytes += int64(n)
 			if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
-				Logger.Errorw("Error saving file"+link, writeErr)
+				logError("error saving file", writeErr, "path", finalPath, "url", link)
 				return "", writeErr
 			}
 			if downloadID != "" {
@@ -123,7 +123,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 			if readErr == io.EOF {
 				break
 			}
-			Logger.Errorw("Error saving file"+link, readErr)
+			logError("error saving file", readErr, "path", finalPath, "url", link)
 			return "", readErr
 		}
 	}
@@ -212,13 +212,13 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 	client := httpClient()
 	req, err := getRequest(link)
 	if err != nil {
-		Logger.Errorw("Error creating request: "+link, err)
+		logError("error creating request", err, "url", link)
 		return "", err
 	}
 
 	resp, err := doRequestWithHostLimit(client, req)
 	if err != nil {
-		Logger.Errorw("Error getting response: "+link, err)
+		logError("error getting response", err, "url", link)
 		return "", err
 	}
 
@@ -233,7 +233,7 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 
 	file, err := os.Create(finalPath)
 	if err != nil {
-		Logger.Errorw("Error creating file"+link, err)
+		logError("error creating file", err, "path", finalPath, "url", link)
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -241,7 +241,7 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 	//fmt.Println(size)
 	defer file.Close()
 	if erra != nil {
-		Logger.Errorw("Error saving file"+link, err)
+		logError("error saving file", erra, "path", finalPath, "url", link)
 		return "", erra
 	}
 	changeOwnership(finalPath)
@@ -255,13 +255,13 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 	client := httpClient()
 	req, err := getRequest(link)
 	if err != nil {
-		Logger.Errorw("Error creating request: "+link, err)
+		logError("error creating request", err, "url", link)
 		return "", err
 	}
 
 	resp, err := doRequestWithHostLimit(client, req)
 	if err != nil {
-		Logger.Errorw("Error getting response: "+link, err)
+		logError("error getting response", err, "url", link)
 		return "", err
 	}
 
@@ -277,7 +277,7 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 
 	file, err := os.Create(finalPath)
 	if err != nil {
-		Logger.Errorw("Error creating file"+link, err)
+		logError("error creating file", err, "path", finalPath, "url", link)
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -285,7 +285,7 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 	//fmt.Println(size)
 	defer file.Close()
 	if erra != nil {
-		Logger.Errorw("Error saving file"+link, err)
+		logError("error saving file", erra, "path", finalPath, "url", link)
 		return "", erra
 	}
 	changeOwnership(finalPath)

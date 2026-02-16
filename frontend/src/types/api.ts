@@ -113,6 +113,20 @@ export interface SearchResult {
   categories?: string[];
 }
 
+export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript";
+
+export interface LocalSearchResult {
+  type: LocalSearchRecordType;
+  podcastId?: string;
+  podcastTitle?: string;
+  episodeId?: string;
+  episodeTitle?: string;
+  chapterTitle?: string;
+  transcriptSnippet?: string;
+  summarySnippet?: string;
+  startSeconds?: number;
+}
+
 export interface RetentionSettings {
   keepAllEpisodes: boolean;
   keepLatestEpisodes: number;

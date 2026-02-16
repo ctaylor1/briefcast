@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -24,7 +23,10 @@ const ITUNES_BASE = "https://itunes.apple.com"
 func (service ItunesService) Query(q string) []*model.CommonSearchResultModel {
 	url := fmt.Sprintf("%s/search?term=%s&entity=podcast", ITUNES_BASE, url.QueryEscape(q))
 
-	body, _ := makeQuery(url)
+	body, err := makeQuery(url)
+	if err != nil {
+		Logger.Warnw("itunes search failed", "url", url, "error", err)
+	}
 	var response model.ItunesResponse
 	json.Unmarshal(body, &response)
 
@@ -50,14 +52,14 @@ func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultMo
 	key := strings.TrimSpace(os.Getenv(PodcastIndexKeyEnv))
 	secret := strings.TrimSpace(os.Getenv(PodcastIndexSecretEnv))
 	if key == "" || secret == "" {
-		log.Printf("podcastindex credentials missing; set %s and %s", PodcastIndexKeyEnv, PodcastIndexSecretEnv)
+		Logger.Warnw("podcastindex credentials missing", "key_env", PodcastIndexKeyEnv, "secret_env", PodcastIndexSecretEnv)
 		return toReturn
 	}
 
 	c := podcastindex.NewClient(key, secret)
 	podcasts, err := c.Search(q)
 	if err != nil {
-		log.Printf("podcastindex search failed: %v", err)
+		Logger.Warnw("podcastindex search failed", "error", err)
 		return toReturn
 	}
 
@@ -67,4 +69,3 @@ func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultMo
 
 	return toReturn
 }
-

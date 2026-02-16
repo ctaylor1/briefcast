@@ -36,13 +36,13 @@ func ApplyRetentionPolicies() error {
 	}
 
 	var podcasts []db.Podcast
-	if err := db.DB.Find(&podcasts).Error; err != nil {
+	if err := db.FindAllPodcastsPlain(&podcasts); err != nil {
 		jobLogger.Errorw("failed_to_fetch_podcasts", "error", err)
 		return err
 	}
 
 	var items []db.PodcastItem
-	if err := db.DB.Where("download_status = ?", db.Downloaded).Find(&items).Error; err != nil {
+	if err := db.FindDownloadedPodcastItems(&items); err != nil {
 		jobLogger.Errorw("failed_to_fetch_downloaded_items", "error", err)
 		return err
 	}
