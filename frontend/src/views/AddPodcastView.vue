@@ -90,11 +90,13 @@ async function uploadOpml(): Promise<void> {
 </script>
 
 <template>
-  <section class="stack-4">
-    <div class="stack-2">
-      <h1 class="fluid-title-xl font-semibold tracking-tight text-slate-900">Add Podcast</h1>
-      <p class="fluid-subtle text-slate-600">Responsive input cards with adaptive spacing.</p>
-    </div>
+  <section class="add-page stack-4">
+    <header class="page-header">
+      <h2 class="section-title">Add podcasts</h2>
+      <p class="section-subtitle">
+        Add a feed URL, import OPML subscriptions, or search the directory.
+      </p>
+    </header>
 
     <UiAlert v-if="infoMessage" tone="success">
       {{ infoMessage }}
@@ -103,19 +105,21 @@ async function uploadOpml(): Promise<void> {
       {{ errorMessage }}
     </UiAlert>
 
-    <AddByUrlCard
-      :feed-url="feedUrl"
-      :working="isWorking"
-      @update:feed-url="feedUrl = $event"
-      @submit="addPodcast(feedUrl)"
-    />
+    <div class="add-page__top-grid">
+      <AddByUrlCard
+        :feed-url="feedUrl"
+        :working="isWorking"
+        @update:feed-url="feedUrl = $event"
+        @submit="addPodcast(feedUrl)"
+      />
 
-    <OpmlImportCard
-      :working="isWorking"
-      :has-file="selectedFile !== null"
-      @file-change="onFileChange"
-      @upload="uploadOpml"
-    />
+      <OpmlImportCard
+        :working="isWorking"
+        :has-file="selectedFile !== null"
+        @file-change="onFileChange"
+        @upload="uploadOpml"
+      />
+    </div>
 
     <SearchPodcastsCard
       :query="searchQuery"
@@ -129,3 +133,16 @@ async function uploadOpml(): Promise<void> {
     />
   </section>
 </template>
+
+<style scoped>
+.add-page__top-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .add-page__top-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
 import type { PodcastItem } from "../../types/api";
+import UiBadge from "../ui/UiBadge.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
 
@@ -38,20 +39,20 @@ function downloadStatusLabel(status: number): string {
   }
 }
 
-function downloadStatusClass(status: number): string {
+function downloadStatusTone(status: number): "neutral" | "info" | "success" | "warning" {
   switch (status) {
     case 0:
-      return "bg-amber-100 text-amber-800";
+      return "warning";
     case 1:
-      return "bg-blue-100 text-blue-800";
+      return "info";
     case 2:
-      return "bg-emerald-100 text-emerald-800";
+      return "success";
     case 3:
-      return "bg-slate-100 text-slate-700";
+      return "neutral";
     case 4:
-      return "bg-slate-200 text-slate-700";
+      return "warning";
     default:
-      return "bg-slate-100 text-slate-700";
+      return "neutral";
   }
 }
 
@@ -67,18 +68,19 @@ function isPaused(status: number): boolean {
   return status === 4;
 }
 
-function transcriptPill(status: string): { label: string; className: string; visible: boolean } {
+function transcriptPill(status: string): { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger"; visible: boolean } {
+  if (status.startsWith("pending_")) {
+    return { label: "Transcript pending", tone: "warning", visible: true };
+  }
   switch (status) {
     case "available":
-      return { label: "Transcript Ready", className: "bg-emerald-100 text-emerald-800", visible: true };
+      return { label: "Transcript ready", tone: "success", visible: true };
     case "processing":
-      return { label: "Transcribing", className: "bg-blue-100 text-blue-800", visible: true };
-    case "pending_whisperx":
-      return { label: "Transcript Pending", className: "bg-amber-100 text-amber-800", visible: true };
+      return { label: "Transcribing", tone: "info", visible: true };
     case "failed":
-      return { label: "Transcript Failed", className: "bg-rose-100 text-rose-800", visible: true };
+      return { label: "Transcript failed", tone: "danger", visible: true };
     default:
-      return { label: "Transcript Missing", className: "bg-slate-100 text-slate-700", visible: false };
+      return { label: "Transcript missing", tone: "neutral", visible: false };
   }
 }
 
@@ -105,87 +107,78 @@ function hasKnownTotal(item: PodcastItem): boolean {
 </script>
 
 <template>
-  <UiCard padding="none" class="overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="min-w-full border-collapse">
-        <thead class="bg-slate-50 text-left">
-          <tr class="text-xs uppercase tracking-wide text-slate-500">
-            <th class="px-4 py-3 font-semibold">Episode</th>
-            <th class="px-4 py-3 font-semibold">Podcast</th>
-            <th class="px-4 py-3 font-semibold">Published</th>
-            <th class="px-4 py-3 font-semibold">Duration</th>
-            <th class="px-4 py-3 font-semibold">Flags</th>
-            <th class="px-4 py-3 font-semibold">Actions</th>
+  <UiCard padding="none">
+    <div class="table-wrap visually-scrollable">
+      <table class="data-table episodes-table">
+        <thead>
+          <tr>
+            <th>Episode</th>
+            <th>Podcast</th>
+            <th>Published</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="item in items"
             :key="item.ID"
-            class="border-t border-slate-200 align-top"
           >
-            <td class="px-4 py-3">
-              <div class="max-w-sm space-y-1">
-                <p class="text-sm font-semibold text-slate-900">{{ item.Title }}</p>
-                <p class="line-clamp-2 text-xs text-slate-600">{{ item.Summary || "No summary available." }}</p>
-                <div class="flex flex-wrap gap-2 text-[11px]">
+            <td>
+              <div class="episodes-table__episode">
+                <p class="episodes-table__title">{{ item.Title }}</p>
+                <p class="episodes-table__summary">{{ item.Summary || "No summary available." }}</p>
+                <div class="episodes-table__badges">
                   <button
                     v-if="transcriptPill(item.TranscriptStatus).visible"
                     type="button"
-                    class="rounded-full px-2 py-1 font-medium"
-                    :class="transcriptPill(item.TranscriptStatus).className"
+                    class="episodes-table__badge-button"
                     @click="emit('open-details', item, 'transcript')"
                   >
-                    {{ transcriptPill(item.TranscriptStatus).label }}
+                    <UiBadge :tone="transcriptPill(item.TranscriptStatus).tone">
+                      {{ transcriptPill(item.TranscriptStatus).label }}
+                    </UiBadge>
                   </button>
                   <button
                     v-if="item.HasChapters"
                     type="button"
-                    class="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-800"
+                    class="episodes-table__badge-button"
                     @click="emit('open-details', item, 'chapters')"
                   >
-                    Chapters
+                    <UiBadge tone="info">Chapters</UiBadge>
                   </button>
                 </div>
               </div>
             </td>
-            <td class="px-4 py-3 text-sm text-slate-700">{{ item.Podcast?.Title || "Unknown Podcast" }}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">{{ formatDateTime(item.PubDate) }}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">{{ formatDuration(item.Duration) }}</td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap gap-1.5 text-xs">
-                <span
-                  class="rounded-full px-2 py-1 font-medium"
-                  :class="item.IsPlayed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'"
-                >
+            <td class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
+            <td class="meta-text">{{ formatDateTime(item.PubDate) }}</td>
+            <td class="meta-text">{{ formatDuration(item.Duration) }}</td>
+            <td>
+              <div class="episodes-table__status">
+                <UiBadge :tone="item.IsPlayed ? 'success' : 'neutral'">
                   {{ item.IsPlayed ? "Played" : "Unplayed" }}
-                </span>
-                <span
-                  class="rounded-full px-2 py-1 font-medium"
-                  :class="isBookmarked(item.BookmarkDate) ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-100 text-slate-700'"
-                >
-                  {{ isBookmarked(item.BookmarkDate) ? "Bookmarked" : "No Bookmark" }}
-                </span>
-                <span
-                  class="rounded-full px-2 py-1 font-medium"
-                  :class="downloadStatusClass(item.DownloadStatus)"
-                >
+                </UiBadge>
+                <UiBadge :tone="isBookmarked(item.BookmarkDate) ? 'info' : 'neutral'">
+                  {{ isBookmarked(item.BookmarkDate) ? "Bookmarked" : "No bookmark" }}
+                </UiBadge>
+                <UiBadge :tone="downloadStatusTone(item.DownloadStatus)">
                   {{ downloadStatusLabel(item.DownloadStatus) }}
-                </span>
+                </UiBadge>
               </div>
-              <div v-if="item.DownloadStatus === 1" class="mt-2">
-                <div class="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
+              <div v-if="item.DownloadStatus === 1" class="episodes-table__progress">
+                <div class="episodes-table__progress-track">
                   <div
-                    class="h-full rounded-full bg-blue-500"
-                    :class="!hasKnownTotal(item) && 'animate-pulse w-1/2'"
+                    class="episodes-table__progress-fill"
+                    :class="!hasKnownTotal(item) && 'episodes-table__progress-fill--unknown'"
                     :style="hasKnownTotal(item) ? { width: `${progressPercent(item)}%` } : undefined"
                   />
                 </div>
-                <p class="mt-1 text-[10px] text-slate-500">{{ progressLabel(item) }}</p>
+                <p class="meta-text">{{ progressLabel(item) }}</p>
               </div>
             </td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap gap-2">
+            <td>
+              <div class="episodes-table__actions">
                 <UiButton size="sm" variant="outline" @click="emit('play', item)">
                   Play
                 </UiButton>
@@ -197,7 +190,7 @@ function hasKnownTotal(item: PodcastItem): boolean {
                 </UiButton>
                 <UiButton
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   :disabled="isDownloaded(item.DownloadStatus)"
                   @click="emit('queue-download', item)"
                 >
@@ -232,3 +225,93 @@ function hasKnownTotal(item: PodcastItem): boolean {
     </div>
   </UiCard>
 </template>
+
+<style scoped>
+.episodes-table {
+  min-width: 1120px;
+}
+
+.episodes-table__episode {
+  min-width: 320px;
+}
+
+.episodes-table__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.episodes-table__summary {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 42ch;
+}
+
+.episodes-table__badges {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.episodes-table__badge-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.episodes-table__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.episodes-table__progress {
+  margin-top: var(--space-2);
+}
+
+.episodes-table__progress-track {
+  width: 160px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-hover);
+  overflow: hidden;
+}
+
+.episodes-table__progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+.episodes-table__progress-fill--unknown {
+  width: 50%;
+  animation: pulse-track 1.2s infinite ease-in-out;
+}
+
+.episodes-table__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-width: 220px;
+}
+
+@keyframes pulse-track {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+</style>

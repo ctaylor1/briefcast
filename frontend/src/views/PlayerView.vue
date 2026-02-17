@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import UiAlert from "../components/ui/UiAlert.vue";
+import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
@@ -24,7 +25,19 @@ const chapters = ref<Chapter[]>([]);
 const lastAutoSkipStart = ref<number | null>(null);
 
 const speedOptions = [
-  0.75, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2,
+  0.75,
+  0.9,
+  1,
+  1.1,
+  1.2,
+  1.3,
+  1.4,
+  1.5,
+  1.7,
+  2,
+  2.2,
+  2.5,
+  2.7,
 ];
 
 const activeItem = computed(() => items.value[activeIndex.value] ?? null);
@@ -99,6 +112,26 @@ function parseStartSeconds(): number | null {
     }
   }
   return null;
+}
+
+function currentQueueMatches(itemIds: string[]): boolean {
+  if (itemIds.length === 0 || itemIds.length !== items.value.length) {
+    return false;
+  }
+  return itemIds.every((id, index) => items.value[index]?.ID === id);
+}
+
+async function seekAndPlay(seconds: number): Promise<void> {
+  await seekTo(seconds);
+  const audio = audioRef.value;
+  if (!audio) {
+    return;
+  }
+  try {
+    await audio.play();
+  } catch {
+    // Autoplay can be blocked until the user interacts with the page.
+  }
 }
 
 async function loadItems(): Promise<void> {
@@ -285,129 +318,293 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => route.query,
-  () => {
-    void loadItems();
-  },
-  { deep: true },
-);
+watch(() => route.fullPath, () => {
+  const itemIds = parseItemIds();
+  const startSeconds = parseStartSeconds();
+  if (startSeconds !== null && currentQueueMatches(itemIds)) {
+    void seekAndPlay(startSeconds);
+    return;
+  }
+  void loadItems();
+});
 
 onMounted(loadItems);
 </script>
 
 <template>
-  <section class="stack-4">
-    <div class="stack-2">
-      <h1 class="fluid-title-xl font-semibold tracking-tight text-slate-900">Player</h1>
-      <p class="fluid-subtle text-slate-600">Queue-based playback for a podcast or selected episodes.</p>
-    </div>
+  <section class="player-page stack-4">
+    <header class="page-header">
+      <h2 class="section-title">Player</h2>
+      <p class="section-subtitle">
+        Play an entire podcast queue or a custom list of episode IDs with transcript-aware sponsor skipping.
+      </p>
+    </header>
 
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
     </UiAlert>
 
-    <UiCard v-if="isLoading" padding="lg" class="text-sm text-slate-600">
-      Loading player...
-    </UiCard>
+    <div v-if="isLoading" class="player-skeleton">
+      <UiCard padding="lg" class="stack-2">
+        <span class="skeleton player-skeleton__line player-skeleton__line--title"></span>
+        <span class="skeleton player-skeleton__line"></span>
+        <span class="skeleton player-skeleton__line"></span>
+      </UiCard>
+      <UiCard padding="lg" class="stack-2">
+        <span class="skeleton player-skeleton__line"></span>
+        <span class="skeleton player-skeleton__line"></span>
+      </UiCard>
+    </div>
 
     <template v-else>
-      <UiCard v-if="!activeItem" padding="lg" class="text-sm text-slate-600">
-        Nothing to play yet.
+      <UiCard v-if="!activeItem" padding="lg" class="empty-state">
+        <p class="empty-state__title">Nothing queued for playback</p>
+        <p class="empty-state__copy">Open the Episodes screen and send one or more episodes to the player.</p>
       </UiCard>
 
-      <UiCard v-else padding="lg" class="stack-4">
-        <div class="flex flex-wrap items-start gap-[var(--space-3)]">
-          <img
-            :src="activeImage"
-            :alt="activeItem.Title"
-            class="h-28 w-28 rounded-md bg-slate-100 object-cover"
-          />
-          <div class="min-w-[220px] flex-1">
-            <h2 class="text-lg font-semibold text-slate-900">{{ activeItem.Title }}</h2>
-            <p class="text-sm text-slate-600">
-              {{ activeItem.Podcast?.Title || "Unknown Podcast" }} •
-              {{ formatDateTime(activeItem.PubDate) }} • {{ formatDuration(activeItem.Duration) }}
-            </p>
-            <p class="mt-2 text-sm text-slate-600 line-clamp-3">
-              {{ activeItem.Summary || "No summary available." }}
-            </p>
+      <template v-else>
+        <UiCard padding="lg" class="stack-3">
+          <div class="player-now">
+            <img
+              :src="activeImage"
+              :alt="activeItem.Title"
+              class="player-now__image"
+            />
+            <div class="player-now__content">
+              <h3 class="player-now__title">{{ activeItem.Title }}</h3>
+              <p class="meta-text">
+                {{ activeItem.Podcast?.Title || "Unknown podcast" }} •
+                {{ formatDateTime(activeItem.PubDate) }} • {{ formatDuration(activeItem.Duration) }}
+              </p>
+              <p class="player-now__summary">
+                {{ activeItem.Summary || "No summary available." }}
+              </p>
+              <div class="player-now__badges">
+                <UiBadge :tone="isPlaying ? 'success' : 'neutral'">
+                  {{ isPlaying ? "Playing" : "Paused" }}
+                </UiBadge>
+                <UiBadge :tone="autoSkipEnabled ? 'info' : 'neutral'">
+                  {{ autoSkipEnabled ? "Auto skip sponsor on" : "Auto skip sponsor off" }}
+                </UiBadge>
+                <UiBadge v-if="currentSponsorSegment" tone="warning">
+                  Sponsor segment detected
+                </UiBadge>
+              </div>
+            </div>
           </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <UiButton variant="outline" size="sm" @click="playPrevious" :disabled="activeIndex === 0">
-            Prev
-          </UiButton>
-          <UiButton variant="primary" size="sm" @click="togglePlay">
-            {{ isPlaying ? "Pause" : "Play" }}
-          </UiButton>
-          <UiButton
-            variant="outline"
-            size="sm"
-            @click="playNext"
-            :disabled="activeIndex >= items.length - 1"
-          >
-            Next
-          </UiButton>
-          <UiButton
-            v-if="currentSponsorSegment"
-            variant="outline"
-            size="sm"
-            @click="skipSponsor"
-          >
-            Skip sponsor
-          </UiButton>
-          <label class="flex items-center gap-2 text-sm text-slate-600">
-            Speed
+
+          <div class="player-controls">
+            <UiButton variant="outline" size="sm" :disabled="activeIndex === 0" @click="playPrevious">
+              Previous
+            </UiButton>
+            <UiButton variant="primary" size="sm" @click="togglePlay">
+              {{ isPlaying ? "Pause" : "Play" }}
+            </UiButton>
+            <UiButton
+              variant="outline"
+              size="sm"
+              @click="playNext"
+              :disabled="activeIndex >= items.length - 1"
+            >
+              Next
+            </UiButton>
+            <UiButton
+              v-if="currentSponsorSegment"
+              variant="secondary"
+              size="sm"
+              @click="skipSponsor"
+            >
+              Skip sponsor
+            </UiButton>
             <UiSelect
               :model-value="playbackRate"
-              input-class="min-h-9 w-auto bg-white px-2 py-1 text-sm"
-                @update:model-value="playbackRate = Number($event)"
-              >
-                <option v-for="speed in speedOptions" :key="speed" :value="speed">
-                  {{ speed }}x
-                </option>
-              </UiSelect>
-            </label>
+              label="Playback speed"
+              class="player-controls__speed"
+              @update:model-value="playbackRate = Number($event)"
+            >
+              <option v-for="speed in speedOptions" :key="speed" :value="speed">
+                {{ speed }}x
+              </option>
+            </UiSelect>
           </div>
-        </div>
 
-        <audio
-          ref="audioRef"
-          class="w-full"
-          controls
-          :src="currentSource"
-          @ended="handleEnded"
-          @timeupdate="handleTimeUpdate"
-          @play="isPlaying = true"
-          @pause="isPlaying = false"
-        />
-      </UiCard>
+          <audio
+            ref="audioRef"
+            class="player-audio"
+            controls
+            :src="currentSource"
+            @ended="handleEnded"
+            @timeupdate="handleTimeUpdate"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+          />
+        </UiCard>
 
-      <UiCard padding="none">
-        <div class="divide-y divide-slate-200">
-          <button
-            v-for="(item, index) in items"
-            :key="item.ID"
-            type="button"
-            class="flex w-full items-start gap-3 px-[var(--space-3)] py-[var(--space-2)] text-left transition hover:bg-slate-50"
-            :class="index === activeIndex ? 'bg-slate-100' : ''"
-            @click="playAt(index)"
-          >
-            <img
-              :src="`/podcastitems/${item.ID}/image`"
-              :alt="item.Title"
-              class="h-12 w-12 rounded-md bg-slate-100 object-cover"
-            />
-            <div class="flex-1">
-              <p class="text-sm font-semibold text-slate-900">{{ item.Title }}</p>
-              <p class="text-xs text-slate-500">
-                {{ item.Podcast?.Title || "Unknown Podcast" }} • {{ formatDateTime(item.PubDate) }}
-              </p>
-            </div>
-            <span class="text-xs text-slate-500">{{ formatDuration(item.Duration) }}</span>
-          </button>
-        </div>
-      </UiCard>
+        <UiCard padding="none">
+          <div class="player-queue">
+            <button
+              v-for="(item, index) in items"
+              :key="item.ID"
+              type="button"
+              class="player-queue__item"
+              :class="index === activeIndex ? 'player-queue__item--active' : ''"
+              @click="playAt(index)"
+            >
+              <img
+                :src="`/podcastitems/${item.ID}/image`"
+                :alt="item.Title"
+                class="player-queue__image"
+              />
+              <div class="player-queue__meta">
+                <p class="player-queue__title">{{ item.Title }}</p>
+                <p class="meta-text">
+                  {{ item.Podcast?.Title || "Unknown podcast" }} • {{ formatDateTime(item.PubDate) }}
+                </p>
+              </div>
+              <span class="meta-text">{{ formatDuration(item.Duration) }}</span>
+            </button>
+          </div>
+        </UiCard>
+      </template>
     </template>
   </section>
 </template>
+
+<style scoped>
+.player-skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.player-skeleton__line {
+  height: 14px;
+}
+
+.player-skeleton__line--title {
+  width: 58%;
+  height: 20px;
+}
+
+.player-now {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.player-now__image {
+  width: 100%;
+  max-width: 170px;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-3);
+  background: var(--color-hover);
+  object-fit: cover;
+}
+
+.player-now__content {
+  min-width: 0;
+}
+
+.player-now__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-section-size);
+  line-height: var(--font-section-line-height);
+  font-weight: var(--font-section-weight);
+}
+
+.player-now__summary {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.player-now__badges {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.player-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.player-controls__speed {
+  min-width: 140px;
+}
+
+.player-audio {
+  width: 100%;
+}
+
+.player-queue {
+  display: grid;
+}
+
+.player-queue__item {
+  width: 100%;
+  min-height: 72px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  cursor: pointer;
+}
+
+.player-queue__item:hover {
+  background: var(--color-hover);
+}
+
+.player-queue__item--active {
+  background: var(--color-accent-subtle);
+}
+
+.player-queue__image {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-2);
+  background: var(--color-hover);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.player-queue__meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.player-queue__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.empty-state__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.empty-state__copy {
+  margin: var(--space-2) auto 0;
+  max-width: 50ch;
+}
+
+@media (min-width: 768px) {
+  .player-now {
+    grid-template-columns: 170px 1fr;
+  }
+}
+</style>

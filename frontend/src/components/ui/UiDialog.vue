@@ -36,55 +36,55 @@ const emit = defineEmits<{
 
 const iconClass = computed(() =>
   cn(
-    "inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
-    props.tone === "danger" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-700",
+    "dialog-icon",
+    props.tone === "danger" && "dialog-icon--danger",
   ),
 );
 </script>
 
 <template>
   <TransitionRoot as="template" :show="open">
-    <Dialog as="div" class="relative z-50" @close="emit('close')">
+    <Dialog as="div" class="ui-layer" @close="emit('close')">
       <TransitionChild
         as="template"
-        enter="ease-out duration-200"
-        enter-from="opacity-0"
-        enter-to="opacity-100"
-        leave="ease-in duration-150"
-        leave-from="opacity-100"
-        leave-to="opacity-0"
+        enter="ui-transition-fade-enter"
+        enter-from="ui-transition-fade-enter-from"
+        enter-to="ui-transition-fade-enter-to"
+        leave="ui-transition-fade-leave"
+        leave-from="ui-transition-fade-leave-from"
+        leave-to="ui-transition-fade-leave-to"
       >
-        <div class="fixed inset-0 bg-slate-900/35" />
+        <div class="dialog-overlay" />
       </TransitionChild>
 
-      <div class="fixed inset-0 overflow-y-auto p-4">
-        <div class="flex min-h-full items-center justify-center">
+      <div class="dialog-wrap">
+        <div class="visually-scrollable">
           <TransitionChild
             as="template"
-            enter="ease-out duration-200"
-            enter-from="opacity-0 scale-95"
-            enter-to="opacity-100 scale-100"
-            leave="ease-in duration-150"
-            leave-from="opacity-100 scale-100"
-            leave-to="opacity-0 scale-95"
+            enter="ui-transition-scale-enter"
+            enter-from="ui-transition-scale-enter-from"
+            enter-to="ui-transition-scale-enter-to"
+            leave="ui-transition-scale-leave"
+            leave-from="ui-transition-scale-leave-from"
+            leave-to="ui-transition-scale-leave-to"
           >
-            <DialogPanel class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
-              <div class="flex items-start gap-3">
+            <DialogPanel class="dialog-panel">
+              <div class="dialog-header">
                 <span :class="iconClass" aria-hidden="true">
                   {{ tone === "danger" ? "!" : "i" }}
                 </span>
-                <div class="space-y-1">
-                  <DialogTitle class="text-base font-semibold text-slate-900">
+                <div>
+                  <DialogTitle class="dialog-title">
                     {{ title }}
                   </DialogTitle>
-                  <p v-if="description" class="text-sm text-slate-600">
+                  <p v-if="description" class="dialog-description">
                     {{ description }}
                   </p>
                 </div>
               </div>
 
-              <div class="mt-5 flex justify-end gap-2">
-                <UiButton variant="outline" :disabled="busy" @click="emit('close')">
+              <div class="dialog-actions">
+                <UiButton variant="secondary" :disabled="busy" @click="emit('close')">
                   {{ cancelLabel }}
                 </UiButton>
                 <UiButton :variant="tone === 'danger' ? 'danger' : 'primary'" :disabled="busy" @click="emit('confirm')">

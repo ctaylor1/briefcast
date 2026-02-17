@@ -8,11 +8,12 @@ export interface EpisodeListQuery {
   q?: string;
   isDownloaded?: "true" | "false";
   isPlayed?: "true" | "false";
+  podcastIds?: string[];
 }
 
 export const episodesApi = {
   list(query: EpisodeListQuery): Promise<EpisodesResponse> {
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | string[]> = {
       page: query.page,
       count: query.count,
       sorting: query.sorting,
@@ -25,6 +26,9 @@ export const episodesApi = {
     }
     if (query.isPlayed) {
       params.isPlayed = query.isPlayed;
+    }
+    if (query.podcastIds && query.podcastIds.length > 0) {
+      params["podcastIds[]"] = query.podcastIds;
     }
     return httpClient.get<EpisodesResponse>("/podcastitems", { params });
   },

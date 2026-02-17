@@ -4,10 +4,11 @@ import AppNav from "./components/AppNav.vue";
 </script>
 
 <template>
-  <div class="min-h-screen text-slate-900">
-    <AppNav />
-    <main class="app-container app-main">
-      <RouterView />
+  <AppNav>
+    <main id="main-content" class="app-main">
+      <div class="page page--wide">
+        <RouterView />
+      </div>
     </main>
-  </div>
+  </AppNav>
 </template>

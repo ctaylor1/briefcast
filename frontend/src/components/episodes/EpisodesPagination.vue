@@ -18,11 +18,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <UiCard padding="sm" class="flex flex-col items-start justify-between gap-[var(--space-2)] sm:flex-row sm:items-center">
-    <p class="fluid-subtle text-slate-600">
+  <UiCard padding="md" tone="subtle" class="episodes-pagination">
+    <p class="meta-text">
       Showing page {{ page }} of {{ totalPages || 1 }} ({{ totalCount }} episodes)
     </p>
-    <div class="flex w-full flex-wrap items-center gap-[var(--space-1)] sm:w-auto">
+    <div class="episodes-pagination__actions">
       <UiButton size="sm" variant="outline" :disabled="!hasPrevious" @click="emit('first')">
         First
       </UiButton>
@@ -35,3 +35,26 @@ const emit = defineEmits<{
     </div>
   </UiCard>
 </template>
+
+<style scoped>
+.episodes-pagination {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.episodes-pagination__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .episodes-pagination {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+</style>

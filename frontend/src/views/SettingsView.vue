@@ -83,13 +83,13 @@ onMounted(loadSettings);
 </script>
 
 <template>
-  <section class="stack-4">
-    <div>
-      <h1 class="fluid-title-xl font-semibold tracking-tight text-slate-900">Settings</h1>
-      <p class="fluid-subtle text-slate-600">
-        Control retention so your library stays tidy without losing what matters.
+  <section class="settings-page stack-4">
+    <header class="page-header">
+      <h2 class="section-title">Settings</h2>
+      <p class="section-subtitle">
+        Control retention behavior so storage stays clean while preserving the episodes you care about.
       </p>
-    </div>
+    </header>
 
     <UiAlert v-if="successMessage" tone="success">
       {{ successMessage }}
@@ -98,85 +98,136 @@ onMounted(loadSettings);
       {{ errorMessage }}
     </UiAlert>
 
-    <UiCard v-if="isLoading" padding="lg" class="text-sm text-slate-600">
-      Loading settings...
+    <UiCard v-if="isLoading" padding="lg" class="stack-2">
+      <span class="skeleton settings-skeleton-line settings-skeleton-line--title"></span>
+      <span class="skeleton settings-skeleton-line"></span>
+      <span class="skeleton settings-skeleton-line"></span>
+      <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
     </UiCard>
 
     <UiCard v-else padding="lg" class="stack-4">
       <div class="stack-2">
-        <h2 class="text-base font-semibold text-slate-900">Retention</h2>
-        <p class="text-sm text-slate-600">
+        <h3 class="settings-section-title">Retention</h3>
+        <p class="section-subtitle">
           Keep all episodes by default. Switch off to enable automatic cleanup rules.
         </p>
       </div>
 
-      <label class="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+      <label class="settings-checkbox-row">
         <input
           v-model="form.keepAllEpisodes"
           type="checkbox"
-          class="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+          class="settings-checkbox"
         />
         <div>
-          <p class="font-medium text-slate-900">Keep all episodes (default)</p>
-          <p class="text-xs text-slate-500">
+          <p class="settings-checkbox-title">Keep all episodes (default)</p>
+          <p class="meta-text">
             No files are deleted automatically, even if episodes have been played.
           </p>
         </div>
       </label>
 
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-slate-700">Keep latest episodes</label>
+      <div class="surface-grid surface-grid--2">
+        <div class="stack-1">
           <UiInput
             v-model="form.keepLatestEpisodes"
             type="number"
             min="0"
             :disabled="!retentionEnabled"
+            label="Keep latest episodes"
             placeholder="0"
           />
-          <p class="text-xs text-slate-500">
+          <p class="meta-text">
             Set to 0 to disable. When enabled, older downloaded episodes are removed regardless of played status.
           </p>
         </div>
 
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-slate-700">Delete after (days)</label>
+        <div class="stack-1">
           <UiInput
             v-model="form.deleteAfterDays"
             type="number"
             min="0"
             :disabled="!retentionEnabled"
+            label="Delete after (days)"
             placeholder="0"
           />
-          <p class="text-xs text-slate-500">
+          <p class="meta-text">
             Set to 0 to disable. This applies only to episodes older than the number of days you set.
           </p>
         </div>
       </div>
 
-      <label class="flex items-start gap-3 text-sm text-slate-700">
+      <label class="settings-checkbox-row">
         <input
           v-model="form.deleteOnlyPlayed"
           type="checkbox"
-          class="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+          class="settings-checkbox"
           :disabled="!retentionEnabled"
         />
         <div>
-          <p class="font-medium text-slate-900">Only delete played episodes</p>
-          <p class="text-xs text-slate-500">
+          <p class="settings-checkbox-title">Only delete played episodes</p>
+          <p class="meta-text">
             If unchecked, episodes older than the threshold are removed whether or not they were played.
           </p>
         </div>
       </label>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="surface-row">
         <UiButton :disabled="isSaving" @click="saveSettings">
           {{ isSaving ? "Saving..." : "Save retention settings" }}
         </UiButton>
-        <p class="text-xs text-slate-500">
+        <p class="meta-text">
           Retention cleanup runs daily. Use podcast-level overrides to keep everything for specific feeds.
         </p>
       </div>
     </UiCard>
   </section>
 </template>
+
+<style scoped>
+.settings-section-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-section-size);
+  line-height: var(--font-section-line-height);
+  font-weight: var(--font-section-weight);
+}
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  padding: var(--space-3);
+}
+
+.settings-checkbox {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}
+
+.settings-checkbox-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.settings-skeleton-line {
+  height: 14px;
+}
+
+.settings-skeleton-line--title {
+  width: 48%;
+  height: 20px;
+}
+
+.settings-skeleton-line--short {
+  width: 60%;
+}
+</style>

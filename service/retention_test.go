@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
+	glebarezsqlite "github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func setupRetentionTestDB(t *testing.T) string {
@@ -24,10 +26,20 @@ func setupRetentionTestDB(t *testing.T) string {
 	var err error
 	db.DB, err = db.Init()
 	if err != nil {
-		if strings.Contains(err.Error(), "CGO_ENABLED=0") {
-			t.Skipf("sqlite driver unavailable in this build: %v", err)
+		if strings.Contains(err.Error(), "CGO_ENABLED=0") || strings.Contains(err.Error(), "requires cgo") {
+			db.DB, err = gorm.Open(glebarezsqlite.Open(filepath.Join(tempDir, "briefcast.db")), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("db init fallback failed: %v", err)
+			}
+		} else {
+			t.Fatalf("db init failed: %v", err)
 		}
-		t.Fatalf("db init failed: %v", err)
+	}
+	sqlDB, sqlErr := db.DB.DB()
+	if sqlErr == nil {
+		t.Cleanup(func() {
+			_ = sqlDB.Close()
+		})
 	}
 	db.Migrate()
 	return tempDir

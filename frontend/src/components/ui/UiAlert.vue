@@ -15,11 +15,11 @@ const props = withDefaults(
 
 const classes = computed(() =>
   cn(
-    "rounded-md border px-4 py-3 text-sm",
-    props.tone === "info" && "border-cyan-300 bg-cyan-50 text-cyan-800",
-    props.tone === "success" && "border-emerald-300 bg-emerald-50 text-emerald-800",
-    props.tone === "danger" && "border-rose-300 bg-rose-50 text-rose-800",
-    props.tone === "warning" && "border-amber-300 bg-amber-50 text-amber-800",
+    "ui-alert",
+    props.tone === "info" && "ui-alert--info",
+    props.tone === "success" && "ui-alert--success",
+    props.tone === "danger" && "ui-alert--danger",
+    props.tone === "warning" && "ui-alert--warning",
   ),
 );
 </script>

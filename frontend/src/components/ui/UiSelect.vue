@@ -8,11 +8,17 @@ const props = withDefaults(
     disabled?: boolean;
     id?: string;
     name?: string;
+    label?: string;
+    hint?: string;
+    error?: string;
     inputClass?: string;
   }>(),
   {
     modelValue: "",
     disabled: false,
+    label: "",
+    hint: "",
+    error: "",
   },
 );
 
@@ -24,24 +30,28 @@ const attrs = useAttrs();
 
 const classes = computed(() =>
   cn(
-    "min-h-10 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900",
-    "focus:border-cyan-500 focus:outline-none",
-    "disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500",
+    "ui-select",
+    props.error && "ui-select--error",
     props.inputClass,
   ),
 );
 </script>
 
 <template>
-  <select
-    v-bind="attrs"
-    :id="id"
-    :name="name"
-    :disabled="disabled"
-    :value="modelValue"
-    :class="classes"
-    @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
-  >
-    <slot />
-  </select>
+  <div class="ui-field">
+    <label v-if="label" class="ui-label" :for="id">{{ label }}</label>
+    <select
+      v-bind="attrs"
+      :id="id"
+      :name="name"
+      :disabled="disabled"
+      :value="modelValue"
+      :class="classes"
+      @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
+    >
+      <slot />
+    </select>
+    <p v-if="error" class="ui-error">{{ error }}</p>
+    <p v-else-if="hint" class="ui-hint">{{ hint }}</p>
+  </div>
 </template>

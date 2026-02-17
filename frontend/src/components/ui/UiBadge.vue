@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { cn } from "../../lib/cn";
 
-type BadgeTone = "neutral" | "info" | "success" | "danger";
+type BadgeTone = "neutral" | "info" | "success" | "danger" | "warning";
 
 const props = withDefaults(
   defineProps<{
@@ -15,11 +15,12 @@ const props = withDefaults(
 
 const classes = computed(() =>
   cn(
-    "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
-    props.tone === "neutral" && "bg-slate-100 text-slate-700",
-    props.tone === "info" && "bg-cyan-100 text-cyan-800",
-    props.tone === "success" && "bg-emerald-100 text-emerald-800",
-    props.tone === "danger" && "bg-rose-100 text-rose-800",
+    "ui-badge",
+    props.tone === "neutral" && "ui-badge--neutral",
+    props.tone === "info" && "ui-badge--info",
+    props.tone === "success" && "ui-badge--success",
+    props.tone === "danger" && "ui-badge--danger",
+    props.tone === "warning" && "ui-badge--warning",
   ),
 );
 </script>

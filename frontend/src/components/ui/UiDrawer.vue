@@ -26,54 +26,48 @@ const emit = defineEmits<{
 
 <template>
   <TransitionRoot as="template" :show="open">
-    <Dialog as="div" class="relative z-50" @close="emit('close')">
+    <Dialog as="div" class="ui-layer" @close="emit('close')">
       <TransitionChild
         as="template"
-        enter="ease-out duration-200"
-        enter-from="opacity-0"
-        enter-to="opacity-100"
-        leave="ease-in duration-150"
-        leave-from="opacity-100"
-        leave-to="opacity-0"
+        enter="ui-transition-fade-enter"
+        enter-from="ui-transition-fade-enter-from"
+        enter-to="ui-transition-fade-enter-to"
+        leave="ui-transition-fade-leave"
+        leave-from="ui-transition-fade-leave-from"
+        leave-to="ui-transition-fade-leave-to"
       >
-        <div class="fixed inset-0 bg-slate-900/35" />
+        <div class="dialog-overlay" />
       </TransitionChild>
 
-      <div class="fixed inset-0 overflow-hidden">
-        <div class="absolute inset-0 overflow-hidden">
-          <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
-            <TransitionChild
-              as="template"
-              enter="transform transition ease-out duration-200"
-              enter-from="translate-x-full"
-              enter-to="translate-x-0"
-              leave="transform transition ease-in duration-150"
-              leave-from="translate-x-0"
-              leave-to="translate-x-full"
-            >
-              <DialogPanel class="pointer-events-auto w-screen max-w-lg">
-                <div class="flex h-full flex-col bg-white shadow-xl">
-                  <div class="flex items-start justify-between border-b border-slate-200 px-5 py-4">
-                    <div>
-                      <DialogTitle class="text-lg font-semibold text-slate-900">
-                        {{ title }}
-                      </DialogTitle>
-                      <p v-if="description" class="text-sm text-slate-600">
-                        {{ description }}
-                      </p>
-                    </div>
-                    <UiButton variant="ghost" size="sm" @click="emit('close')">
-                      Close
-                    </UiButton>
-                  </div>
-                  <div class="flex-1 overflow-y-auto px-5 py-4">
-                    <slot />
-                  </div>
-                </div>
-              </DialogPanel>
-            </TransitionChild>
-          </div>
-        </div>
+      <div class="drawer-wrap">
+        <TransitionChild
+          as="template"
+          enter="ui-transition-drawer-enter"
+          enter-from="ui-transition-drawer-enter-from"
+          enter-to="ui-transition-drawer-enter-to"
+          leave="ui-transition-drawer-leave"
+          leave-from="ui-transition-drawer-leave-from"
+          leave-to="ui-transition-drawer-leave-to"
+        >
+          <DialogPanel class="drawer-panel">
+            <div class="drawer-header">
+              <div>
+                <DialogTitle class="drawer-title">
+                  {{ title }}
+                </DialogTitle>
+                <p v-if="description" class="drawer-description">
+                  {{ description }}
+                </p>
+              </div>
+              <UiButton variant="ghost" size="sm" @click="emit('close')">
+                Close
+              </UiButton>
+            </div>
+            <div class="drawer-body visually-scrollable">
+              <slot />
+            </div>
+          </DialogPanel>
+        </TransitionChild>
       </div>
     </Dialog>
   </TransitionRoot>

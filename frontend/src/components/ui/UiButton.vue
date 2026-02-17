@@ -24,18 +24,10 @@ const props = withDefaults(
 
 const classes = computed(() =>
   cn(
-    "inline-flex items-center justify-center rounded-md font-semibold transition-colors",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2",
-    "disabled:cursor-not-allowed disabled:opacity-50",
-    props.size === "sm" && "px-2.5 py-1.5 text-xs",
-    props.size === "md" && "px-3.5 py-2 text-sm",
-    props.size === "lg" && "px-4 py-2.5 text-sm",
-    props.variant === "primary" && "bg-slate-900 text-white hover:bg-slate-800",
-    props.variant === "secondary" && "bg-slate-100 text-slate-900 hover:bg-slate-200",
-    props.variant === "outline" && "border border-slate-300 text-slate-700 hover:bg-slate-100",
-    props.variant === "danger" && "border border-rose-300 text-rose-700 hover:bg-rose-50",
-    props.variant === "ghost" && "text-slate-700 hover:bg-slate-100",
-    props.block && "w-full",
+    "ui-button",
+    `ui-button--${props.size}`,
+    `ui-button--${props.variant}`,
+    props.block && "ui-button--block",
   ),
 );
 </script>

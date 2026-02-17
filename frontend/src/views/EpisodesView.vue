@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
-import { useDownloadQueue } from "../composables/useDownloadQueue";
 import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
-import { useGlobalSearch } from "../composables/useGlobalSearch";
 import EpisodesFilters from "../components/episodes/EpisodesFilters.vue";
 import EpisodesListItem from "../components/episodes/EpisodesListItem.vue";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
@@ -14,31 +13,18 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
-import { episodesApi, getErrorMessage } from "../lib/api";
+import { downloadsApi, episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
 import { formatDuration } from "../lib/format";
 import { isSponsorChapter } from "../lib/sponsor";
-import type { EpisodeSorting, EpisodeTriState, PodcastItem, LocalSearchResult } from "../types/api";
+import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
+
+const route = useRoute();
 
 const isLoading = ref(true);
 const errorMessage = ref("");
 const infoMessage = ref("");
 const items = ref<PodcastItem[]>([]);
-
-const {
-  queueItems,
-  queueLoading,
-  queueError,
-  queueCounts,
-  downloadsPaused,
-  fetchQueue,
-  pauseDownloads,
-  resumeDownloads,
-  cancelAllDownloads: cancelAllQueuedDownloads,
-  cancelEpisodeDownload,
-  queueProgressPercent,
-  queueProgressLabel,
-  queueHasKnownTotal,
-} = useDownloadQueue();
+const podcastOptions = ref<Podcast[]>([]);
 
 const {
   drawerOpen,
@@ -67,20 +53,9 @@ const {
   drawerTabs,
 } = useEpisodeDrawer();
 
-const fetchDownloadQueue = fetchQueue;
-const {
-  query: globalSearchQuery,
-  results: globalSearchResults,
-  loading: globalSearchLoading,
-  error: globalSearchError,
-  run: runGlobalSearch,
-  typeLabel: searchTypeLabel,
-  summary: searchSummary,
-} = useGlobalSearch();
-
-
 const filter = reactive<{
   q: string;
+  podcastIds: string[];
   page: number;
   count: number;
   sorting: EpisodeSorting;
@@ -92,6 +67,7 @@ const filter = reactive<{
   totalCount: number;
 }>({
   q: "",
+  podcastIds: [],
   page: 1,
   count: 20,
   sorting: "release_desc",
@@ -103,10 +79,48 @@ const filter = reactive<{
   totalCount: 0,
 });
 
-let queueInterval: number | undefined;
+const hasActiveFilters = computed(
+  () =>
+    filter.q.trim().length > 0 ||
+    filter.podcastIds.length > 0 ||
+    filter.sorting !== "release_desc" ||
+    filter.count !== 20 ||
+    filter.isDownloaded !== "nil" ||
+    filter.isPlayed !== "nil",
+);
 
-function isBookmarked(item: PodcastItem): boolean {
-  return item.BookmarkDate !== "0001-01-01T00:00:00Z";
+const sortedPodcastOptions = computed(() =>
+  [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
+);
+
+function parseQueryIdList(raw: unknown): string[] {
+  if (typeof raw === "string") {
+    return raw.split(",").map((value) => value.trim()).filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .flatMap((value) => (typeof value === "string" ? value.split(",") : []))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function parseRoutePodcastIds(): string[] {
+  const query = route.query as Record<string, unknown>;
+  const ids = [
+    ...parseQueryIdList(query.podcastIds),
+    ...parseQueryIdList(query["podcastIds[]"]),
+  ];
+  return Array.from(new Set(ids));
+}
+
+async function loadPodcastOptions(): Promise<void> {
+  try {
+    podcastOptions.value = await podcastsApi.list();
+  } catch {
+    podcastOptions.value = [];
+  }
 }
 
 async function fetchEpisodes(): Promise<void> {
@@ -120,6 +134,7 @@ async function fetchEpisodes(): Promise<void> {
       q: filter.q.trim() || undefined,
       isDownloaded: filter.isDownloaded !== "nil" ? filter.isDownloaded : undefined,
       isPlayed: filter.isPlayed !== "nil" ? filter.isPlayed : undefined,
+      podcastIds: filter.podcastIds.length > 0 ? filter.podcastIds : undefined,
     });
 
     items.value = response.podcastItems;
@@ -137,6 +152,17 @@ async function fetchEpisodes(): Promise<void> {
   }
 }
 
+function resetFilters(): void {
+  filter.q = "";
+  filter.podcastIds = [];
+  filter.page = 1;
+  filter.count = 20;
+  filter.sorting = "release_desc";
+  filter.isDownloaded = "nil";
+  filter.isPlayed = "nil";
+  void fetchEpisodes();
+}
+
 async function togglePlayed(item: PodcastItem): Promise<void> {
   infoMessage.value = "";
   errorMessage.value = "";
@@ -150,7 +176,7 @@ async function togglePlayed(item: PodcastItem): Promise<void> {
 }
 
 async function toggleBookmark(item: PodcastItem): Promise<void> {
-  const bookmarked = isBookmarked(item);
+  const bookmarked = item.BookmarkDate !== "0001-01-01T00:00:00Z";
   infoMessage.value = "";
   errorMessage.value = "";
   try {
@@ -168,7 +194,7 @@ async function queueDownload(item: PodcastItem): Promise<void> {
   try {
     await episodesApi.queueDownload(item.ID);
     infoMessage.value = "Episode download queued.";
-    void fetchDownloadQueue();
+    void fetchEpisodes();
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Could not queue download.");
   }
@@ -178,41 +204,11 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
   infoMessage.value = "";
   errorMessage.value = "";
   try {
-    await cancelEpisodeDownload(item.ID);
+    await downloadsApi.cancelEpisode(item.ID);
     infoMessage.value = "Download cancelled.";
-    void fetchDownloadQueue();
     void fetchEpisodes();
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Could not cancel download.");
-  }
-}
-
-async function toggleDownloadsPause(): Promise<void> {
-  infoMessage.value = "";
-  errorMessage.value = "";
-  try {
-    if (downloadsPaused.value) {
-      await resumeDownloads();
-      infoMessage.value = "Downloads resumed.";
-    } else {
-      await pauseDownloads();
-      infoMessage.value = "Downloads paused.";
-    }
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Could not update download pause.");
-  }
-}
-
-async function cancelAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  errorMessage.value = "";
-  try {
-    await cancelAllQueuedDownloads();
-    infoMessage.value = "All queued downloads cancelled.";
-    void fetchDownloadQueue();
-    void fetchEpisodes();
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Could not cancel downloads.");
   }
 }
 
@@ -222,39 +218,13 @@ function openPlayer(item: PodcastItem): void {
 }
 
 function openPlayerAt(item: PodcastItem, startSeconds: number): void {
-  const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}&start=${Math.max(0, Math.floor(startSeconds))}`;
+  const normalizedStart = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
+  const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}&start=${encodeURIComponent(normalizedStart.toString())}`;
   window.open(target, "briefcast_player");
 }
 
-async function openSearchResult(result: LocalSearchResult): Promise<void> {
-  globalSearchError.value = "";
-  if (!result.episodeId) {
-    return;
-  }
-  let item = items.value.find((entry) => entry.ID === result.episodeId) || null;
-  if (!item) {
-    try {
-      item = await episodesApi.getById(result.episodeId);
-    } catch (error) {
-      globalSearchError.value = getErrorMessage(error, "Unable to load episode details.");
-      return;
-    }
-  }
-
-  const term = globalSearchQuery.value.trim();
-  if (result.type === "chapter") {
-    openDrawer(item, "chapters", term);
-    return;
-  }
-  if (result.type === "transcript") {
-    openDrawer(item, "transcript", term);
-    return;
-  }
-  openDrawer(item, "overview");
-}
-
 watch(
-  () => [filter.count, filter.sorting, filter.isDownloaded, filter.isPlayed],
+  () => [filter.count, filter.sorting, filter.isDownloaded, filter.isPlayed, filter.podcastIds.join(",")],
   () => {
     filter.page = 1;
     void fetchEpisodes();
@@ -267,180 +237,28 @@ useDebouncedWatch(
     filter.page = 1;
     void fetchEpisodes();
   },
-  400,
-);
-
-useDebouncedWatch(
-  () => globalSearchQuery.value,
-  () => {
-    void runGlobalSearch();
-  },
   300,
 );
 
 onMounted(() => {
-  void fetchEpisodes();
-  void fetchDownloadQueue();
-  queueInterval = window.setInterval(() => {
-    void fetchDownloadQueue();
-  }, 5000);
-});
-onUnmounted(() => {
-  if (queueInterval) {
-    window.clearInterval(queueInterval);
+  const routePodcastIds = parseRoutePodcastIds();
+  if (routePodcastIds.length > 0) {
+    filter.podcastIds = routePodcastIds;
+  } else {
+    void fetchEpisodes();
   }
+  void loadPodcastOptions();
 });
 </script>
 
 <template>
-  <section class="stack-4">
-    <div class="stack-2">
-      <h1 class="fluid-title-xl font-semibold tracking-tight text-slate-900">Episodes</h1>
-      <p class="fluid-subtle text-slate-600">Card list on mobile, table density on desktop.</p>
-    </div>
-
-    <UiCard padding="lg" class="stack-3">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Download Queue</p>
-          <h2 class="text-lg font-semibold text-slate-900">Downloads</h2>
-          <p class="text-sm text-slate-600">
-            Queued: {{ queueCounts.queued }} • Downloading: {{ queueCounts.downloading }} • Paused: {{
-              queueCounts.paused
-            }} • Downloaded: {{ queueCounts.downloaded }}
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <UiButton size="sm" variant="outline" @click="toggleDownloadsPause">
-            {{ downloadsPaused ? "Resume downloads" : "Pause downloads" }}
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="danger"
-            :disabled="queueCounts.queued === 0 && queueCounts.downloading === 0"
-            @click="cancelAllDownloads"
-          >
-            Stop all
-          </UiButton>
-          <UiButton size="sm" variant="ghost" @click="fetchDownloadQueue">
-            Refresh
-          </UiButton>
-        </div>
-      </div>
-
-      <UiAlert v-if="queueError" tone="danger">
-        {{ queueError }}
-      </UiAlert>
-
-      <div v-if="queueLoading" class="text-sm text-slate-600">
-        Loading queue...
-      </div>
-      <div v-else-if="queueItems.length === 0" class="text-sm text-slate-600">
-        No queued downloads.
-      </div>
-      <ul v-else class="divide-y divide-slate-100 text-sm">
-        <li v-for="item in queueItems" :key="item.ID" class="flex flex-wrap items-center justify-between gap-4 py-2">
-          <div class="min-w-[220px] flex-1">
-            <p class="font-semibold text-slate-900">{{ item.Title }}</p>
-            <p class="text-xs text-slate-500">{{ item.Podcast?.Title || "Unknown Podcast" }}</p>
-            <div class="mt-2">
-              <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  class="h-full rounded-full bg-blue-500"
-                  :class="!queueHasKnownTotal(item) && 'animate-pulse w-1/2'"
-                  :style="queueHasKnownTotal(item) ? { width: `${queueProgressPercent(item)}%` } : undefined"
-                />
-              </div>
-              <p class="mt-1 text-[11px] text-slate-500">{{ queueProgressLabel(item) }}</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <span
-              class="rounded-full px-2 py-1 text-xs font-medium"
-              :class="item.DownloadStatus === 1
-                ? 'bg-blue-100 text-blue-800'
-                : item.DownloadStatus === 4
-                  ? 'bg-slate-200 text-slate-700'
-                  : 'bg-amber-100 text-amber-800'"
-            >
-              {{
-                item.DownloadStatus === 1
-                  ? "Downloading"
-                  : item.DownloadStatus === 4
-                    ? "Paused"
-                    : "Queued"
-              }}
-            </span>
-            <UiButton size="sm" variant="danger" @click="cancelDownload(item)">
-              Stop
-            </UiButton>
-          </div>
-        </li>
-      </ul>
-    </UiCard>
-
-    <UiCard padding="lg" class="stack-3">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Global Search</p>
-          <h2 class="text-lg font-semibold text-slate-900">Find episodes, chapters, and transcripts</h2>
-          <p class="text-sm text-slate-600">
-            Searches episode descriptions, chapter titles, and transcript text.
-          </p>
-        </div>
-        <UiInput v-model="globalSearchQuery" type="search" placeholder="Search across podcasts and episodes" />
-      </div>
-
-      <UiAlert v-if="globalSearchError" tone="danger">
-        {{ globalSearchError }}
-      </UiAlert>
-
-      <div v-if="globalSearchLoading" class="text-sm text-slate-600">
-        Searching...
-      </div>
-      <div v-else-if="globalSearchQuery && globalSearchResults.length === 0" class="text-sm text-slate-600">
-        No results for "{{ globalSearchQuery }}".
-      </div>
-      <ul v-else-if="globalSearchResults.length > 0" class="divide-y divide-slate-100 text-sm">
-        <li v-for="result in globalSearchResults" :key="`${result.type}-${result.episodeId || result.podcastId}-${result.startSeconds || 0}`" class="py-3">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-[220px] flex-1 space-y-1">
-              <UiBadge>{{ searchTypeLabel(result) }}</UiBadge>
-              <p class="text-sm font-semibold text-slate-900">
-                {{ result.episodeTitle || result.podcastTitle || "Untitled" }}
-              </p>
-              <p v-if="result.podcastTitle && result.episodeTitle" class="text-xs text-slate-500">
-                {{ result.podcastTitle }}
-              </p>
-              <p v-if="searchSummary(result)" class="text-xs text-slate-600">
-                {{ searchSummary(result) }}
-              </p>
-            </div>
-            <UiButton
-              v-if="result.episodeId"
-              size="sm"
-              variant="outline"
-              @click="openSearchResult(result)"
-            >
-              Open episode
-            </UiButton>
-          </div>
-        </li>
-      </ul>
-    </UiCard>
-
-    <EpisodesFilters
-      :query="filter.q"
-      :sorting="filter.sorting"
-      :count="filter.count"
-      :is-downloaded="filter.isDownloaded"
-      :is-played="filter.isPlayed"
-      @update:query="filter.q = $event"
-      @update:sorting="filter.sorting = $event"
-      @update:count="filter.count = $event"
-      @update:is-downloaded="filter.isDownloaded = $event"
-      @update:is-played="filter.isPlayed = $event"
-    />
+  <section class="episodes-page stack-4">
+    <header class="page-header">
+      <h2 class="section-title">Episode Workspace</h2>
+      <p class="section-subtitle">
+        Search transcripts, filter your library, and manage episode actions in one place.
+      </p>
+    </header>
 
     <UiAlert v-if="infoMessage" tone="success">
       {{ infoMessage }}
@@ -449,16 +267,41 @@ onUnmounted(() => {
       {{ errorMessage }}
     </UiAlert>
 
-    <UiCard v-if="isLoading" padding="lg" class="text-sm text-slate-600">
-      Loading episodes...
+    <EpisodesFilters
+      :query="filter.q"
+      :selected-podcast-ids="filter.podcastIds"
+      :podcast-options="sortedPodcastOptions.map((podcast) => ({ id: podcast.ID, title: podcast.Title }))"
+      :sorting="filter.sorting"
+      :count="filter.count"
+      :is-downloaded="filter.isDownloaded"
+      :is-played="filter.isPlayed"
+      @update:query="filter.q = $event"
+      @update:selected-podcast-ids="filter.podcastIds = $event"
+      @update:sorting="filter.sorting = $event"
+      @update:count="filter.count = $event"
+      @update:is-downloaded="filter.isDownloaded = $event"
+      @update:is-played="filter.isPlayed = $event"
+    />
+
+    <UiCard v-if="isLoading" padding="md" class="episodes-skeleton">
+      <div v-for="index in 4" :key="index" class="episodes-skeleton__row">
+        <span class="skeleton episodes-skeleton__line episodes-skeleton__line--title"></span>
+        <span class="skeleton episodes-skeleton__line"></span>
+      </div>
     </UiCard>
 
-    <UiCard v-else-if="items.length === 0" padding="lg" class="text-sm text-slate-600">
-      No episodes found for this filter.
+    <UiCard v-else-if="items.length === 0" padding="lg" class="empty-state">
+      <p class="empty-state__title">No episodes match the current filter</p>
+      <p class="empty-state__copy">
+        Clear filters to see your full feed list or update downloads to pull fresh episodes.
+      </p>
+      <UiButton v-if="hasActiveFilters" variant="secondary" size="sm" @click="resetFilters">
+        Reset filters
+      </UiButton>
     </UiCard>
 
     <div v-else class="stack-3">
-      <div class="stack-3 xl:hidden">
+      <div class="episodes-list-mobile stack-3">
         <EpisodesListItem
           v-for="item in items"
           :key="item.ID"
@@ -472,7 +315,7 @@ onUnmounted(() => {
         />
       </div>
 
-      <div class="hidden xl:block">
+      <div class="episodes-list-desktop">
         <EpisodesTable
           :items="items"
           @play="openPlayer"
@@ -503,72 +346,61 @@ onUnmounted(() => {
       @close="closeDrawer"
     >
       <div class="stack-4">
-        <div class="flex flex-wrap gap-2">
-          <button
+        <div class="drawer-tabs">
+          <UiButton
             v-for="tab in drawerTabs"
             :key="tab.id"
-            type="button"
-            class="rounded-full px-3 py-1 text-xs font-semibold"
-            :class="drawerTab === tab.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'"
+            size="sm"
+            :variant="drawerTab === tab.id ? 'primary' : 'ghost'"
             @click="setDrawerTab(tab.id)"
           >
             {{ tab.label }}
-          </button>
+          </UiButton>
         </div>
 
         <UiAlert v-if="drawerLoadError" tone="danger">
           {{ drawerLoadError }}
         </UiAlert>
 
-        <div v-if="drawerTab === 'overview'" class="stack-3 text-sm text-slate-700">
+        <div v-if="drawerTab === 'overview'" class="stack-3">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Summary</p>
-            <p class="mt-2 text-sm text-slate-700">
-              {{ drawerItem?.Summary || "No summary available." }}
-            </p>
+            <p class="meta-text">Summary</p>
+            <p class="drawer-body-copy">{{ drawerItem?.Summary || "No summary available." }}</p>
           </div>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-lg border border-slate-200 p-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Transcript</p>
-              <p class="mt-2 text-sm text-slate-700">{{ drawerTranscriptSummary() }}</p>
-            </div>
-            <div class="rounded-lg border border-slate-200 p-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Chapters</p>
-              <p class="mt-2 text-sm text-slate-700">{{ drawerChaptersSummary() }}</p>
-            </div>
+          <div class="drawer-summary-grid">
+            <UiCard padding="sm" tone="subtle">
+              <p class="meta-text">Transcript</p>
+              <p class="drawer-body-copy">{{ drawerTranscriptSummary() }}</p>
+            </UiCard>
+            <UiCard padding="sm" tone="subtle">
+              <p class="meta-text">Chapters</p>
+              <p class="drawer-body-copy">{{ drawerChaptersSummary() }}</p>
+            </UiCard>
           </div>
         </div>
 
         <div v-else-if="drawerTab === 'chapters'" class="stack-3">
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="surface-row">
             <UiInput v-model="chaptersSearch" placeholder="Search chapters" />
-            <span v-if="drawerChapters.length > 0" class="text-xs text-slate-500">
+            <span v-if="drawerChapters.length > 0" class="meta-text">
               Showing {{ filteredChapters.length }} of {{ drawerChapters.length }}
             </span>
           </div>
-          <div v-if="drawerLoadingChapters" class="text-sm text-slate-600">
-            Loading chapters...
-          </div>
-          <div v-else-if="drawerChapters.length === 0" class="text-sm text-slate-600">
-            No chapters available for this episode.
-          </div>
-          <div v-else-if="filteredChapters.length === 0" class="text-sm text-slate-600">
-            No chapters match "{{ chaptersSearch }}".
-          </div>
-          <ul v-else class="divide-y divide-slate-100">
+          <p v-if="drawerLoadingChapters" class="meta-text">Loading chapters...</p>
+          <p v-else-if="drawerChapters.length === 0" class="meta-text">No chapters available for this episode.</p>
+          <p v-else-if="filteredChapters.length === 0" class="meta-text">No chapters match “{{ chaptersSearch }}”.</p>
+          <ul v-else class="drawer-list">
             <li
               v-for="chapter in filteredChapters"
               :key="`${chapter.title}-${chapter.startSeconds}`"
-              class="flex items-center justify-between gap-3 py-2"
+              class="drawer-list__row"
             >
               <div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="text-sm font-semibold text-slate-900">{{ chapter.title }}</p>
+                <div class="surface-row">
+                  <p class="drawer-list__title">{{ chapter.title }}</p>
                   <UiBadge v-if="isSponsorChapter(chapter.title)" tone="info">Sponsor</UiBadge>
                 </div>
-                <p class="text-xs text-slate-500">
-                  Starts at {{ formatDuration(Math.floor(chapter.startSeconds)) }}
-                </p>
+                <p class="meta-text">Starts at {{ formatDuration(Math.floor(chapter.startSeconds)) }}</p>
               </div>
               <UiButton size="sm" variant="outline" @click="drawerItem && openPlayerAt(drawerItem, chapter.startSeconds)">
                 Play from here
@@ -578,59 +410,185 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="drawerTab === 'transcript'" class="stack-3">
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="surface-row">
             <UiInput v-model="transcriptSearch" placeholder="Search transcript" />
-            <span v-if="drawerTranscriptSegments.length > 0" class="text-xs text-slate-500">
+            <span v-if="drawerTranscriptSegments.length > 0" class="meta-text">
               Showing {{ filteredTranscriptSegments.length }} of {{ drawerTranscriptSegments.length }}
             </span>
-            <span v-else-if="drawerTranscriptText" class="text-xs text-slate-500">
+            <span v-else-if="drawerTranscriptText" class="meta-text">
               Showing {{ filteredTranscriptLines.length }} of {{ transcriptLines.length }} lines
             </span>
           </div>
-          <div v-if="drawerLoadingTranscript" class="text-sm text-slate-600">
-            Loading transcript...
-          </div>
-          <div v-else-if="drawerTranscriptStatus !== 'available'" class="text-sm text-slate-600">
-            {{ drawerTranscriptSummary() }}
-          </div>
-          <div v-else-if="drawerTranscriptSegments.length > 0" class="divide-y divide-slate-100">
-            <div v-if="filteredTranscriptSegments.length === 0" class="py-2 text-sm text-slate-600">
-              No transcript segments match "{{ transcriptSearch }}".
-            </div>
+          <p v-if="drawerLoadingTranscript" class="meta-text">Loading transcript...</p>
+          <p v-else-if="drawerTranscriptStatus !== 'available'" class="meta-text">{{ drawerTranscriptSummary() }}</p>
+          <div v-else-if="drawerTranscriptSegments.length > 0" class="drawer-list">
+            <p v-if="filteredTranscriptSegments.length === 0" class="meta-text">
+              No transcript segments match “{{ transcriptSearch }}”.
+            </p>
             <button
               v-for="segment in filteredTranscriptSegments"
               :key="`${segment.start}-${segment.text}`"
               type="button"
-              class="flex w-full items-start justify-between gap-3 py-2 text-left hover:bg-slate-50"
+              class="drawer-transcript-row"
               @click="drawerItem && openPlayerAt(drawerItem, segment.start)"
             >
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                <p class="meta-text">
                   {{ formatDuration(Math.floor(segment.start)) }}
                   <span v-if="segment.speaker"> • {{ segment.speaker }}</span>
                 </p>
-                <p class="text-sm text-slate-700">{{ segment.text }}</p>
+                <p class="drawer-body-copy">{{ segment.text }}</p>
               </div>
-              <span class="text-xs text-slate-400">Play</span>
+              <span class="meta-text">Play</span>
             </button>
           </div>
-          <div v-else-if="drawerTranscriptText" class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-            <pre class="whitespace-pre-wrap">{{ transcriptDisplayText }}</pre>
+          <div v-else-if="drawerTranscriptText" class="drawer-transcript-raw">
+            <pre>{{ transcriptDisplayText }}</pre>
           </div>
-          <div v-else class="text-sm text-slate-600">
-            Transcript is available but could not be rendered.
-            <div v-if="drawerTranscriptAssets.length > 0" class="mt-2 text-xs text-slate-500">
-              Assets:
-              <ul class="list-disc pl-4">
-                <li v-for="asset in drawerTranscriptAssets" :key="asset.url || asset.type">
-                  {{ asset.language || "unknown" }} {{ asset.type || "text" }}
-                  <span v-if="asset.url"> (downloadable)</span>
-                </li>
-              </ul>
-            </div>
+          <div v-else class="stack-2">
+            <p class="meta-text">Transcript is available but could not be rendered.</p>
+            <ul v-if="drawerTranscriptAssets.length > 0" class="meta-text">
+              <li v-for="asset in drawerTranscriptAssets" :key="asset.url || asset.type">
+                {{ asset.language || "unknown" }} {{ asset.type || "text" }}
+                <span v-if="asset.url">(downloadable)</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
     </UiDrawer>
   </section>
 </template>
+
+<style scoped>
+.episodes-skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.episodes-skeleton__row {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.episodes-skeleton__line {
+  height: 12px;
+}
+
+.episodes-skeleton__line--title {
+  width: 64%;
+  height: 18px;
+}
+
+.episodes-list-desktop {
+  display: none;
+}
+
+.drawer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.drawer-body-copy {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+}
+
+.drawer-summary-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.drawer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.drawer-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  padding: var(--space-3);
+}
+
+.drawer-list__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.drawer-transcript-row {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  color: inherit;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  cursor: pointer;
+}
+
+.drawer-transcript-row:hover {
+  background: var(--color-hover);
+}
+
+.drawer-transcript-raw {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  padding: var(--space-3);
+}
+
+.drawer-transcript-raw pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+}
+
+.empty-state__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.empty-state__copy {
+  margin: var(--space-2) auto 0;
+  max-width: 46ch;
+}
+
+@media (min-width: 768px) {
+  .drawer-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .episodes-list-mobile {
+    display: none;
+  }
+
+  .episodes-list-desktop {
+    display: block;
+  }
+}
+</style>

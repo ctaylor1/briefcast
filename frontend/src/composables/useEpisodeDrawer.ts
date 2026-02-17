@@ -186,18 +186,19 @@ export function useEpisodeDrawer() {
   }
 
   function drawerTranscriptSummary(): string {
-    switch (drawerTranscriptStatus.value) {
-      case "available":
-        return "Transcript is ready.";
-      case "processing":
-        return "WhisperX is transcribing this episode.";
-      case "pending_whisperx":
-        return "Waiting for WhisperX transcription.";
-      case "failed":
-        return "Transcript failed to generate.";
-      default:
-        return "No transcript available.";
+    if (drawerTranscriptStatus.value === "available") {
+      return "Transcript is ready.";
     }
+    if (drawerTranscriptStatus.value === "processing") {
+      return "Briefcast is transcribing this episode.";
+    }
+    if (drawerTranscriptStatus.value.startsWith("pending_")) {
+      return "Waiting for Briefcast transcription.";
+    }
+    if (drawerTranscriptStatus.value === "failed") {
+      return "Transcript failed to generate.";
+    }
+    return "No transcript available.";
   }
 
   function drawerChaptersSummary(): string {

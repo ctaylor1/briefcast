@@ -15,19 +15,55 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <UiCard>
-    <h2 class="text-base font-semibold text-slate-900">Add by RSS URL</h2>
-    <form class="mt-[var(--space-2)] flex flex-col gap-[var(--space-2)] sm:flex-row" @submit.prevent="emit('submit')">
+  <UiCard padding="lg" class="add-url-card stack-3">
+    <div class="stack-1">
+      <h3 class="add-url-card__title">Add by RSS URL</h3>
+      <p class="meta-text">Paste a feed URL to subscribe instantly.</p>
+    </div>
+
+    <form class="add-url-card__form" @submit.prevent="emit('submit')">
       <UiInput
         :model-value="feedUrl"
         type="url"
         required
+        label="Feed URL"
+        input-class="add-url-card__input"
         placeholder="https://example.com/feed.xml"
         @update:model-value="emit('update:feedUrl', $event)"
       />
-      <UiButton type="submit" :disabled="working">
-        Add
+      <UiButton type="submit" :disabled="working" class="add-url-card__submit">
+        {{ working ? "Adding..." : "Add podcast" }}
       </UiButton>
     </form>
   </UiCard>
 </template>
+
+<style scoped>
+.add-url-card__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.add-url-card__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.add-url-card__input {
+  min-height: 56px;
+}
+
+.add-url-card__submit {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .add-url-card__submit {
+    width: auto;
+    justify-self: start;
+  }
+}
+</style>

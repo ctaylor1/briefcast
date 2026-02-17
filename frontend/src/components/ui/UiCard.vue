@@ -3,26 +3,27 @@ import { computed } from "vue";
 import { cn } from "../../lib/cn";
 
 type CardPadding = "none" | "sm" | "md" | "lg";
+type CardTone = "default" | "subtle";
 
 const props = withDefaults(
   defineProps<{
     padding?: CardPadding;
-    elevated?: boolean;
+    tone?: CardTone;
   }>(),
   {
     padding: "md",
-    elevated: true,
+    tone: "default",
   },
 );
 
 const classes = computed(() =>
   cn(
-    "rounded-[var(--radius-lg)] border border-slate-200 bg-white",
-    props.elevated && "shadow-sm",
-    props.padding === "none" && "p-0",
-    props.padding === "sm" && "p-[var(--space-2)]",
-    props.padding === "md" && "p-[var(--space-3)]",
-    props.padding === "lg" && "p-[var(--space-4)]",
+    "ui-card",
+    props.padding === "none" && "ui-card--padding-none",
+    props.padding === "sm" && "ui-card--padding-sm",
+    props.padding === "md" && "ui-card--padding-md",
+    props.padding === "lg" && "ui-card--padding-lg",
+    props.tone === "subtle" && "ui-card--subtle",
   ),
 );
 </script>

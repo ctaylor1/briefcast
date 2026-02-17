@@ -99,6 +99,7 @@ export interface EpisodesFilter {
   isPlayed?: EpisodeTriState | null;
   sorting?: EpisodeSorting;
   q?: string;
+  podcastIds?: string[];
 }
 
 export interface EpisodesResponse {

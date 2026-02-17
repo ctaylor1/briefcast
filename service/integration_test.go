@@ -10,17 +10,12 @@ import (
 	"testing"
 
 	"github.com/ctaylor1/briefcast/db"
+	glebarezsqlite "github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
-	if os.Getenv("BRIEFCAST_INTEGRATION") == "" {
-		t.Skip("set BRIEFCAST_INTEGRATION=1 to run integration tests")
-	}
-
-	pythonPath, err := resolvePython()
-	if err != nil {
-		t.Skipf("python not available: %v", err)
-	}
+	pythonPath := requireWorkingPython(t)
 
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "assets")
@@ -55,12 +50,23 @@ func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 	t.Setenv("TEST_BASE_URL", server.URL)
 	t.Cleanup(server.Close)
 
+	var err error
 	db.DB, err = db.Init()
 	if err != nil {
-		if strings.Contains(err.Error(), "CGO_ENABLED=0") {
-			t.Skipf("sqlite driver unavailable in this build: %v", err)
+		if strings.Contains(err.Error(), "CGO_ENABLED=0") || strings.Contains(err.Error(), "requires cgo") {
+			db.DB, err = gorm.Open(glebarezsqlite.Open(dbURL), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("db init fallback failed: %v", err)
+			}
+		} else {
+			t.Fatalf("db init failed: %v", err)
 		}
-		t.Fatalf("db init failed: %v", err)
+	}
+	sqlDB, sqlErr := db.DB.DB()
+	if sqlErr == nil {
+		t.Cleanup(func() {
+			_ = sqlDB.Close()
+		})
 	}
 	db.Migrate()
 
