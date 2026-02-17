@@ -8,6 +8,6 @@ All notable changes to this project will be documented in this file.
 - Added automated secret scanning workflow.
 - Added release/readiness documentation updates and safe `.env.example`.
 
-## [0.1.0] - 2026-02-17
+## [1.0.0] - 2026-02-17
 
 - Initial public release baseline for Briefcast.
