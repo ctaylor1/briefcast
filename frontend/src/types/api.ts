@@ -28,11 +28,13 @@ export interface Podcast {
   AllEpisodesSize: number;
   IsPaused: boolean;
   RetentionKeepAll: boolean;
+  AutoSkipSponsorChapters: boolean;
 }
 
 export interface PodcastItemPodcast {
   ID: string;
   Title: string;
+  AutoSkipSponsorChapters?: boolean;
 }
 
 export interface PodcastItem {

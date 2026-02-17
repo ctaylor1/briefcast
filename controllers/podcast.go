@@ -55,6 +55,10 @@ type PodcastRetentionPatch struct {
 	KeepAll *bool `json:"keepAll"`
 }
 
+type PodcastSponsorSkipPatch struct {
+	AutoSkipSponsorChapters *bool `json:"autoSkipSponsorChapters"`
+}
+
 type AddPodcastData struct {
 	Url string `binding:"required" form:"url" json:"url"`
 }
@@ -147,6 +151,32 @@ func PatchPodcastRetention(c *gin.Context) {
 
 	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIdQuery.Id).
 		Update("retention_keep_all", *patch.KeepAll).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func PatchPodcastSponsorSkip(c *gin.Context) {
+	var searchByIdQuery SearchByIdQuery
+	if c.ShouldBindUri(&searchByIdQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var patch PodcastSponsorSkipPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if patch.AutoSkipSponsorChapters == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "autoSkipSponsorChapters is required"})
+		return
+	}
+
+	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIdQuery.Id).
+		Update("auto_skip_sponsor_chapters", *patch.AutoSkipSponsorChapters).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

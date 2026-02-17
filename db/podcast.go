@@ -37,6 +37,8 @@ type Podcast struct {
 	IsPaused bool `gorm:"default:false"`
 
 	RetentionKeepAll bool `gorm:"default:false"`
+
+	AutoSkipSponsorChapters bool `gorm:"default:false"`
 }
 
 // PodcastItem is

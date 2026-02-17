@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (event: "download-all", podcast: Podcast): void;
   (event: "toggle-pause", podcast: Podcast): void;
   (event: "toggle-retention", podcast: Podcast): void;
+  (event: "toggle-sponsor-skip", podcast: Podcast): void;
   (event: "delete", podcast: Podcast): void;
 }>();
 
@@ -81,6 +82,17 @@ function getPodcastImage(id: string): string {
                   @click="emit('toggle-retention', podcast)"
                 >
                   {{ podcast.RetentionKeepAll ? "Use global" : "Keep all" }}
+                </UiButton>
+              </div>
+              <div class="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                <span>Sponsor skip: {{ podcast.AutoSkipSponsorChapters ? "On" : "Off" }}</span>
+                <UiButton
+                  size="sm"
+                  variant="ghost"
+                  :disabled="activeId === podcast.ID"
+                  @click="emit('toggle-sponsor-skip', podcast)"
+                >
+                  {{ podcast.AutoSkipSponsorChapters ? "Disable" : "Enable" }}
                 </UiButton>
               </div>
             </td>

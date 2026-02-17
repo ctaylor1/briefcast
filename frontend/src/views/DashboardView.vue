@@ -99,6 +99,14 @@ async function toggleRetention(podcast: Podcast): Promise<void> {
   );
 }
 
+async function toggleSponsorSkip(podcast: Podcast): Promise<void> {
+  await runAction(
+    podcast.ID,
+    () => podcastsApi.setAutoSkipSponsorChapters(podcast.ID, !podcast.AutoSkipSponsorChapters),
+    podcast.AutoSkipSponsorChapters ? "Sponsor auto-skip disabled." : "Sponsor auto-skip enabled.",
+  );
+}
+
 onMounted(loadPodcasts);
 </script>
 
@@ -145,6 +153,7 @@ onMounted(loadPodcasts);
           @download-all="downloadAll"
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
+          @toggle-sponsor-skip="toggleSponsorSkip"
           @delete="requestDelete"
         />
       </div>
@@ -157,6 +166,7 @@ onMounted(loadPodcasts);
           @download-all="downloadAll"
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
+          @toggle-sponsor-skip="toggleSponsorSkip"
           @delete="requestDelete"
         />
       </div>

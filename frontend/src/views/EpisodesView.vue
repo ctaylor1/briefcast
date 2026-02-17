@@ -16,6 +16,7 @@ import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { episodesApi, getErrorMessage } from "../lib/api";
 import { formatDuration } from "../lib/format";
+import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, PodcastItem, LocalSearchResult } from "../types/api";
 
 const isLoading = ref(true);
@@ -561,7 +562,10 @@ onUnmounted(() => {
               class="flex items-center justify-between gap-3 py-2"
             >
               <div>
-                <p class="text-sm font-semibold text-slate-900">{{ chapter.title }}</p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-semibold text-slate-900">{{ chapter.title }}</p>
+                  <UiBadge v-if="isSponsorChapter(chapter.title)" tone="info">Sponsor</UiBadge>
+                </div>
                 <p class="text-xs text-slate-500">
                   Starts at {{ formatDuration(Math.floor(chapter.startSeconds)) }}
                 </p>

@@ -7,7 +7,8 @@ import UiCard from "../components/ui/UiCard.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
-import type { PodcastItem } from "../types/api";
+import { buildSponsorSegments } from "../lib/sponsor";
+import type { Chapter, PodcastItem } from "../types/api";
 
 const route = useRoute();
 const isLoading = ref(true);
@@ -18,12 +19,26 @@ const isPlaying = ref(false);
 const playbackRate = ref(1);
 const audioRef = ref<HTMLAudioElement | null>(null);
 const pendingStart = ref<number | null>(null);
+const currentTime = ref(0);
+const chapters = ref<Chapter[]>([]);
+const lastAutoSkipStart = ref<number | null>(null);
 
 const speedOptions = [
   0.75, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2,
 ];
 
 const activeItem = computed(() => items.value[activeIndex.value] ?? null);
+const sponsorSegments = computed(() =>
+  buildSponsorSegments(chapters.value, activeItem.value?.Duration),
+);
+const currentSponsorSegment = computed(() => {
+  const time = currentTime.value;
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+  return sponsorSegments.value.find((segment) => time >= segment.start && time < segment.end) ?? null;
+});
+const autoSkipEnabled = computed(() => activeItem.value?.Podcast?.AutoSkipSponsorChapters ?? false);
 const currentSource = computed(() => {
   if (!activeItem.value) {
     return "";
@@ -126,6 +141,7 @@ async function loadItems(): Promise<void> {
 
     activeIndex.value = 0;
     pendingStart.value = parseStartSeconds();
+    lastAutoSkipStart.value = null;
     await nextTick();
     await playAt(0, pendingStart.value ?? undefined);
   } catch (error) {
@@ -154,6 +170,15 @@ async function playAt(index: number, startSeconds?: number): Promise<void> {
     await audio.play();
   } catch {
     // Autoplay can be blocked until the user interacts with the page.
+  }
+}
+
+async function loadChapters(id: string): Promise<void> {
+  try {
+    const response = await episodesApi.getChapters(id);
+    chapters.value = response.chapters ?? [];
+  } catch {
+    chapters.value = [];
   }
 }
 
@@ -212,11 +237,53 @@ function handleEnded(): void {
   playNext();
 }
 
+function handleTimeUpdate(): void {
+  const audio = audioRef.value;
+  if (!audio) {
+    return;
+  }
+  currentTime.value = audio.currentTime;
+  if (!autoSkipEnabled.value) {
+    return;
+  }
+  const segment = currentSponsorSegment.value;
+  if (!segment) {
+    lastAutoSkipStart.value = null;
+    return;
+  }
+  if (lastAutoSkipStart.value === segment.start) {
+    return;
+  }
+  lastAutoSkipStart.value = segment.start;
+  void seekTo(segment.end);
+}
+
+function skipSponsor(): void {
+  const segment = currentSponsorSegment.value;
+  if (!segment) {
+    return;
+  }
+  void seekTo(segment.end);
+}
+
 watch(playbackRate, (rate) => {
   if (audioRef.value) {
     audioRef.value.playbackRate = rate;
   }
 });
+
+watch(
+  () => activeItem.value?.ID,
+  (id) => {
+    lastAutoSkipStart.value = null;
+    if (id) {
+      void loadChapters(id);
+    } else {
+      chapters.value = [];
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => route.query,
@@ -266,26 +333,34 @@ onMounted(loadItems);
               {{ activeItem.Summary || "No summary available." }}
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <UiButton variant="outline" size="sm" @click="playPrevious" :disabled="activeIndex === 0">
-              Prev
-            </UiButton>
-            <UiButton variant="primary" size="sm" @click="togglePlay">
-              {{ isPlaying ? "Pause" : "Play" }}
-            </UiButton>
-            <UiButton
-              variant="outline"
-              size="sm"
-              @click="playNext"
-              :disabled="activeIndex >= items.length - 1"
-            >
-              Next
-            </UiButton>
-            <label class="flex items-center gap-2 text-sm text-slate-600">
-              Speed
-              <UiSelect
-                :model-value="playbackRate"
-                input-class="min-h-9 w-auto bg-white px-2 py-1 text-sm"
+        <div class="flex flex-wrap items-center gap-2">
+          <UiButton variant="outline" size="sm" @click="playPrevious" :disabled="activeIndex === 0">
+            Prev
+          </UiButton>
+          <UiButton variant="primary" size="sm" @click="togglePlay">
+            {{ isPlaying ? "Pause" : "Play" }}
+          </UiButton>
+          <UiButton
+            variant="outline"
+            size="sm"
+            @click="playNext"
+            :disabled="activeIndex >= items.length - 1"
+          >
+            Next
+          </UiButton>
+          <UiButton
+            v-if="currentSponsorSegment"
+            variant="outline"
+            size="sm"
+            @click="skipSponsor"
+          >
+            Skip sponsor
+          </UiButton>
+          <label class="flex items-center gap-2 text-sm text-slate-600">
+            Speed
+            <UiSelect
+              :model-value="playbackRate"
+              input-class="min-h-9 w-auto bg-white px-2 py-1 text-sm"
                 @update:model-value="playbackRate = Number($event)"
               >
                 <option v-for="speed in speedOptions" :key="speed" :value="speed">
@@ -302,6 +377,7 @@ onMounted(loadItems);
           controls
           :src="currentSource"
           @ended="handleEnded"
+          @timeupdate="handleTimeUpdate"
           @play="isPlaying = true"
           @pause="isPlaying = false"
         />

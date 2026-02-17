@@ -20,4 +20,10 @@ export const podcastsApi = {
   setRetentionKeepAll(id: string, keepAll: boolean): Promise<void> {
     return httpClient.patch<void, { keepAll: boolean }>(`/podcasts/${id}/retention`, { keepAll });
   },
+  setAutoSkipSponsorChapters(id: string, enabled: boolean): Promise<void> {
+    return httpClient.patch<void, { autoSkipSponsorChapters: boolean }>(
+      `/podcasts/${id}/sponsor-skip`,
+      { autoSkipSponsorChapters: enabled },
+    );
+  },
 };

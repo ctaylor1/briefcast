@@ -50,6 +50,14 @@ var migrations = []localMigration{
 		Name:  "2026_02_14_01_07_BackfillPodcastRetentionKeepAll",
 		Query: "update podcasts set retention_keep_all = false where retention_keep_all is null",
 	},
+	{
+		Name:  "2026_02_17_01_00_AddAutoSkipSponsorChapters",
+		Query: "alter table podcasts add column if not exists auto_skip_sponsor_chapters boolean default false",
+	},
+	{
+		Name:  "2026_02_17_01_01_BackfillAutoSkipSponsorChapters",
+		Query: "update podcasts set auto_skip_sponsor_chapters = false where auto_skip_sponsor_chapters is null",
+	},
 }
 
 func RunMigrations() {
