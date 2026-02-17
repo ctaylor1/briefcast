@@ -33,6 +33,9 @@ export function buildSponsorSegments(chapters: Chapter[], duration?: number): Sp
   const segments: SponsorSegment[] = [];
   for (let i = 0; i < sorted.length; i += 1) {
     const chapter = sorted[i];
+    if (!chapter) {
+      continue;
+    }
     if (!isSponsorChapter(chapter.title)) {
       continue;
     }

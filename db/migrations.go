@@ -2,6 +2,8 @@ package db
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/ctaylor1/briefcast/internal/logging"
@@ -60,6 +62,8 @@ var migrations = []localMigration{
 	},
 }
 
+var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
+
 func RunMigrations() {
 	for _, mig := range migrations {
 		ExecuteAndSaveMigration(mig.Name, mig.Query)
@@ -70,14 +74,36 @@ func ExecuteAndSaveMigration(name string, query string) error {
 	result := DB.Where("name=?", name).First(&migration)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		logging.Sugar().Infow("running database migration", "name", name)
-		result = DB.Debug().Exec(query)
-		if result.Error == nil {
+		execErr := executeMigrationQuery(name, query)
+		if execErr == nil {
 			DB.Save(&Migration{
 				Date: time.Now(),
 				Name: name,
 			})
 		}
-		return result.Error
+		return execErr
 	}
 	return nil
+}
+
+func executeMigrationQuery(name string, query string) error {
+	if CurrentDriver() == DriverSQLite {
+		if table, column, ok := parseAddColumnIfNotExists(query); ok {
+			if DB.Migrator().HasColumn(table, column) {
+				logging.Sugar().Infow("migration skipped; column exists", "name", name, "table", table, "column", column)
+				return nil
+			}
+			query = strings.Replace(query, "add column if not exists", "add column", 1)
+		}
+	}
+	result := DB.Debug().Exec(query)
+	return result.Error
+}
+
+func parseAddColumnIfNotExists(query string) (string, string, bool) {
+	matches := addColumnIfNotExistsRe.FindStringSubmatch(query)
+	if len(matches) < 3 {
+		return "", "", false
+	}
+	return matches[1], matches[2], true
 }
