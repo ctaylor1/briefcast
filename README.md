@@ -1,31 +1,104 @@
 # Briefcast
-Podcast downloader and manager with a modern Vue 3 app.
 
-## What is in this repo
+Podcast downloader and library manager with a modern web UI.
 
-- Go backend (`gin` + `gorm`) with REST endpoints
-- Modern Vue 3 + Vite + TypeScript + Tailwind app served at `/app`
-- SQLite/Postgres database support via `DATABASE_URL`
-- Background jobs for feed refresh, downloads, image sync, backups, and maintenance
+- **Backend:** Go (`gin` + `gorm`) REST API + background workers
+- **Frontend:** Vue 3 + Vite + TypeScript + Tailwind (served at `/app`)
+- **Database:** SQLite (default) or Postgres via `DATABASE_URL`
+- **Automation:** scheduled refresh, downloads, image sync, backups, and maintenance
+- **Optional:** WhisperX transcription pipeline (external deps)
+
+---
+
+## Table of contents
+
+- [Briefcast](#briefcast)
+  - [Table of contents](#table-of-contents)
+  - [Features](#features)
+  - [Repo layout](#repo-layout)
+  - [Quick start (local)](#quick-start-local)
+    - [Prerequisites](#prerequisites)
+    - [1) Install dependencies](#1-install-dependencies)
+    - [2) Configure environment](#2-configure-environment)
+    - [3) Build the frontend (recommended)](#3-build-the-frontend-recommended)
+    - [4) Run the backend](#4-run-the-backend)
+    - [Open the UI](#open-the-ui)
+  - [Docker](#docker)
+    - [docker compose (recommended)](#docker-compose-recommended)
+    - [Run the published image](#run-the-published-image)
+    - [Storage (containers)](#storage-containers)
+  - [Configuration](#configuration)
+    - [Core runtime](#core-runtime)
+    - [Database](#database)
+    - [Networking \& concurrency](#networking--concurrency)
+    - [Logging](#logging)
+    - [Search providers](#search-providers)
+    - [Python helpers](#python-helpers)
+    - [WhisperX transcription (optional)](#whisperx-transcription-optional)
+  - [Database URL examples](#database-url-examples)
+  - [Scheduled jobs](#scheduled-jobs)
+  - [Frontend development](#frontend-development)
+  - [Testing](#testing)
+  - [Linting / formatting](#linting--formatting)
+  - [Regression testing](#regression-testing)
+  - [Python tooling](#python-tooling)
+  - [Release basics](#release-basics)
+  - [Reset and share on GitHub](#reset-and-share-on-github)
+  - [Migration note (rename to Briefcast)](#migration-note-rename-to-briefcast)
+
+---
+
+## Features
+
+- Subscribe to podcast feeds and keep episodes up-to-date
+- Download episode media and manage a local library
+- Sync episode/podcast artwork and track file sizes
+- Built-in backups and periodic maintenance jobs
+- Optional WhisperX transcription workflow
+
+---
+
+## Repo layout
+
+- `main.go` / Go packages: backend API + scheduler/workers
+- `frontend/`: Vue 3 app (build output served by backend at `/app`)
+- `scripts/`: Python helper scripts used by the backend
+- `.github/`: CI workflows (tests, linting, secret scan, etc.)
+
+---
 
 ## Quick start (local)
 
-Prerequisites:
+### Prerequisites
 
-- Go `1.26+`
-- Node `24+` (for modern frontend build/dev)
-- Python `3.10+` with `feedparser` and `mutagen` (`pip install feedparser mutagen`)
-- `uv` (`https://docs.astral.sh/uv/`) for Python project tooling
-- Optional: WhisperX transcription requires `whisperx`, `torch`, and `pyannote` (see WhisperX env vars below)
+- Go **1.26+**
+- Node **24+**
+- Python **3.10+** with:
 
-1. Install deps:
+  ```bash
+  pip install feedparser mutagen
+  ```
+
+- `uv` (Python tooling): https://docs.astral.sh/uv/
+
+> WhisperX transcription is optional and has additional dependencies (see below).
+
+### 1) Install dependencies
 
 ```bash
 go mod download
 npm --prefix frontend install
 ```
 
-2. Set environment variables (or edit `.env`):
+If you plan to run Python checks locally:
+
+```bash
+uv sync --group dev
+```
+
+### 2) Configure environment
+
+Create a `.env` (or export vars in your shell):
 
 ```bash
 CONFIG=.
@@ -34,161 +107,188 @@ CHECK_FREQUENCY=10
 PASSWORD=
 ```
 
-3. (Optional) build modern frontend:
+Recommended (explicit DB path):
+
+```bash
+DATABASE_URL=sqlite:///config/briefcast.db
+```
+
+### 3) Build the frontend (recommended)
+
+The modern UI is served from `frontend/dist`. Build it once:
 
 ```bash
 npm --prefix frontend run build
 ```
 
-4. Run backend:
+### 4) Run the backend
 
 ```bash
 go run ./main.go
 ```
 
-Available UI:
+### Open the UI
 
-- Modern UI: `http://localhost:8080/app` (requires `frontend/dist` build output). The root path `/` redirects to `/app`.
+- Modern UI: `http://localhost:8080/app`
+- `/` redirects to `/app`
 
-If `PASSWORD` is set, HTTP basic auth is enabled with username `briefcast`.
+**Basic auth:** if `PASSWORD` is set, HTTP basic auth is enabled with:
 
-## Install
+- username: `briefcast`
+- password: value of `PASSWORD`
 
-```bash
-go mod download
-npm --prefix frontend install
-uv sync --group dev
-```
-
-## Run
-
-```bash
-go run ./main.go
-```
-
-## Test
-
-```bash
-go test ./...
-npm --prefix frontend run test
-uv run pytest
-```
-
-## Lint / Format
-
-```bash
-uv run ruff check .
-uv run ruff format --check .
-```
-
-Fix formatting locally:
-
-```bash
-uv run ruff format .
-```
-
-## Type Check
-
-```bash
-uv run mypy src
-```
+---
 
 ## Docker
 
-Use `docker-compose.yml`:
+### docker compose (recommended)
 
 ```bash
 docker compose up -d
 ```
 
-The default service uses SQLite. A Postgres service is included under profile `postgres`.
+- Default service uses **SQLite**
+- A **Postgres** service is available under the `postgres` profile
 
-## Environment variables
+### Run the published image
 
-Core runtime:
+```bash
+docker pull ghcr.io/ctaylor1/briefcast:latest
 
-- `CONFIG`: config directory (default used by app logic when not provided is `.`, but set this explicitly in real deployments)
+docker run -d \
+  --name briefcast \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v briefcast_config:/config \
+  -v briefcast_data:/assets \
+  -e DATABASE_URL=sqlite:///config/briefcast.db \
+  ghcr.io/ctaylor1/briefcast:latest
+```
+
+### Storage (containers)
+
+| Path       | Required | Purpose                                  | Sizing guidance |
+|-----------|----------|-------------------------------------------|-----------------|
+| `/config` | ✅       | SQLite DB, app config, backups, logs      | start 5–20 GB   |
+| `/assets` | ✅       | downloaded media + episode/podcast images | often 100+ GB   |
+
+Recommendations:
+
+- Back up at least `/config`.
+- Back up `/assets` if you cannot easily re-download the media.
+- Prefer **bind mounts** in production if you want easy host access:
+
+```bash
+docker run -d \
+  --name briefcast \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v /srv/briefcast/config:/config \
+  -v /srv/briefcast/assets:/assets \
+  -e DATABASE_URL=sqlite:///config/briefcast.db \
+  ghcr.io/ctaylor1/briefcast:latest
+```
+
+---
+
+## Configuration
+
+Most deployments only need: `CONFIG`, `DATA`, `CHECK_FREQUENCY`, `DATABASE_URL`, optional `PASSWORD`.
+
+### Core runtime
+
+- `CONFIG`: config directory
+  - default behavior may fall back to `.`, but set explicitly in real deployments
 - `DATA`: media/assets directory
-- `CHECK_FREQUENCY`: cron base interval in minutes (defaults to `30` if invalid)
-- `PASSWORD`: optional basic auth password (username is `briefcast`)
-- `GIN_MODE`: Gin mode (commonly `release`)
-- `PUID`, `PGID`: optional ownership mapping for downloaded files/folders
+- `CHECK_FREQUENCY`: base interval in minutes (defaults to `30` if invalid)
+- `PASSWORD`: enables HTTP basic auth (username `briefcast`)
+- `GIN_MODE`: set `release` for production
+- `PUID`, `PGID`: optional ownership mapping for created files/folders
 
-Database:
+### Database
 
-- `DATABASE_URL`: connection string/path (recommended)
+- `DATABASE_URL`: connection string/path (**recommended**)
 - `DB_DRIVER`: optional override (`sqlite` or `postgres`)
 - `DATABASE_DRIVER`: alias for `DB_DRIVER`
 - `DB_MAX_IDLE_CONNS`: default `10`
 - `DB_MAX_OPEN_CONNS`: default `25`
 - `DB_CONN_MAX_LIFETIME_MINUTES`: default `0` (disabled)
 
-Networking/concurrency:
+### Networking & concurrency
 
-- `PER_HOST_MAX_CONCURRENCY`: per-host in-flight outbound request cap, default `2`
-- `PER_HOST_RATE_LIMIT_RPS`: per-host request pacing cap, default `2.0` (`0` disables pacing)
-- `HTTP_TIMEOUT_SECONDS`: outbound HTTP request timeout cap used by download/feed/image requests (default `900`; set `0` to disable)
+- `PER_HOST_MAX_CONCURRENCY`: per-host in-flight outbound request cap (default `2`)
+- `PER_HOST_RATE_LIMIT_RPS`: per-host pacing cap (default `2.0`; `0` disables pacing)
+- `HTTP_TIMEOUT_SECONDS`: outbound HTTP timeout for feeds/downloads/images (default `900`; `0` disables)
 
-Logging:
+### Logging
 
 - `LOG_LEVEL`: `debug|info|warn|error` (default `info`)
-- `LOG_FORMAT`: `json|text` (default `json` for Go services, `text` default in Python helper unless overridden)
-- `LOG_OUTPUT`: comma-separated outputs. Supports `stdout`, `stderr`, or a file path (for example `LOG_OUTPUT=stdout,/var/log/briefcast/app.log`)
-- `LOG_FILE_MAX_SIZE_MB`: max size per log file (default `50`)
-- `LOG_FILE_MAX_BACKUPS`: number of rotated files to keep (default `7`)
-- `LOG_FILE_MAX_AGE_DAYS`: max age of rotated logs (default `14`)
-- `LOG_FILE_COMPRESS`: `true|false` to gzip rotated logs (default `true`)
-- Incoming `X-Request-ID` is propagated; otherwise generated
-- Background jobs include `job_name` and `job_id` in logs
-- Python helper scripts also honor `LOG_LEVEL`/`LOG_FORMAT`, emit logs to `stderr`, and redact common secret fields (tokens/passwords/api keys)
+- `LOG_FORMAT`: `json|text` (default `json` for Go services; Python helper defaults to `text`)
+- `LOG_OUTPUT`: comma-separated outputs: `stdout`, `stderr`, or a file path  
+  e.g. `LOG_OUTPUT=stdout,/var/log/briefcast/app.log`
+- `LOG_FILE_MAX_SIZE_MB`: default `50`
+- `LOG_FILE_MAX_BACKUPS`: default `7`
+- `LOG_FILE_MAX_AGE_DAYS`: default `14`
+- `LOG_FILE_COMPRESS`: default `true`
 
-Search providers:
+Notes:
 
-- `PODCASTINDEX_KEY`: API key for PodcastIndex search (optional)
-- `PODCASTINDEX_SECRET`: API secret for PodcastIndex search (optional)
+- Incoming `X-Request-ID` is propagated; otherwise generated.
+- Background jobs include `job_name` and `job_id` in logs.
+- Python helpers also honor `LOG_LEVEL` / `LOG_FORMAT`, log to `stderr`, and redact common secret fields.
+
+### Search providers
+
+- `PODCASTINDEX_KEY`: PodcastIndex API key (optional)
+- `PODCASTINDEX_SECRET`: PodcastIndex API secret (optional)
+
+### Python helpers
 
 Feed parsing:
 
-- `FEEDPARSER_PYTHON`: path to Python interpreter (defaults to `python3`/`python`)
-- `FEEDPARSER_SCRIPT`: path to `feedparser_parse.py` (default `scripts/feedparser_parse.py`)
-- `FEEDPARSER_TIMEOUT_SECONDS`: timeout for feedparser subprocess execution (default `30`; set `0` to disable)
+- `FEEDPARSER_PYTHON`: interpreter path (default `python3`/`python`)
+- `FEEDPARSER_SCRIPT`: default `scripts/feedparser_parse.py`
+- `FEEDPARSER_TIMEOUT_SECONDS`: default `30` (`0` disables)
 
 ID3 extraction:
 
-- `MUTAGEN_PYTHON`: path to Python interpreter (defaults to `MUTAGEN_PYTHON` > `FEEDPARSER_PYTHON` > `python3`/`python`)
-- `MUTAGEN_SCRIPT`: path to `mutagen_id3_extract.py` (default `scripts/mutagen_id3_extract.py`)
-- `MUTAGEN_TIMEOUT_SECONDS`: timeout for mutagen subprocess execution (default `20`; set `0` to disable)
+- `MUTAGEN_PYTHON`: interpreter path (falls back to `FEEDPARSER_PYTHON`)
+- `MUTAGEN_SCRIPT`: default `scripts/mutagen_id3_extract.py`
+- `MUTAGEN_TIMEOUT_SECONDS`: default `20` (`0` disables)
 
-WhisperX transcription (optional):
+### WhisperX transcription (optional)
 
-- Requires installing WhisperX + dependencies (not bundled in the default Docker image).
-- `WHISPERX_ENABLED`: `true|false` to enable transcription (default `false`)
-- `WHISPERX_PYTHON`: path to Python interpreter (defaults to `WHISPERX_PYTHON` > `FEEDPARSER_PYTHON` > `python3`/`python`)
-- `WHISPERX_SCRIPT`: path to `whisperx_transcribe.py` (default `scripts/whisperx_transcribe.py`)
-- `WHISPERX_TIMEOUT_SECONDS`: timeout for WhisperX subprocess execution (default `7200`; set `0` to disable)
-- `WHISPERX_MODEL`: WhisperX model name (default `medium.en`)
-- `WHISPERX_LANGUAGE`: language code (default `en`)
+**Not bundled** in the default Docker image. You must install WhisperX + dependencies yourself.
+
+- `WHISPERX_ENABLED`: `true|false` (default `false`)
+- `WHISPERX_PYTHON`: interpreter path (falls back to `FEEDPARSER_PYTHON`)
+- `WHISPERX_SCRIPT`: default `scripts/whisperx_transcribe.py`
+- `WHISPERX_TIMEOUT_SECONDS`: default `7200` (`0` disables)
+- `WHISPERX_MODEL`: default `medium.en`
+- `WHISPERX_LANGUAGE`: default `en`
 - `WHISPERX_DEVICE`: `auto|cuda|cpu` (default `auto`)
 - `WHISPERX_COMPUTE_TYPE`: `auto|float16|int8|float32` (default `auto`)
-- `WHISPERX_BATCH_SIZE`: override batch size (default auto: `16` on CUDA, `4` on CPU)
-- `WHISPERX_BEAM_SIZE`: beam search size (default `5`)
-- `WHISPERX_PATIENCE`: beam search patience (default `1`)
-- `WHISPERX_CONDITION_ON_PREVIOUS_TEXT`: `true|false` (default `true`)
-- `WHISPERX_INITIAL_PROMPT`: initial prompt string
-- `WHISPERX_VAD_CHUNK_SIZE`: VAD chunk size in seconds (default `45`)
-- `WHISPERX_VAD_ONSET`: VAD onset threshold (default `0.50`)
-- `WHISPERX_VAD_OFFSET`: VAD offset threshold (default `0.50`)
-- `WHISPERX_VAD_METHOD`: VAD method (default `pyannote`)
-- `WHISPERX_ALIGN`: `true|false` word-level alignment (default `true`)
-- `WHISPERX_DIARIZATION`: `true|false` speaker diarization (default `true`)
-- `WHISPERX_DIARIZATION_MODEL`: diarization model (default `pyannote/speaker-diarization-3.1`)
-- `WHISPERX_MIN_SPEAKERS`: minimum speakers (default `2`)
-- `WHISPERX_MAX_SPEAKERS`: maximum speakers (default `2`)
-- `WHISPERX_HF_TOKEN`: Hugging Face token for diarization (required for pyannote models)
-- `WHISPERX_MAX_CONCURRENCY`: worker count (default `1`)
-- `WHISPERX_MAX_ITEMS`: max items per run (`0` = no limit)
-- `WHISPERX_RETRY_FAILED`: retry items marked `failed` (default `false`)
-- `WHISPERX_CHECK_FREQUENCY`: minutes between transcription runs (default: `CHECK_FREQUENCY`)
+- `WHISPERX_BATCH_SIZE`: auto (`16` CUDA, `4` CPU)
+- `WHISPERX_BEAM_SIZE`: default `5`
+- `WHISPERX_PATIENCE`: default `1`
+- `WHISPERX_CONDITION_ON_PREVIOUS_TEXT`: default `true`
+- `WHISPERX_INITIAL_PROMPT`: optional string
+- `WHISPERX_VAD_CHUNK_SIZE`: default `45`
+- `WHISPERX_VAD_ONSET`: default `0.50`
+- `WHISPERX_VAD_OFFSET`: default `0.50`
+- `WHISPERX_VAD_METHOD`: default `pyannote`
+- `WHISPERX_ALIGN`: default `true`
+- `WHISPERX_DIARIZATION`: default `true`
+- `WHISPERX_DIARIZATION_MODEL`: default `pyannote/speaker-diarization-3.1`
+- `WHISPERX_MIN_SPEAKERS`: default `2`
+- `WHISPERX_MAX_SPEAKERS`: default `2`
+- `WHISPERX_HF_TOKEN`: Hugging Face token (required for pyannote diarization)
+- `WHISPERX_MAX_CONCURRENCY`: default `1`
+- `WHISPERX_MAX_ITEMS`: default `0` (no limit)
+- `WHISPERX_RETRY_FAILED`: default `false`
+- `WHISPERX_CHECK_FREQUENCY`: defaults to `CHECK_FREQUENCY`
+
+---
 
 ## Database URL examples
 
@@ -205,16 +305,20 @@ DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disa
 DB_DRIVER=postgres
 ```
 
+---
+
 ## Scheduled jobs
 
-Based on `CHECK_FREQUENCY`:
+Based on `CHECK_FREQUENCY` (N minutes):
 
-- `RefreshEpisodes`: every `N` minutes
-- `CheckMissingFiles`: every `N` minutes
-- `DownloadMissingImages`: every `N` minutes
-- `UnlockMissedJobs`: every `2N` minutes
-- `UpdateAllFileSizes`: every `3N` minutes
+- `RefreshEpisodes`: every `N`
+- `CheckMissingFiles`: every `N`
+- `DownloadMissingImages`: every `N`
+- `UnlockMissedJobs`: every `2N`
+- `UpdateAllFileSizes`: every `3N`
 - `CreateBackup`: every `48h`
+
+---
 
 ## Frontend development
 
@@ -229,6 +333,39 @@ Build for backend serving:
 ```bash
 npm --prefix frontend run build
 ```
+
+---
+
+## Testing
+
+```bash
+go test ./...
+npm --prefix frontend run test
+uv run pytest
+```
+
+---
+
+## Linting / formatting
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
+
+Fix formatting:
+
+```bash
+uv run ruff format .
+```
+
+Type check:
+
+```bash
+uv run mypy src
+```
+
+---
 
 ## Regression testing
 
@@ -256,15 +393,17 @@ Real WhisperX regression:
 BRIEFCAST_WHISPERX_REAL=1 WHISPERX_TEST_AUDIO=/path/to/audio.mp3 go test ./service -run TestWhisperXRealTranscription
 ```
 
-On Windows, you can also run:
+Windows helper:
 
 ```powershell
 ./scripts/regression.ps1
 ```
 
-## Python quality tooling
+---
 
-The repository includes a Python tooling spine using `uv`, project-local `.venv`, and a committed `uv.lock`.
+## Python tooling
+
+This repo uses `uv`, a project-local `.venv`, and a committed `uv.lock`.
 
 Setup:
 
@@ -272,7 +411,7 @@ Setup:
 uv sync --group dev
 ```
 
-CI parity setup (enforced lockfile):
+CI-parity (enforce lockfile):
 
 ```bash
 uv sync --locked --group dev
@@ -290,33 +429,37 @@ uv run pip-audit
 
 Secret hygiene:
 
-- Do not commit real credentials; keep secrets in local `.env` or CI secret stores.
-- Automated secret scanning runs in CI (`.github/workflows/secret-scan.yml`).
+- Keep secrets in local `.env` or CI secret stores.
+- CI secret scanning runs in `.github/workflows/secret-scan.yml`.
+
+---
 
 ## Release basics
 
-- Current package version is defined in `pyproject.toml`.
+- Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
 
-## Reset And Share On GitHub
+---
 
-Use this process when you want a clean, reproducible repository state before publishing.
+## Reset and share on GitHub
 
-1. Verify current branch and changes:
+Use this to create a clean, reproducible state before publishing.
+
+1) Verify branch and changes:
 
 ```bash
 git branch --show-current
 git status --short
 ```
 
-2. Remove local-only generated files (ignored files only):
+2) Remove ignored generated files:
 
 ```bash
 git clean -fdX
 ```
 
-3. Recreate dev environment from lockfile and rerun quality checks:
+3) Recreate env + run checks:
 
 ```bash
 uv sync --locked --group dev
@@ -329,20 +472,20 @@ go test ./...
 npm --prefix frontend run test
 ```
 
-4. Stage and commit:
+4) Commit:
 
 ```bash
 git add .
 git commit -m "release: ship-ready"
 ```
 
-5. Tag release (recommended):
+5) Tag (recommended):
 
 ```bash
 git tag -a v0.1.0 -m "Briefcast v0.1.0"
 ```
 
-6. Push to GitHub:
+6) Push:
 
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
@@ -350,13 +493,13 @@ git push -u origin <branch-name>
 git push origin v0.1.0
 ```
 
-PowerShell variant for step 2 (same behavior):
+PowerShell variant for step 2:
 
 ```powershell
 git clean -fdX
 ```
 
-If you intentionally want to discard all local uncommitted edits (destructive), run this only after backing up work:
+**Destructive reset (discard all uncommitted edits):** only after backing up work:
 
 ```bash
 git restore --staged .
@@ -364,7 +507,10 @@ git restore .
 git clean -fd
 ```
 
-## Notes after renaming to Briefcast
+---
 
-Default SQLite filename is now `briefcast.db`.  
-If you are migrating from an older deployment that used a different SQLite filename, set `DATABASE_URL` explicitly to that existing file path.
+## Migration note (rename to Briefcast)
+
+Default SQLite filename is now `briefcast.db`.
+
+If you are migrating from an older deployment that used a different SQLite filename, set `DATABASE_URL` explicitly to your existing DB file path.
