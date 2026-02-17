@@ -251,3 +251,49 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 		t.Fatalf("expected normal podcast newest episode to remain")
 	}
 }
+
+func TestRetentionDeleteAfterDaysUsesInjectedClock(t *testing.T) {
+	tempDir := setupRetentionTestDB(t)
+	dataDir := filepath.Join(tempDir, "assets")
+
+	originalNow := retentionNow
+	fixedNow := time.Date(2026, time.February, 17, 12, 0, 0, 0, time.UTC)
+	retentionNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() {
+		retentionNow = originalNow
+	})
+
+	podcast := createPodcast(t, "deterministic-cutoff", false)
+	cutoffBoundary := fixedNow.Add(-10 * 24 * time.Hour)
+	exactlyAtCutoff := createDownloadedItem(t, podcast, "episode-cutoff", cutoffBoundary, true, dataDir)
+	olderThanCutoff := createDownloadedItem(t, podcast, "episode-old", cutoffBoundary.Add(-time.Minute), true, dataDir)
+
+	setting := db.GetOrCreateSetting()
+	setting.RetentionKeepAll = false
+	setting.RetentionKeepLatest = 0
+	setting.RetentionDeleteAfterDays = 10
+	setting.RetentionDeleteOnlyPlayed = false
+	if err := db.UpdateSettings(setting); err != nil {
+		t.Fatalf("update settings failed: %v", err)
+	}
+
+	if err := ApplyRetentionPolicies(); err != nil {
+		t.Fatalf("apply retention failed: %v", err)
+	}
+
+	var refreshedBoundary db.PodcastItem
+	if err := db.GetPodcastItemById(exactlyAtCutoff.ID, &refreshedBoundary); err != nil {
+		t.Fatalf("reload boundary item failed: %v", err)
+	}
+	if refreshedBoundary.DownloadStatus != db.Downloaded {
+		t.Fatalf("expected item at cutoff boundary to remain downloaded")
+	}
+
+	var refreshedOld db.PodcastItem
+	if err := db.GetPodcastItemById(olderThanCutoff.ID, &refreshedOld); err != nil {
+		t.Fatalf("reload old item failed: %v", err)
+	}
+	if refreshedOld.DownloadStatus != db.Deleted {
+		t.Fatalf("expected older item to be deleted")
+	}
+}

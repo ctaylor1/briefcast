@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,27 @@ func TestParseFeedWithFeedparserInvalidOutput(t *testing.T) {
 
 	if _, err := ParseFeedWithFeedparser([]byte("<rss/>")); err == nil {
 		t.Fatalf("expected decode error")
+	}
+}
+
+func TestParseFeedWithFeedparserTimeout(t *testing.T) {
+	pythonPath := requireWorkingPython(t)
+
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "feedparser_slow.py")
+	body := "#!/usr/bin/env python3\nimport json\nimport time\ntime.sleep(2)\nprint(json.dumps({'feed': {}, 'entries': []}))\n"
+	if err := os.WriteFile(scriptPath, []byte(body), 0o755); err != nil {
+		t.Fatalf("failed to write slow script: %v", err)
+	}
+
+	t.Setenv(feedparserPythonEnv, pythonPath)
+	t.Setenv(feedparserScriptEnv, scriptPath)
+	t.Setenv(feedparserTimeoutEnv, "1")
+
+	if _, err := ParseFeedWithFeedparser([]byte("<rss/>")); err == nil {
+		t.Fatalf("expected timeout error")
+	} else if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected timeout error text, got %v", err)
 	}
 }
 

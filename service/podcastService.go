@@ -154,7 +154,7 @@ func ExportOmpl(useBriefcastLink bool, baseUrl string) ([]byte, error) {
 	toExport := model.OpmlExportModel{
 		Head: model.OpmlExportHead{
 			Title:       "Briefcast Feed Export",
-			DateCreated: time.Now(),
+			DateCreated: time.Now().UTC(),
 		},
 		Body: model.OpmlBody{
 			Outline: outlines,
@@ -495,7 +495,7 @@ func SetPodcastItemBookmarkStatus(id string, bookmark bool) error {
 		return err
 	}
 	if bookmark {
-		podcastItem.BookmarkDate = time.Now()
+		podcastItem.BookmarkDate = time.Now().UTC()
 	} else {
 		podcastItem.BookmarkDate = time.Time{}
 	}
@@ -516,7 +516,7 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 		podcastItem.FileSize = size
 	}
 
-	podcastItem.DownloadDate = time.Now()
+	podcastItem.DownloadDate = time.Now().UTC()
 	podcastItem.DownloadPath = location
 	podcastItem.DownloadStatus = db.Downloaded
 	if podcastItem.FileSize > 0 {

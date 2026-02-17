@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 import json
+import logging
 import os
 import sys
-import traceback
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from briefcast_tools import log_extra, setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def default_config():
@@ -43,6 +53,10 @@ def merge_config(base, override):
     return base
 
 
+def emit_json(payload):
+    json.dump(payload, sys.stdout, ensure_ascii=False)
+
+
 def load_config():
     raw = os.environ.get("WHISPERX_CONFIG_JSON", "").strip()
     base = default_config()
@@ -51,6 +65,7 @@ def load_config():
     try:
         override = json.loads(raw)
     except json.JSONDecodeError:
+        logger.warning("invalid whisperx config json; using defaults")
         return base
     if isinstance(override, dict):
         return merge_config(base, override)
@@ -75,6 +90,10 @@ def choose_batch_size(config, device):
     try:
         configured = int(config.get("batch_size", 0))
     except (TypeError, ValueError):
+        logger.warning(
+            "invalid batch size in whisperx config; using default",
+            extra=log_extra({"batch_size": config.get("batch_size")}),
+        )
         configured = 0
     if configured > 0:
         return configured
@@ -82,20 +101,25 @@ def choose_batch_size(config, device):
 
 
 def main():
+    setup_logging(service_name="briefcast-whisperx")
+
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "missing audio path"}))
+        logger.error("missing audio path argument")
+        emit_json({"error": "missing audio path"})
         return 2
 
     audio_file = sys.argv[1]
     if not os.path.exists(audio_file):
-        print(json.dumps({"error": "audio file not found"}))
+        logger.error("audio file not found", extra=log_extra({"audio_file": audio_file}))
+        emit_json({"error": "audio file not found"})
         return 2
 
     try:
         import torch
         import whisperx
-    except Exception as exc:
-        print(json.dumps({"error": "missing whisperx dependencies", "detail": str(exc)}))
+    except Exception:
+        logger.exception("missing whisperx dependencies")
+        emit_json({"error": "missing whisperx dependencies"})
         return 2
 
     config = load_config()
@@ -115,6 +139,22 @@ def main():
     max_speakers = config.get("max_speakers", 2)
 
     hf_token = os.environ.get("WHISPERX_HF_TOKEN", "").strip()
+    logger.info(
+        "starting whisperx transcription",
+        extra=log_extra(
+            {
+                "audio_file": audio_file,
+                "model": model_name,
+                "language": language,
+                "device": device,
+                "compute_type": compute_type,
+                "batch_size": batch_size,
+                "align": align,
+                "diarization": diarization,
+                "has_hf_token": bool(hf_token),
+            }
+        ),
+    )
 
     try:
         with redirect_stdout(sys.stderr):
@@ -189,11 +229,22 @@ def main():
                 "torch_version": getattr(torch, "__version__", "unknown"),
             },
         }
-        json.dump(payload, sys.stdout, ensure_ascii=False)
+        emit_json(payload)
+        logger.info(
+            "whisperx transcription complete",
+            extra=log_extra(
+                {
+                    "audio_file": audio_file,
+                    "segment_count": len(result.get("segments", [])),
+                    "diarization_used": diarize_used,
+                    "diarization_error": diarize_error,
+                }
+            ),
+        )
         return 0
     except Exception:
-        traceback.print_exc(file=sys.stderr)
-        print(json.dumps({"error": "whisperx_failed"}))
+        logger.exception("whisperx transcription failed", extra=log_extra({"audio_file": audio_file}))
+        emit_json({"error": "whisperx_failed"})
         return 1
 
 

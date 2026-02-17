@@ -77,7 +77,7 @@ func ExecuteAndSaveMigration(name string, query string) error {
 		execErr := executeMigrationQuery(name, query)
 		if execErr == nil {
 			DB.Save(&Migration{
-				Date: time.Now(),
+				Date: time.Now().UTC(),
 				Name: name,
 			})
 		}

@@ -164,4 +164,17 @@ func TestRunWhisperXWithStubScript(t *testing.T) {
 	if _, err := RunWhisperX(audioPath, cfg); err == nil {
 		t.Fatalf("expected invalid json error")
 	}
+
+	slowScript := filepath.Join(tempDir, "whisper_slow.py")
+	slowBody := "#!/usr/bin/env python3\nimport json\nimport time\ntime.sleep(2)\nprint(json.dumps({'segments': []}))\n"
+	if err := os.WriteFile(slowScript, []byte(slowBody), 0o755); err != nil {
+		t.Fatalf("failed to write slow script: %v", err)
+	}
+	t.Setenv(whisperxTimeoutEnv, "1")
+	cfg.Script = slowScript
+	if _, err := RunWhisperX(audioPath, cfg); err == nil {
+		t.Fatalf("expected timeout error")
+	} else if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected timeout error text, got %v", err)
+	}
 }

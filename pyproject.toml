@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "briefcast-python-tools"
+version = "0.1.0"
+description = "Python utilities and quality tooling for the Briefcast repository."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { file = "LICENSE" }
+authors = [{ name = "Briefcast Maintainers" }]
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/briefcast_tools"]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.18.2",
+  "pip-audit>=2.9.0",
+  "pre-commit>=4.3.0",
+  "pytest>=8.4.2",
+  "ruff>=0.13.2",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests"]
+exclude = [
+  ".git",
+  ".venv",
+  "assets",
+  "backups",
+  "frontend",
+  "scripts",
+  "webassets",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.14"
+files = ["src"]
+strict = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -p no:cacheprovider"

@@ -2,7 +2,9 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,8 +64,10 @@ type whisperxScriptConfig struct {
 
 const (
 	defaultWhisperXScript = "scripts/whisperx_transcribe.py"
+	defaultWhisperXTimeoutSeconds = 7200
 	whisperxPythonEnv     = "WHISPERX_PYTHON"
 	whisperxScriptEnv     = "WHISPERX_SCRIPT"
+	whisperxTimeoutEnv    = "WHISPERX_TIMEOUT_SECONDS"
 	whisperxEnabledEnv    = "WHISPERX_ENABLED"
 	whisperxHFTokenEnv    = "WHISPERX_HF_TOKEN"
 )
@@ -251,7 +255,15 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 		return nil, fmt.Errorf("whisperx config encoding failed: %w", err)
 	}
 
-	cmd := exec.Command(pythonPath, scriptPath, audioPath)
+	timeoutSeconds := getEnvInt(whisperxTimeoutEnv, defaultWhisperXTimeoutSeconds)
+	cmdCtx := context.Background()
+	cancel := func() {}
+	if timeoutSeconds > 0 {
+		cmdCtx, cancel = context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	}
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath, audioPath)
 	cmd.Env = append(os.Environ(), "WHISPERX_CONFIG_JSON="+string(payload))
 	if cfg.HFToken != "" {
 		cmd.Env = append(cmd.Env, whisperxHFTokenEnv+"="+cfg.HFToken)
@@ -263,7 +275,15 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("whisperx failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		stderrText := strings.TrimSpace(stderr.String())
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf(
+				"whisperx timed out after %d seconds: %s",
+				timeoutSeconds,
+				stderrText,
+			)
+		}
+		return nil, fmt.Errorf("whisperx failed: %w: %s", err, stderrText)
 	}
 
 	if !json.Valid(stdout.Bytes()) {

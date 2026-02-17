@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
@@ -12,14 +14,28 @@ type DownloadQueueQuery struct {
 	Limit int `form:"limit" query:"limit"`
 }
 
+const (
+	defaultDownloadQueueLimit = 50
+	maxDownloadQueueLimit     = 200
+)
+
 func GetDownloadQueue(c *gin.Context) {
-	var query DownloadQueueQuery
-	_ = c.ShouldBindQuery(&query)
-	if query.Limit <= 0 {
-		query.Limit = 50
+	// Bound limit to avoid unbounded queue payloads under heavy libraries.
+	limit := defaultDownloadQueueLimit
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be an integer"})
+			return
+		}
+		if parsed <= 0 || parsed > maxDownloadQueueLimit {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200"})
+			return
+		}
+		limit = parsed
 	}
 
-	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading, db.Paused}, query.Limit)
+	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading, db.Paused}, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load download queue."})
 		return

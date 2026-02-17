@@ -8,13 +8,24 @@ import (
 	"github.com/ctaylor1/briefcast/internal/logging"
 )
 
+var retentionNow = func() time.Time {
+	return time.Now().UTC()
+}
+
+// ApplyRetentionPolicies enforces global retention settings with this precedence:
+//  1. per-podcast keep-all override
+//  2. keep-latest rule (if configured)
+//  3. age-based deletion rule (if configured)
+//
+// This ordering keeps behavior deterministic across runs and avoids conflicting
+// deletes when multiple retention knobs are enabled.
 func ApplyRetentionPolicies() error {
 	const jobName = "RetentionCleanup"
 	jobLogger, _ := logging.NewJobSugar(jobName)
-	start := time.Now()
+	start := retentionNow()
 	jobLogger.Infow("job_started")
 	defer func() {
-		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
+		jobLogger.Infow("job_finished", "duration_ms", retentionNow().Sub(start).Milliseconds())
 	}()
 
 	lock := db.GetLock(jobName)
@@ -56,7 +67,7 @@ func ApplyRetentionPolicies() error {
 		itemsByPodcast[item.PodcastID] = append(itemsByPodcast[item.PodcastID], item)
 	}
 
-	now := time.Now()
+	now := retentionNow()
 	keptCount := 0
 	deletedCount := 0
 	skippedCount := 0
@@ -129,10 +140,10 @@ func ApplyRetentionPolicies() error {
 
 func retentionReferenceTime(item db.PodcastItem) time.Time {
 	if !item.PubDate.IsZero() {
-		return item.PubDate
+		return item.PubDate.UTC()
 	}
 	if !item.DownloadDate.IsZero() {
-		return item.DownloadDate
+		return item.DownloadDate.UTC()
 	}
-	return item.CreatedAt
+	return item.CreatedAt.UTC()
 }

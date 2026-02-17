@@ -108,3 +108,33 @@ func TestHostLimiterRatePacing(t *testing.T) {
 		t.Fatalf("expected second pacing gap >= %s, got %s", minExpected, secondGap)
 	}
 }
+
+func TestOutboundRequestLimiterCacheReset(t *testing.T) {
+	resetOutboundRequestLimiterForTests()
+	t.Cleanup(resetOutboundRequestLimiterForTests)
+
+	t.Setenv("PER_HOST_MAX_CONCURRENCY", "2")
+	t.Setenv("PER_HOST_RATE_LIMIT_RPS", "5")
+	first := getOutboundRequestLimiter()
+	if first.maxConcurrency != 2 {
+		t.Fatalf("expected first limiter concurrency 2, got %d", first.maxConcurrency)
+	}
+
+	t.Setenv("PER_HOST_MAX_CONCURRENCY", "7")
+	second := getOutboundRequestLimiter()
+	if second != first {
+		t.Fatalf("expected cached limiter instance without reset")
+	}
+	if second.maxConcurrency != 2 {
+		t.Fatalf("expected cached limiter to retain old config 2, got %d", second.maxConcurrency)
+	}
+
+	resetOutboundRequestLimiterForTests()
+	third := getOutboundRequestLimiter()
+	if third == first {
+		t.Fatalf("expected new limiter instance after reset")
+	}
+	if third.maxConcurrency != 7 {
+		t.Fatalf("expected limiter to pick up new env config 7, got %d", third.maxConcurrency)
+	}
+}

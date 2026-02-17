@@ -171,7 +171,7 @@ func PlayerPage(c *gin.Context) {
 	} else {
 		title = "Playing Latest Episodes"
 		if err := db.GetPaginatedPodcastItems(1, 20, nil, nil, time.Time{}, &items, &totalCount); err != nil {
-			fmt.Println(err.Error())
+			controllerLogger.Warnw("failed to load latest episodes for player page", "error", err)
 		}
 	}
 	setting := c.MustGet("setting").(*db.Setting)
@@ -389,4 +389,3 @@ func AddNewPodcast(c *gin.Context) {
 	}
 
 }
-

@@ -72,9 +72,8 @@ func newLogger() *zap.Logger {
 		level = parsed
 	}
 
-	encoderCfg := zap.NewProductionEncoderConfig()
-	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	encoder := zapcore.NewJSONEncoder(encoderCfg)
+	logFormat := parseLogFormat(os.Getenv("LOG_FORMAT"))
+	encoder := buildEncoder(logFormat)
 
 	outputs := resolveLogOutputs()
 	if len(outputs) == 0 {
@@ -89,6 +88,18 @@ func newLogger() *zap.Logger {
 
 	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
 	return logger.With(zap.String("service", "briefcast"))
+}
+
+func buildEncoder(logFormat string) zapcore.Encoder {
+	if logFormat == "text" {
+		encoderCfg := zap.NewDevelopmentEncoderConfig()
+		encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		return zapcore.NewConsoleEncoder(encoderCfg)
+	}
+
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	return zapcore.NewJSONEncoder(encoderCfg)
 }
 
 func resolveLogOutputs() []zapcore.WriteSyncer {
@@ -168,4 +179,13 @@ func parseLogLevel(input string) (zapcore.Level, bool) {
 		return zapcore.InfoLevel, false
 	}
 	return level, true
+}
+
+func parseLogFormat(input string) string {
+	switch strings.TrimSpace(strings.ToLower(input)) {
+	case "text", "console":
+		return "text"
+	default:
+		return "json"
+	}
 }

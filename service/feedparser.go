@@ -2,12 +2,15 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type FeedParserResult struct {
@@ -20,8 +23,10 @@ type FeedParserResult struct {
 
 const (
 	defaultFeedparserScript = "scripts/feedparser_parse.py"
+	defaultFeedparserTimeoutSeconds = 30
 	feedparserPythonEnv     = "FEEDPARSER_PYTHON"
 	feedparserScriptEnv     = "FEEDPARSER_SCRIPT"
+	feedparserTimeoutEnv    = "FEEDPARSER_TIMEOUT_SECONDS"
 )
 
 func FetchFeedWithFeedparser(url string) (FeedParserResult, []byte, error) {
@@ -50,7 +55,15 @@ func ParseFeedWithFeedparser(body []byte) (FeedParserResult, error) {
 		scriptPath = abs
 	}
 
-	cmd := exec.Command(pythonPath, scriptPath)
+	timeoutSeconds := getEnvInt(feedparserTimeoutEnv, defaultFeedparserTimeoutSeconds)
+	cmdCtx := context.Background()
+	cancel := func() {}
+	if timeoutSeconds > 0 {
+		cmdCtx, cancel = context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	}
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath)
 	cmd.Stdin = bytes.NewReader(body)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -58,7 +71,15 @@ func ParseFeedWithFeedparser(body []byte) (FeedParserResult, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return FeedParserResult{}, fmt.Errorf("feedparser failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		stderrText := strings.TrimSpace(stderr.String())
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			return FeedParserResult{}, fmt.Errorf(
+				"feedparser timed out after %d seconds: %s",
+				timeoutSeconds,
+				stderrText,
+			)
+		}
+		return FeedParserResult{}, fmt.Errorf("feedparser failed: %w: %s", err, stderrText)
 	}
 
 	var result FeedParserResult

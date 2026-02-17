@@ -15,6 +15,7 @@ Prerequisites:
 - Go `1.26+`
 - Node `24+` (for modern frontend build/dev)
 - Python `3.10+` with `feedparser` and `mutagen` (`pip install feedparser mutagen`)
+- `uv` (`https://docs.astral.sh/uv/`) for Python project tooling
 - Optional: WhisperX transcription requires `whisperx`, `torch`, and `pyannote` (see WhisperX env vars below)
 
 1. Install deps:
@@ -51,6 +52,47 @@ Available UI:
 
 If `PASSWORD` is set, HTTP basic auth is enabled with username `briefcast`.
 
+## Install
+
+```bash
+go mod download
+npm --prefix frontend install
+uv sync --group dev
+```
+
+## Run
+
+```bash
+go run ./main.go
+```
+
+## Test
+
+```bash
+go test ./...
+npm --prefix frontend run test
+uv run pytest
+```
+
+## Lint / Format
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
+
+Fix formatting locally:
+
+```bash
+uv run ruff format .
+```
+
+## Type Check
+
+```bash
+uv run mypy src
+```
+
 ## Docker
 
 Use `docker-compose.yml`:
@@ -85,10 +127,12 @@ Networking/concurrency:
 
 - `PER_HOST_MAX_CONCURRENCY`: per-host in-flight outbound request cap, default `2`
 - `PER_HOST_RATE_LIMIT_RPS`: per-host request pacing cap, default `2.0` (`0` disables pacing)
+- `HTTP_TIMEOUT_SECONDS`: outbound HTTP request timeout cap used by download/feed/image requests (default `900`; set `0` to disable)
 
 Logging:
 
 - `LOG_LEVEL`: `debug|info|warn|error` (default `info`)
+- `LOG_FORMAT`: `json|text` (default `json` for Go services, `text` default in Python helper unless overridden)
 - `LOG_OUTPUT`: comma-separated outputs. Supports `stdout`, `stderr`, or a file path (for example `LOG_OUTPUT=stdout,/var/log/briefcast/app.log`)
 - `LOG_FILE_MAX_SIZE_MB`: max size per log file (default `50`)
 - `LOG_FILE_MAX_BACKUPS`: number of rotated files to keep (default `7`)
@@ -96,6 +140,7 @@ Logging:
 - `LOG_FILE_COMPRESS`: `true|false` to gzip rotated logs (default `true`)
 - Incoming `X-Request-ID` is propagated; otherwise generated
 - Background jobs include `job_name` and `job_id` in logs
+- Python helper scripts also honor `LOG_LEVEL`/`LOG_FORMAT`, emit logs to `stderr`, and redact common secret fields (tokens/passwords/api keys)
 
 Search providers:
 
@@ -106,11 +151,13 @@ Feed parsing:
 
 - `FEEDPARSER_PYTHON`: path to Python interpreter (defaults to `python3`/`python`)
 - `FEEDPARSER_SCRIPT`: path to `feedparser_parse.py` (default `scripts/feedparser_parse.py`)
+- `FEEDPARSER_TIMEOUT_SECONDS`: timeout for feedparser subprocess execution (default `30`; set `0` to disable)
 
 ID3 extraction:
 
 - `MUTAGEN_PYTHON`: path to Python interpreter (defaults to `MUTAGEN_PYTHON` > `FEEDPARSER_PYTHON` > `python3`/`python`)
 - `MUTAGEN_SCRIPT`: path to `mutagen_id3_extract.py` (default `scripts/mutagen_id3_extract.py`)
+- `MUTAGEN_TIMEOUT_SECONDS`: timeout for mutagen subprocess execution (default `20`; set `0` to disable)
 
 WhisperX transcription (optional):
 
@@ -118,6 +165,7 @@ WhisperX transcription (optional):
 - `WHISPERX_ENABLED`: `true|false` to enable transcription (default `false`)
 - `WHISPERX_PYTHON`: path to Python interpreter (defaults to `WHISPERX_PYTHON` > `FEEDPARSER_PYTHON` > `python3`/`python`)
 - `WHISPERX_SCRIPT`: path to `whisperx_transcribe.py` (default `scripts/whisperx_transcribe.py`)
+- `WHISPERX_TIMEOUT_SECONDS`: timeout for WhisperX subprocess execution (default `7200`; set `0` to disable)
 - `WHISPERX_MODEL`: WhisperX model name (default `medium.en`)
 - `WHISPERX_LANGUAGE`: language code (default `en`)
 - `WHISPERX_DEVICE`: `auto|cuda|cpu` (default `auto`)
@@ -212,6 +260,108 @@ On Windows, you can also run:
 
 ```powershell
 ./scripts/regression.ps1
+```
+
+## Python quality tooling
+
+The repository includes a Python tooling spine using `uv`, project-local `.venv`, and a committed `uv.lock`.
+
+Setup:
+
+```bash
+uv sync --group dev
+```
+
+CI parity setup (enforced lockfile):
+
+```bash
+uv sync --locked --group dev
+```
+
+Quality checks:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest
+uv run pip-audit
+```
+
+Secret hygiene:
+
+- Do not commit real credentials; keep secrets in local `.env` or CI secret stores.
+- Automated secret scanning runs in CI (`.github/workflows/secret-scan.yml`).
+
+## Release basics
+
+- Current package version is defined in `pyproject.toml`.
+- Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
+- Recommended tag format: `vX.Y.Z`.
+
+## Reset And Share On GitHub
+
+Use this process when you want a clean, reproducible repository state before publishing.
+
+1. Verify current branch and changes:
+
+```bash
+git branch --show-current
+git status --short
+```
+
+2. Remove local-only generated files (ignored files only):
+
+```bash
+git clean -fdX
+```
+
+3. Recreate dev environment from lockfile and rerun quality checks:
+
+```bash
+uv sync --locked --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest
+uv run pip-audit
+go test ./...
+npm --prefix frontend run test
+```
+
+4. Stage and commit:
+
+```bash
+git add .
+git commit -m "release: ship-ready"
+```
+
+5. Tag release (recommended):
+
+```bash
+git tag -a v0.1.0 -m "Briefcast v0.1.0"
+```
+
+6. Push to GitHub:
+
+```bash
+git remote add origin https://github.com/<your-org-or-user>/briefcast.git
+git push -u origin <branch-name>
+git push origin v0.1.0
+```
+
+PowerShell variant for step 2 (same behavior):
+
+```powershell
+git clean -fdX
+```
+
+If you intentionally want to discard all local uncommitted edits (destructive), run this only after backing up work:
+
+```bash
+git restore --staged .
+git restore .
+git clean -fd
 ```
 
 ## Notes after renaming to Briefcast

@@ -27,6 +27,21 @@ func TestParseLogLevel(t *testing.T) {
 	}
 }
 
+func TestParseLogFormat(t *testing.T) {
+	if format := parseLogFormat("text"); format != "text" {
+		t.Fatalf("expected text format, got %q", format)
+	}
+	if format := parseLogFormat("console"); format != "text" {
+		t.Fatalf("expected console alias to map to text, got %q", format)
+	}
+	if format := parseLogFormat("json"); format != "json" {
+		t.Fatalf("expected json format, got %q", format)
+	}
+	if format := parseLogFormat("invalid"); format != "json" {
+		t.Fatalf("expected fallback json format, got %q", format)
+	}
+}
+
 func TestEnvParsers(t *testing.T) {
 	t.Setenv("LOG_TEST_INT", "42")
 	if value := getEnvInt("LOG_TEST_INT", 7); value != 42 {

@@ -12,8 +12,8 @@ import (
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
-	glebarezsqlite "github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	glebarezsqlite "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -272,5 +272,57 @@ func TestCancelPodcastItemDownloadAndLocalSearch(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Fatalf("expected no local search results for empty query")
+	}
+}
+
+func TestDownloadQueueLimitValidation(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/downloads/queue?limit=abc", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-integer queue limit, got %d", resp.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/downloads/queue?limit=0", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for zero queue limit, got %d", resp.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/downloads/queue?limit=1000", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for over-max queue limit, got %d", resp.Code)
+	}
+}
+
+func TestSearchLocalLimitValidation(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/search/local?q=test&limit=abc", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-integer search limit, got %d", resp.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/search/local?q=test&limit=0", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for zero search limit, got %d", resp.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/search/local?q=test&limit=999", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for over-max search limit, got %d", resp.Code)
 	}
 }

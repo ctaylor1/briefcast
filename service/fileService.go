@@ -26,6 +26,12 @@ import (
 var (
 	ErrDownloadCancelled = errors.New("download cancelled")
 	ErrDownloadPaused    = errors.New("download paused")
+	backupNow            = func() time.Time { return time.Now().UTC() }
+)
+
+const (
+	defaultHTTPTimeoutSeconds = 900
+	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
 )
 
 func Download(downloadID string, link string, episodeTitle string, podcastName string, prefix string) (string, error) {
@@ -37,6 +43,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	req, err := getRequest(link)
 	if err != nil {
 		logError("error creating request", err, "url", link)
+		return "", err
 	}
 	fileName := getFileName(link, episodeTitle, ".mp3")
 	if prefix != "" {
@@ -380,8 +387,7 @@ func GetFileSizeFromUrl(url string) (int64, error) {
 }
 
 func CreateBackup() (string, error) {
-
-	backupFileName := "briefcast_backup_" + time.Now().Format("2006.01.02_150405") + ".tar.gz"
+	backupFileName := "briefcast_backup_" + backupNow().Format("2006.01.02_150405") + ".tar.gz"
 	folder := createConfigFolderIfNotExists("backups")
 	configPath := os.Getenv("CONFIG")
 	tarballFilePath := path.Join(folder, backupFileName)
@@ -441,11 +447,15 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 	return nil
 }
 func httpClient() *http.Client {
+	timeoutSeconds := getEnvInt(httpTimeoutEnv, defaultHTTPTimeoutSeconds)
 	client := http.Client{
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			//	r.URL.Opaque = r.URL.Path
 			return nil
 		},
+	}
+	if timeoutSeconds > 0 {
+		client.Timeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
 	return &client
@@ -494,10 +504,15 @@ func deletePodcastFolder(folder string) error {
 }
 
 func getFileName(link string, title string, defaultExtension string) string {
-	fileUrl, err := url.Parse(link)
-	checkError(err)
-
-	parsed := fileUrl.Path
+	parsed := ""
+	fileURL, err := url.Parse(link)
+	if err != nil {
+		// Keep filename generation non-fatal; callers should still return the
+		// upstream error from request construction/network execution.
+		Logger.Warnw("failed to parse URL while building filename", "error", err, "link_length", len(strings.TrimSpace(link)))
+	} else {
+		parsed = fileURL.Path
+	}
 	ext := filepath.Ext(parsed)
 
 	if len(ext) == 0 {
@@ -511,10 +526,4 @@ func getFileName(link string, title string, defaultExtension string) string {
 
 func cleanFileName(original string) string {
 	return sanitize.Name(original)
-}
-
-func checkError(err error) {
-	if err != nil {
-		panic(err)
-	}
 }

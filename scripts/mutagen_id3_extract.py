@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 import json
+import logging
 import sys
+from pathlib import Path
 
 from mutagen.id3 import ID3, ID3NoHeaderError
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from briefcast_tools import log_extra, setup_logging
+
+logger = logging.getLogger(__name__)
+
+EMPTY_PAYLOAD = {"tags": {}, "chapters": []}
 
 
 def normalize_text(value):
@@ -76,25 +89,35 @@ def extract_tags(id3):
 
 
 def main():
+    setup_logging(service_name="briefcast-mutagen")
+
     if len(sys.argv) < 2:
-        print(json.dumps({"tags": {}, "chapters": []}))
-        return
+        logger.warning("missing audio path argument")
+        json.dump(EMPTY_PAYLOAD, sys.stdout, ensure_ascii=False)
+        return 2
+
     path = sys.argv[1]
     try:
         id3 = ID3(path)
     except ID3NoHeaderError:
-        print(json.dumps({"tags": {}, "chapters": []}))
-        return
+        logger.info(
+            "audio file has no id3 header",
+            extra=log_extra({"path": path}),
+        )
+        json.dump(EMPTY_PAYLOAD, sys.stdout, ensure_ascii=False)
+        return 0
     except Exception:
-        print(json.dumps({"tags": {}, "chapters": []}))
-        return
+        logger.exception("id3 extraction failed", extra=log_extra({"path": path}))
+        json.dump(EMPTY_PAYLOAD, sys.stdout, ensure_ascii=False)
+        return 1
 
     payload = {
         "tags": extract_tags(id3),
         "chapters": extract_chapters(id3),
     }
     json.dump(payload, sys.stdout, ensure_ascii=False)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

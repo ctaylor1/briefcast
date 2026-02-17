@@ -58,6 +58,15 @@ func TestFileHelpers(t *testing.T) {
 	if cleaned := cleanFileName("My.Show/Épisode_1"); cleaned != "My-Show-Episode-1" {
 		t.Fatalf("unexpected clean file name %q", cleaned)
 	}
+	if name := getFileName("://bad-url", "Broken URL Episode", ".mp3"); !strings.HasSuffix(name, ".mp3") {
+		t.Fatalf("expected fallback extension for invalid URL, got %q", name)
+	}
+}
+
+func TestDownloadReturnsErrorForInvalidURL(t *testing.T) {
+	if _, err := Download("", "://bad-url", "Episode", "Podcast", ""); err == nil {
+		t.Fatalf("expected download to fail for invalid URL")
+	}
 }
 
 func TestFileExistsDeleteAndGetSize(t *testing.T) {

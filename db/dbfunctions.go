@@ -371,7 +371,7 @@ func Lock(name string, duration int) {
 		}
 	}
 	jobLock.Duration = duration
-	jobLock.Date = time.Now()
+	jobLock.Date = time.Now().UTC()
 	if jobLock.ID == "" {
 		DB.Create(&jobLock)
 	} else {
@@ -402,7 +402,7 @@ func UnlockMissedJobs() {
 		var duration time.Duration
 		duration = time.Duration(job.Duration)
 		d := job.Date.Add(time.Minute * duration)
-		if d.Before(time.Now()) {
+		if d.Before(time.Now().UTC()) {
 			logging.Sugar().Infow("unlocking stale job lock", "job_name", job.Name)
 			Unlock(job.Name)
 		}

@@ -2,12 +2,12 @@ package controllers
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path"
 	"strings"
 
+	"github.com/ctaylor1/briefcast/internal/logging"
 	"github.com/ctaylor1/briefcast/model"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-contrib/location"
@@ -67,6 +67,8 @@ type AddTagData struct {
 	Description string `form:"description" json:"description"`
 }
 
+var controllerLogger = logging.Sugar().With("component", "controllers")
+
 func GetAllPodcasts(c *gin.Context) {
 	var podcastListQuery PodcastListQuery
 
@@ -97,7 +99,11 @@ func GetPodcastById(c *gin.Context) {
 		var podcast db.Podcast
 
 		err := db.GetPodcastById(searchByIdQuery.Id, &podcast)
-		fmt.Println(err)
+		if err != nil {
+			controllerLogger.Warnw("failed to fetch podcast", "podcast_id", searchByIdQuery.Id, "error", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
 		c.JSON(200, podcast)
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -239,7 +245,11 @@ func GetPodcastItemsByPodcastId(c *gin.Context) {
 		var podcastItems []db.PodcastItem
 
 		err := db.GetAllPodcastItemsByPodcastId(searchByIdQuery.Id, &podcastItems)
-		fmt.Println(err)
+		if err != nil {
+			controllerLogger.Warnw("failed to fetch podcast items", "podcast_id", searchByIdQuery.Id, "error", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
 		for i := range podcastItems {
 			decoratePodcastItem(&podcastItems[i])
 		}
@@ -255,7 +265,11 @@ func DownloadAllEpisodesByPodcastId(c *gin.Context) {
 	if c.ShouldBindUri(&searchByIdQuery) == nil {
 
 		err := service.SetAllEpisodesToDownload(searchByIdQuery.Id)
-		fmt.Println(err)
+		if err != nil {
+			controllerLogger.Warnw("failed to queue all episodes for download", "podcast_id", searchByIdQuery.Id, "error", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
 		go service.RefreshEpisodes()
 		c.JSON(200, gin.H{})
 	} else {
@@ -267,7 +281,7 @@ func GetAllPodcastItems(c *gin.Context) {
 	var filter model.EpisodesFilter
 	err := c.ShouldBindQuery(&filter)
 	if err != nil {
-		fmt.Println(err.Error())
+		controllerLogger.Warnw("failed to bind episode filter query", "error", err)
 	}
 	filter.VerifyPaginationValues()
 	if podcastItems, totalCount, err := db.GetPaginatedPodcastItemsNew(filter); err == nil {
@@ -294,7 +308,11 @@ func GetPodcastItemById(c *gin.Context) {
 		var podcast db.PodcastItem
 
 		err := db.GetPodcastItemById(searchByIdQuery.Id, &podcast)
-		fmt.Println(err)
+		if err != nil {
+			controllerLogger.Warnw("failed to fetch podcast item", "podcast_item_id", searchByIdQuery.Id, "error", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
 		decoratePodcastItem(&podcast)
 		c.JSON(200, podcast)
 	} else {
@@ -482,12 +500,12 @@ func AddPodcast(c *gin.Context) {
 			if v, ok := err.(*model.PodcastAlreadyExistsError); ok {
 				c.JSON(409, gin.H{"message": v.Error()})
 			} else {
-				log.Println(err.Error())
+				controllerLogger.Warnw("failed to add podcast", "url", addPodcastData.Url, "error", err)
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 			}
 		}
 	} else {
-		log.Println(err.Error())
+		controllerLogger.Warnw("invalid add podcast payload", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	}
 }
@@ -623,8 +641,9 @@ func GetRss(c *gin.Context) {
 	var items []db.PodcastItem
 
 	if err := db.GetAllPodcastItems(&items); err != nil {
-		fmt.Println(err.Error())
+		controllerLogger.Warnw("failed to fetch podcast items for rss", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
 	}
 
 	title := "Briefcast"
@@ -666,12 +685,12 @@ func AddTag(c *gin.Context) {
 			if v, ok := err.(*model.TagAlreadyExistsError); ok {
 				c.JSON(409, gin.H{"message": v.Error()})
 			} else {
-				log.Println(err.Error())
+				controllerLogger.Warnw("failed to add tag", "label", addTagData.Label, "error", err)
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 			}
 		}
 	} else {
-		log.Println(err.Error())
+		controllerLogger.Warnw("invalid add tag payload", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	}
 }
@@ -722,7 +741,7 @@ func UpdateSetting(c *gin.Context) {
 
 		}
 	} else {
-		fmt.Println(err.Error())
+		controllerLogger.Warnw("invalid settings payload", "error", err)
 		c.JSON(http.StatusBadRequest, err)
 	}
 

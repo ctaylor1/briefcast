@@ -58,6 +58,9 @@ func newHostRequestLimiterFromEnv() *hostRequestLimiter {
 	}
 }
 
+// doRequestWithHostLimit applies per-host pacing and concurrency caps before
+// issuing outbound requests. This keeps fetch-heavy jobs stable when repeated
+// at scale and prevents a single host from being overwhelmed.
 func doRequestWithHostLimit(client *http.Client, req *http.Request) (*http.Response, error) {
 	if client == nil {
 		client = http.DefaultClient
@@ -73,6 +76,11 @@ func getOutboundRequestLimiter() *hostRequestLimiter {
 		outboundRequestLimiter = newHostRequestLimiterFromEnv()
 	})
 	return outboundRequestLimiter
+}
+
+func resetOutboundRequestLimiterForTests() {
+	outboundRequestLimiter = nil
+	outboundRequestLimiterOnce = sync.Once{}
 }
 
 func (limiter *hostRequestLimiter) Do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
