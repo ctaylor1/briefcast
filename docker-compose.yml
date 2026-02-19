@@ -10,12 +10,17 @@ services:
     image: ctaylor1/briefcast
     container_name: briefcast
     environment:
+      - CONFIG=/config
+      - DATA=/assets
       - CHECK_FREQUENCY=240
       - DATABASE_URL=sqlite:///config/briefcast.db
       - WHISPERX_ENABLED=true
       - WHISPERX_DIARIZATION=false
       - WHISPERX_CHECK_FREQUENCY=10
-      # For postgres use:
+      # For an external postgres use:
+      # - DB_DRIVER=postgres
+      # - DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable
+      # For local postgres service below use:
       # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
       # - DB_DRIVER=postgres
     volumes:

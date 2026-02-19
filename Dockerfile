@@ -62,6 +62,7 @@ ENV PATH="/opt/venv/bin:${PATH}"
 COPY --from=builder /api/app .
 COPY webassets ./webassets
 COPY scripts ./scripts
+COPY src ./src
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 EXPOSE 8080

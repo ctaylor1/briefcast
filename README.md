@@ -26,6 +26,7 @@ Podcast downloader and library manager with a modern web UI.
   - [Docker](#docker)
     - [docker compose (recommended)](#docker-compose-recommended)
     - [Run the published image](#run-the-published-image)
+    - [Use external Postgres](#use-external-postgres)
     - [Storage (containers)](#storage-containers)
   - [Configuration](#configuration)
     - [Core runtime](#core-runtime)
@@ -153,6 +154,7 @@ docker compose up -d
 ### Run the published image
 
 ```bash
+docker pull ghcr.io/ctaylor1/briefcast:1.0.1
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -162,7 +164,25 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:latest
+  ghcr.io/ctaylor1/briefcast:1.0.1
+```
+
+`latest` should point to the current release tag (`1.0.1`).
+
+### Use external Postgres
+
+If you already run Postgres separately, point Briefcast at it:
+
+```bash
+docker run -d \
+  --name briefcast \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v briefcast_config:/config \
+  -v briefcast_data:/assets \
+  -e DB_DRIVER=postgres \
+  -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
+  ghcr.io/ctaylor1/briefcast:1.0.1
 ```
 
 ### Storage (containers)
@@ -186,7 +206,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:latest
+  ghcr.io/ctaylor1/briefcast:1.0.1
 ```
 
 ---
@@ -302,6 +322,13 @@ Postgres:
 
 ```bash
 DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
+DB_DRIVER=postgres
+```
+
+External Postgres host:
+
+```bash
+DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable
 DB_DRIVER=postgres
 ```
 
@@ -439,6 +466,16 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
+- For `v1.0.1`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.1` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+
+Example image publish command:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/ctaylor1/briefcast:1.0.1 \
+  -t ghcr.io/ctaylor1/briefcast:latest \
+  --push .
+```
 
 ---
 
@@ -482,7 +519,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v0.1.0 -m "Briefcast v0.1.0"
+git tag -a v1.0.1 -m "Briefcast v1.0.1"
 ```
 
 6) Push:
@@ -490,7 +527,7 @@ git tag -a v0.1.0 -m "Briefcast v0.1.0"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v0.1.0
+git push origin v1.0.1
 ```
 
 PowerShell variant for step 2:
