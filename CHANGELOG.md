@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-02-21
+
+- Added deterministic download queue ordering in the modern UI so active downloads are shown first.
+- Updated paused download presentation to hide progress bars and clearly mark paused rows.
+- Updated Docker Compose to explicitly load `.env` at runtime and documented Synology verification steps for `LOG_OUTPUT` and `/logs` bind mounts.
+- Improved `build_tar.ps1` packaging flow to build `briefcast:latest`, save versioned tar files under `builds/`, and optionally copy artifacts to a network path.
+
 ## [1.0.3] - 2026-02-21
 
 - Fixed top-right global search behavior in the modern UI by wiring the command palette to local library search results (`/search/local`) in addition to route shortcuts.

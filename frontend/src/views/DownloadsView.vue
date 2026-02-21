@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useDownloadQueue } from "../composables/useDownloadQueue";
 import { getErrorMessage } from "../lib/api";
 import type { PodcastItem } from "../types/api";
@@ -10,6 +10,9 @@ import UiCard from "../components/ui/UiCard.vue";
 
 const infoMessage = ref("");
 const actionError = ref("");
+const DOWNLOAD_STATUS_QUEUED = 0;
+const DOWNLOAD_STATUS_DOWNLOADING = 1;
+const DOWNLOAD_STATUS_PAUSED = 4;
 
 const {
   queueItems,
@@ -28,6 +31,60 @@ const {
 } = useDownloadQueue();
 
 let queueInterval: number | undefined;
+
+function isPaused(item: PodcastItem): boolean {
+  return item.DownloadStatus === DOWNLOAD_STATUS_PAUSED;
+}
+
+function isDownloading(item: PodcastItem): boolean {
+  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADING;
+}
+
+function queueStatusLabel(item: PodcastItem): string {
+  if (isDownloading(item)) {
+    return "Downloading";
+  }
+  if (isPaused(item)) {
+    return "Paused";
+  }
+  return "Queued";
+}
+
+function queueStatusTone(item: PodcastItem): "info" | "warning" | "neutral" {
+  if (isDownloading(item)) {
+    return "info";
+  }
+  if (isPaused(item)) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function queueSortPriority(item: PodcastItem): number {
+  if (isDownloading(item)) {
+    return 0;
+  }
+  if (item.DownloadStatus === DOWNLOAD_STATUS_QUEUED) {
+    return 1;
+  }
+  if (isPaused(item)) {
+    return 2;
+  }
+  return 3;
+}
+
+const sortedQueueItems = computed(() =>
+  [...queueItems.value].sort((left, right) => {
+    const byPriority = queueSortPriority(left) - queueSortPriority(right);
+    if (byPriority !== 0) {
+      return byPriority;
+    }
+    if (isDownloading(left) && isDownloading(right)) {
+      return right.DownloadedBytes - left.DownloadedBytes;
+    }
+    return 0;
+  }),
+);
 
 async function toggleDownloadsPause(): Promise<void> {
   infoMessage.value = "";
@@ -151,30 +208,33 @@ onUnmounted(() => {
       </UiCard>
 
       <ul v-else class="queue-list">
-        <li v-for="item in queueItems" :key="item.ID" class="queue-list__row">
+        <li
+          v-for="item in sortedQueueItems"
+          :key="item.ID"
+          class="queue-list__row"
+          :class="{
+            'queue-list__row--downloading': isDownloading(item),
+            'queue-list__row--paused': isPaused(item),
+          }"
+        >
           <div class="queue-list__main">
             <p class="queue-list__title">{{ item.Title }}</p>
             <p class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</p>
-            <div class="queue-list__progress-track">
-              <div
-                class="queue-list__progress-fill"
-                :class="!queueHasKnownTotal(item) && 'queue-list__progress-fill--unknown'"
-                :style="queueHasKnownTotal(item) ? { width: `${queueProgressPercent(item)}%` } : undefined"
-              />
+            <div v-if="!isPaused(item)">
+              <div class="queue-list__progress-track">
+                <div
+                  class="queue-list__progress-fill"
+                  :class="!queueHasKnownTotal(item) && 'queue-list__progress-fill--unknown'"
+                  :style="queueHasKnownTotal(item) ? { width: `${queueProgressPercent(item)}%` } : undefined"
+                />
+              </div>
+              <p class="meta-text">{{ queueProgressLabel(item) }}</p>
             </div>
-            <p class="meta-text">{{ queueProgressLabel(item) }}</p>
+            <p v-else class="queue-list__paused-note">Paused. Resume downloads to continue.</p>
           </div>
           <div class="queue-list__actions">
-            <UiBadge
-              :tone="item.DownloadStatus === 1 ? 'info' : item.DownloadStatus === 4 ? 'warning' : 'neutral'"
-            >
-              {{
-                item.DownloadStatus === 1
-                  ? "Downloading"
-                  : item.DownloadStatus === 4
-                    ? "Paused"
-                    : "Queued"
-              }}
+            <UiBadge :tone="queueStatusTone(item)">
+              {{ queueStatusLabel(item) }}
             </UiBadge>
             <UiButton size="sm" variant="outline" @click="openPlayer(item)">
               Play
@@ -239,6 +299,16 @@ onUnmounted(() => {
   padding: var(--space-3);
 }
 
+.queue-list__row--downloading {
+  border-left: 3px solid var(--color-accent);
+}
+
+.queue-list__row--paused {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-secondary));
+}
+
 .queue-list__main {
   min-width: min(100%, 240px);
   flex: 1;
@@ -277,6 +347,14 @@ onUnmounted(() => {
 .queue-list__progress-fill--unknown {
   width: 50%;
   animation: pulse-track 1.2s infinite ease-in-out;
+}
+
+.queue-list__paused-note {
+  margin: var(--space-2) 0 0;
+  color: var(--color-warning);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  font-weight: 600;
 }
 
 .empty-state__title {

@@ -152,16 +152,32 @@ docker compose up -d
 ```
 
 - Copy `.env.example` to `.env`, then edit only the values you care about (password, logs, check frequency, paths, image tag).
+- Compose now explicitly loads `.env` into the container runtime environment.
 - Default logs go to both container stdout and `/logs/briefcast-{startup_ts}.log`.
 - Advanced WhisperX tuning can live in `.env.whisperx` (template: `whisperx.env.example`).
 
 - Default service uses **SQLite**
 - A **Postgres** service is available under the `postgres` profile
 
+#### Synology Container Manager: verify `.env` and logs
+
+1. Put `docker-compose.yml` and `.env` in the same shared folder on the NAS.
+2. Create/update the Synology project from that folder, then redeploy.
+3. From NAS SSH, verify values and mounts:
+
+```bash
+docker inspect briefcast --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^LOG_OUTPUT='
+docker inspect briefcast --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^LOG_LEVEL='
+docker inspect briefcast --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}' | grep ' -> /logs'
+docker exec briefcast sh -lc 'ls -lah /logs'
+```
+
+If the `LOG_OUTPUT` value and `/logs` mount are correct, log files should appear under your host `HOST_LOGS_DIR`.
+
 ### Run the published image
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.0.1
+docker pull ghcr.io/ctaylor1/briefcast:1.0.4
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -171,10 +187,10 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.1
+  ghcr.io/ctaylor1/briefcast:1.0.4
 ```
 
-`latest` should point to the current release tag (`1.0.1`).
+`latest` should point to the current release tag (`1.0.4`).
 
 ### Use external Postgres
 
@@ -189,7 +205,7 @@ docker run -d \
   -v briefcast_data:/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.0.1
+  ghcr.io/ctaylor1/briefcast:1.0.4
 ```
 
 ### Storage (containers)
@@ -214,7 +230,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.1
+  ghcr.io/ctaylor1/briefcast:1.0.4
 ```
 
 ---
@@ -489,7 +505,7 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
-- For `v1.0.1`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.1` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- For `v1.0.4`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.4` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
 ## One-command release
 
@@ -554,7 +570,7 @@ Legacy/manual image publish command:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/ctaylor1/briefcast:1.0.1 \
+  -t ghcr.io/ctaylor1/briefcast:1.0.4 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -601,7 +617,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v1.0.1 -m "Briefcast v1.0.1"
+git tag -a v1.0.4 -m "Briefcast v1.0.4"
 ```
 
 6) Push:
@@ -609,7 +625,7 @@ git tag -a v1.0.1 -m "Briefcast v1.0.1"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v1.0.1
+git push origin v1.0.4
 ```
 
 PowerShell variant for step 2:
@@ -633,3 +649,4 @@ git clean -fd
 Default SQLite filename is now `briefcast.db`.
 
 If you are migrating from an older deployment that used a different SQLite filename, set `DATABASE_URL` explicitly to your existing DB file path.
+

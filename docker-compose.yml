@@ -3,6 +3,7 @@ services:
     image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
     container_name: briefcast
     env_file:
+      - .env
       - path: ${WHISPERX_ENV_FILE:-.env.whisperx}
         required: false
     environment:

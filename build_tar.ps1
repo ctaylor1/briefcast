@@ -2,7 +2,8 @@
 param(
     [Parameter(Position = 0)]
     [string]$Version,
-    [string]$ImageName = "briefcast"
+    [string]$ImageName = "briefcast",
+    [string]$CopyTo = "\\ATLAS\docker\-builds"
 )
 
 Set-StrictMode -Version Latest
@@ -46,6 +47,30 @@ Write-Host "Saving Docker image: $tarPath"
 docker image save -o $tarPath $imageTag
 if ($LASTEXITCODE -ne 0) {
     throw "docker image save failed for image tag '$imageTag'."
+}
+
+if ($CopyTo) {
+    $copyTarget = $CopyTo.Trim()
+    if ($copyTarget -ne "") {
+        $destinationPath = $copyTarget
+
+        # If CopyTo looks like a directory, append the generated tar file name.
+        if ($copyTarget.EndsWith("\") -or $copyTarget.EndsWith("/") -or -not [System.IO.Path]::HasExtension($copyTarget)) {
+            if (-not (Test-Path -LiteralPath $copyTarget)) {
+                New-Item -ItemType Directory -Path $copyTarget -Force | Out-Null
+            }
+            $destinationPath = Join-Path $copyTarget $tarName
+        } else {
+            $destinationDir = Split-Path -Parent $destinationPath
+            if ($destinationDir -and -not (Test-Path -LiteralPath $destinationDir)) {
+                New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+            }
+        }
+
+        Write-Host "Copying tar to: $destinationPath"
+        Copy-Item -LiteralPath $tarPath -Destination $destinationPath -Force -ErrorAction Stop
+        Write-Host "Copied: $destinationPath"
+    }
 }
 
 Write-Host "Done: $tarPath"
