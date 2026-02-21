@@ -97,6 +97,7 @@ func main() {
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
+	router.POST("/podcastitems/:id/resume", controllers.ResumePodcastItemDownload)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
 
 	router.GET("/downloads/queue", controllers.GetDownloadQueue)

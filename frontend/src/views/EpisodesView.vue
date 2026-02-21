@@ -435,14 +435,19 @@ onMounted(() => {
               :key="`${chapter.title}-${chapter.startSeconds}`"
               class="drawer-list__row"
             >
-              <div>
+              <div class="drawer-list__meta">
                 <div class="surface-row">
                   <p class="drawer-list__title">{{ chapter.title }}</p>
                   <UiBadge v-if="isSponsorChapter(chapter.title)" tone="info">Sponsor</UiBadge>
                 </div>
                 <p class="meta-text">Starts at {{ formatDuration(Math.floor(chapter.startSeconds)) }}</p>
               </div>
-              <UiButton size="sm" variant="outline" @click="drawerItem && openPlayerAt(drawerItem, chapter.startSeconds)">
+              <UiButton
+                size="sm"
+                variant="outline"
+                class="drawer-list__play-button"
+                @click="drawerItem && openPlayerAt(drawerItem, chapter.startSeconds)"
+              >
                 Play from here
               </UiButton>
             </li>
@@ -551,13 +556,18 @@ onMounted(() => {
 
 .drawer-list__row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2);
   background: var(--color-bg-secondary);
   padding: var(--space-3);
+}
+
+.drawer-list__meta {
+  min-width: 0;
+  flex: 1;
 }
 
 .drawer-list__title {
@@ -566,6 +576,13 @@ onMounted(() => {
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-line-height);
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.drawer-list__play-button {
+  width: 132px;
+  min-width: 132px;
+  align-self: center;
 }
 
 .drawer-transcript-row {

@@ -88,11 +88,11 @@ function getPodcastImage(id: string): string {
         <UiButton size="sm" variant="secondary" :disabled="busy" @click="emit('download-all', podcast)">
           Download All
         </UiButton>
-        <UiButton size="sm" variant="outline" :disabled="busy" @click="emit('toggle-pause', podcast)">
-          {{ podcast.IsPaused ? "Resume" : "Pause" }}
-        </UiButton>
         <UiButton size="sm" variant="danger" :disabled="busy" @click="emit('delete', podcast)">
           Delete
+        </UiButton>
+        <UiButton size="sm" variant="outline" :disabled="busy" @click="emit('toggle-pause', podcast)">
+          {{ podcast.IsPaused ? "Resume All Downloads" : "Pause All Downloads" }}
         </UiButton>
       </div>
     </div>

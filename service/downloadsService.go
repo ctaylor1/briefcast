@@ -21,6 +21,30 @@ func CancelEpisodeDownload(id string) error {
 	}
 }
 
+func ResumeEpisodeDownload(id string) (bool, error) {
+	var item db.PodcastItem
+	if err := db.GetPodcastItemById(id, &item); err != nil {
+		return false, err
+	}
+
+	ResumeDownloads()
+	ClearDownloadPause(item.ID)
+
+	switch item.DownloadStatus {
+	case db.Paused:
+		if err := SetPodcastItemAsQueuedPreserveProgress(item.ID); err != nil {
+			return false, err
+		}
+		return true, nil
+	case db.NotDownloaded:
+		return true, nil
+	case db.Downloading:
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
 func CancelAllDownloads() error {
 	return PauseAllDownloads()
 }

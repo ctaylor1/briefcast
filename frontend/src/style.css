@@ -478,6 +478,16 @@ img {
   color: #ffffff;
 }
 
+.ui-button--success {
+  background: var(--color-success);
+  color: #ffffff;
+}
+
+.ui-button--success:hover {
+  background: color-mix(in srgb, var(--color-success) 84%, #000000);
+  color: #ffffff;
+}
+
 .ui-field {
   display: grid;
   gap: var(--space-2);

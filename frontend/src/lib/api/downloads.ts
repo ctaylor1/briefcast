@@ -18,4 +18,7 @@ export const downloadsApi = {
   cancelEpisode(id: string): Promise<void> {
     return httpClient.post<void>(`/podcastitems/${id}/cancel`);
   },
+  resumeEpisode(id: string): Promise<void> {
+    return httpClient.post<void>(`/podcastitems/${id}/resume`);
+  },
 };

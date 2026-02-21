@@ -58,6 +58,7 @@ func makeRouter() *gin.Engine {
 	router.POST("/downloads/resume", ResumeDownloads)
 	router.POST("/downloads/cancel", CancelAllDownloads)
 	router.POST("/podcastitems/:id/cancel", CancelPodcastItemDownload)
+	router.POST("/podcastitems/:id/resume", ResumePodcastItemDownload)
 	router.GET("/search/local", SearchLocalRecords)
 	return router
 }

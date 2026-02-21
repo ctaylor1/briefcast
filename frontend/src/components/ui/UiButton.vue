@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { cn } from "../../lib/cn";
 
-type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "ghost" | "success";
 type ButtonSize = "sm" | "md" | "lg";
 
 const props = withDefaults(

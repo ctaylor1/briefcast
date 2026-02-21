@@ -51,6 +51,10 @@ export function useDownloadQueue() {
     await downloadsApi.cancelEpisode(id);
   }
 
+  async function resumeEpisodeDownload(id: string): Promise<void> {
+    await downloadsApi.resumeEpisode(id);
+  }
+
   function queueProgressPercent(item: PodcastItem): number {
     if (item.DownloadTotalBytes <= 0) {
       return 0;
@@ -86,6 +90,7 @@ export function useDownloadQueue() {
     resumeDownloads,
     cancelAllDownloads,
     cancelEpisodeDownload,
+    resumeEpisodeDownload,
     queueProgressPercent,
     queueProgressLabel,
     queueHasKnownTotal,

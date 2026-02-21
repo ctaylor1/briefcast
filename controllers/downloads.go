@@ -105,3 +105,22 @@ func CancelPodcastItemDownload(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{})
 }
+
+func ResumePodcastItemDownload(c *gin.Context) {
+	var searchByIdQuery SearchByIdQuery
+	if c.ShouldBindUri(&searchByIdQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	shouldStart, err := service.ResumeEpisodeDownload(searchByIdQuery.Id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if shouldStart {
+		go service.DownloadSingleEpisode(searchByIdQuery.Id)
+	}
+
+	c.JSON(http.StatusOK, gin.H{})
+}

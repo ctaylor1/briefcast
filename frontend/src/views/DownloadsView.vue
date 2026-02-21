@@ -19,12 +19,12 @@ const {
   queueLoading,
   queueError,
   queueCounts,
-  downloadsPaused,
   fetchQueue,
   pauseDownloads,
   resumeDownloads,
   cancelAllDownloads: cancelAllQueuedDownloads,
   cancelEpisodeDownload,
+  resumeEpisodeDownload,
   queueProgressPercent,
   queueProgressLabel,
   queueHasKnownTotal,
@@ -44,18 +44,12 @@ function queueStatusLabel(item: PodcastItem): string {
   if (isDownloading(item)) {
     return "Downloading";
   }
-  if (isPaused(item)) {
-    return "Paused";
-  }
   return "Queued";
 }
 
-function queueStatusTone(item: PodcastItem): "info" | "warning" | "neutral" {
+function queueStatusTone(item: PodcastItem): "info" | "neutral" {
   if (isDownloading(item)) {
     return "info";
-  }
-  if (isPaused(item)) {
-    return "warning";
   }
   return "neutral";
 }
@@ -86,20 +80,27 @@ const sortedQueueItems = computed(() =>
   }),
 );
 
-async function toggleDownloadsPause(): Promise<void> {
+async function pauseAllDownloads(): Promise<void> {
   infoMessage.value = "";
   actionError.value = "";
   try {
-    if (downloadsPaused.value) {
-      await resumeDownloads();
-      infoMessage.value = "Downloads resumed.";
-    } else {
-      await pauseDownloads();
-      infoMessage.value = "Downloads paused.";
-    }
+    await pauseDownloads();
+    infoMessage.value = "Downloads paused.";
     await fetchQueue();
   } catch (error) {
     actionError.value = getErrorMessage(error, "Could not update download pause.");
+  }
+}
+
+async function resumeAllDownloads(): Promise<void> {
+  infoMessage.value = "";
+  actionError.value = "";
+  try {
+    await resumeDownloads();
+    infoMessage.value = "Downloads resumed.";
+    await fetchQueue();
+  } catch (error) {
+    actionError.value = getErrorMessage(error, "Could not resume downloads.");
   }
 }
 
@@ -124,6 +125,18 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
     await fetchQueue();
   } catch (error) {
     actionError.value = getErrorMessage(error, "Could not cancel download.");
+  }
+}
+
+async function resumeDownload(item: PodcastItem): Promise<void> {
+  infoMessage.value = "";
+  actionError.value = "";
+  try {
+    await resumeEpisodeDownload(item.ID);
+    infoMessage.value = "Download resumed.";
+    await fetchQueue();
+  } catch (error) {
+    actionError.value = getErrorMessage(error, "Could not resume download.");
   }
 }
 
@@ -171,8 +184,16 @@ onUnmounted(() => {
           </p>
         </div>
         <div class="queue-toolbar">
-          <UiButton size="sm" variant="outline" @click="toggleDownloadsPause">
-            {{ downloadsPaused ? "Resume downloads" : "Pause downloads" }}
+          <UiButton
+            size="sm"
+            variant="outline"
+            :disabled="queueCounts.queued === 0 && queueCounts.downloading === 0"
+            @click="pauseAllDownloads"
+          >
+            Pause All Downloads
+          </UiButton>
+          <UiButton size="sm" variant="success" :disabled="queueCounts.paused === 0" @click="resumeAllDownloads">
+            Resume All Downloads
           </UiButton>
           <UiButton
             size="sm"
@@ -233,7 +254,15 @@ onUnmounted(() => {
             <p v-else class="queue-list__paused-note">Paused. Resume downloads to continue.</p>
           </div>
           <div class="queue-list__actions">
-            <UiBadge :tone="queueStatusTone(item)">
+            <UiButton
+              v-if="isPaused(item)"
+              size="sm"
+              variant="success"
+              @click="resumeDownload(item)"
+            >
+              Resume Download
+            </UiButton>
+            <UiBadge v-else :tone="queueStatusTone(item)">
               {{ queueStatusLabel(item) }}
             </UiBadge>
             <UiButton size="sm" variant="outline" @click="openPlayer(item)">
