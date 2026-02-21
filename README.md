@@ -44,6 +44,7 @@ Podcast downloader and library manager with a modern web UI.
   - [Regression testing](#regression-testing)
   - [Python tooling](#python-tooling)
   - [Release basics](#release-basics)
+  - [One-command release](#one-command-release)
   - [Reset and share on GitHub](#reset-and-share-on-github)
   - [Migration note (rename to Briefcast)](#migration-note-rename-to-briefcast)
 
@@ -99,7 +100,7 @@ uv sync --group dev
 
 ### 2) Configure environment
 
-Create a `.env` (or export vars in your shell):
+For local source runs (`go run`), create a `.env` (or export vars in your shell):
 
 ```bash
 CONFIG=.
@@ -113,6 +114,8 @@ Recommended (explicit DB path):
 ```bash
 DATABASE_URL=sqlite:///config/briefcast.db
 ```
+
+For Docker deployments, use `.env.example` as your starting point instead.
 
 ### 3) Build the frontend (recommended)
 
@@ -147,6 +150,10 @@ go run ./main.go
 ```bash
 docker compose up -d
 ```
+
+- Copy `.env.example` to `.env`, then edit only the values you care about (password, logs, check frequency, paths, image tag).
+- Default logs go to both container stdout and `/config/logs/briefcast.log`.
+- Advanced WhisperX tuning can live in `.env.whisperx` (template: `whisperx.env.example`).
 
 - Default service uses **SQLite**
 - A **Postgres** service is available under the `postgres` profile
@@ -213,7 +220,8 @@ docker run -d \
 
 ## Configuration
 
-Most deployments only need: `CONFIG`, `DATA`, `CHECK_FREQUENCY`, `DATABASE_URL`, optional `PASSWORD`.
+For Docker Compose end users, most setups only need:
+`PASSWORD`, `CHECK_FREQUENCY`, `LOG_OUTPUT`, optional `DATABASE_URL`, plus host path/port values in `.env`.
 
 ### Core runtime
 
@@ -280,6 +288,12 @@ ID3 extraction:
 
 **Not bundled** in the default Docker image. You must install WhisperX + dependencies yourself.
 
+To build an image with WhisperX preinstalled (currently `linux/amd64` only):
+
+```bash
+docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t ghcr.io/ctaylor1/briefcast:with-whisperx --push .
+```
+
 - `WHISPERX_ENABLED`: `true|false` (default `false`)
 - `WHISPERX_PYTHON`: interpreter path (falls back to `FEEDPARSER_PYTHON`)
 - `WHISPERX_SCRIPT`: default `scripts/whisperx_transcribe.py`
@@ -307,6 +321,12 @@ ID3 extraction:
 - `WHISPERX_MAX_ITEMS`: default `0` (no limit)
 - `WHISPERX_RETRY_FAILED`: default `false`
 - `WHISPERX_CHECK_FREQUENCY`: defaults to `CHECK_FREQUENCY`
+
+Recommended config split:
+
+- Keep `WHISPERX_ENABLED`, `WHISPERX_DIARIZATION`, and `WHISPERX_CHECK_FREQUENCY` in `.env`
+- Put advanced WhisperX overrides in `.env.whisperx` (start from `whisperx.env.example`)
+- Compose loads that optional file via `WHISPERX_ENV_FILE` (default `.env.whisperx`)
 
 ---
 
@@ -468,7 +488,66 @@ Secret hygiene:
 - Recommended tag format: `vX.Y.Z`.
 - For `v1.0.1`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.1` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
-Example image publish command:
+## One-command release
+
+Use GitHub Actions workflow `.github/workflows/release.yml`.
+
+What it does:
+
+- Resolves the next version (`version` or `bump`)
+- Updates `pyproject.toml` version when static
+- Runs tests + package build + `twine check --strict`
+- Builds/publishes container image to GHCR with tags `<version>` and `latest`
+- Creates annotated git tag `vX.Y.Z` and GitHub Release with `dist/*` assets
+- Optionally publishes to PyPI via Trusted Publishing
+
+Required setup:
+
+- Run the workflow from the default branch only.
+- Configure repository secret `GHCR_TOKEN` (and optional `GHCR_USERNAME`) for GHCR image push.
+- If using PyPI publish, configure PyPI Trusted Publishing for this repository/workflow.
+
+Run from CLI with `gh` (single command each):
+
+Patch bump:
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f bump=patch
+```
+
+Minor bump:
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f bump=minor
+```
+
+Major bump:
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f bump=major
+```
+
+Explicit version:
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f version=1.2.3
+```
+
+Explicit version + publish to PyPI:
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f version=1.2.3 -f publish_pypi=true
+```
+
+Dry run (validate everything without push/tag/release/publish):
+
+```bash
+gh workflow run release.yml --ref <default-branch> -f bump=patch -f dry_run=true
+```
+
+You can also run the same workflow from the GitHub Actions UI (`Actions` -> `release` -> `Run workflow`).
+
+Legacy/manual image publish command:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \

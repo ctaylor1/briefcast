@@ -1,22 +1,30 @@
-version: "2.1"
 services:
   briefcast:
-    build:
-      context: .
-      args:
-        - TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-        - TORCH_VERSION=2.8.0
-        - TORCH_BUILD=+cpu
-    image: ctaylor1/briefcast
+    image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
     container_name: briefcast
+    env_file:
+      - path: ${WHISPERX_ENV_FILE:-.env.whisperx}
+        required: false
     environment:
       - CONFIG=/config
       - DATA=/assets
-      - CHECK_FREQUENCY=240
-      - DATABASE_URL=sqlite:///config/briefcast.db
-      - WHISPERX_ENABLED=true
-      - WHISPERX_DIARIZATION=false
-      - WHISPERX_CHECK_FREQUENCY=10
+      - CHECK_FREQUENCY=${CHECK_FREQUENCY:-15}
+      - PASSWORD=${PASSWORD:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///config/briefcast.db}
+      - DB_DRIVER=${DB_DRIVER:-}
+      - DATABASE_DRIVER=${DATABASE_DRIVER:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_OUTPUT=${LOG_OUTPUT:-stdout,/config/logs/briefcast.log}
+      - LOG_FILE_MAX_SIZE_MB=${LOG_FILE_MAX_SIZE_MB:-50}
+      - LOG_FILE_MAX_BACKUPS=${LOG_FILE_MAX_BACKUPS:-7}
+      - LOG_FILE_MAX_AGE_DAYS=${LOG_FILE_MAX_AGE_DAYS:-14}
+      - LOG_FILE_COMPRESS=${LOG_FILE_COMPRESS:-true}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - WHISPERX_ENABLED=${WHISPERX_ENABLED:-false}
+      - WHISPERX_DIARIZATION=${WHISPERX_DIARIZATION:-false}
+      - WHISPERX_CHECK_FREQUENCY=${WHISPERX_CHECK_FREQUENCY:-30}
       # For an external postgres use:
       # - DB_DRIVER=postgres
       # - DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable
@@ -24,10 +32,10 @@ services:
       # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
       # - DB_DRIVER=postgres
     volumes:
-      - C:/DevRepo/Projects/briefcast/config:/config
-      - C:/DevRepo/Projects/briefcast/data:/assets
+      - ${HOST_CONFIG_DIR:-./config}:/config
+      - ${HOST_ASSETS_DIR:-./assets}:/assets
     ports:
-      - 8080:8080
+      - ${HOST_PORT:-8080}:8080
     restart: unless-stopped
 
   postgres:

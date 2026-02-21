@@ -1,0 +1,356 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Explicit semantic version (e.g. 1.2.3). Leave empty to use bump."
+        required: false
+        type: string
+      bump:
+        description: "Auto-bump type when version is empty: major | minor | patch"
+        required: false
+        type: string
+      publish_pypi:
+        description: "Publish built distributions to PyPI via Trusted Publishing (OIDC)."
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: "Run the full pipeline without pushing/tagging/releasing/publishing."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.compute_version.outputs.version }}
+      tag: ${{ steps.compute_version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Determine release version
+        id: compute_version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+          import tomllib
+
+          semver = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+          def fail(message: str) -> None:
+              print(f"::error::{message}")
+              raise SystemExit(1)
+
+          def parse_semver(value: str) -> tuple[int, int, int]:
+              match = semver.fullmatch(value)
+              if not match:
+                  fail(f"Invalid semantic version: {value!r}. Expected format X.Y.Z")
+              return tuple(int(part) for part in match.groups())
+
+          def latest_tag_version() -> str:
+              output = subprocess.check_output(
+                  ["git", "tag", "--list", "v[0-9]*.[0-9]*.[0-9]*"],
+                  text=True,
+              ).splitlines()
+              versions: list[tuple[int, int, int]] = []
+              for tag in output:
+                  version = tag[1:] if tag.startswith("v") else tag
+                  if semver.fullmatch(version):
+                      versions.append(parse_semver(version))
+              if not versions:
+                  return "0.0.0"
+              major, minor, patch = max(versions)
+              return f"{major}.{minor}.{patch}"
+
+          input_version = os.getenv("INPUT_VERSION", "").strip()
+          input_bump = os.getenv("INPUT_BUMP", "").strip().lower()
+
+          if input_version and input_bump:
+              fail("Provide either 'version' or 'bump', not both.")
+          if not input_version and not input_bump:
+              fail("Provide one of: 'version' or 'bump'.")
+          if input_bump and input_bump not in {"major", "minor", "patch"}:
+              fail("Input 'bump' must be one of: major, minor, patch.")
+
+          static_version = ""
+          pyproject_path = Path("pyproject.toml")
+          if pyproject_path.exists():
+              data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+              project = data.get("project", {})
+              if isinstance(project, dict):
+                  candidate = project.get("version")
+                  if isinstance(candidate, str) and candidate.strip():
+                      static_version = candidate.strip()
+
+          if input_version:
+              parse_semver(input_version)
+              next_version = input_version
+          else:
+              base_version = static_version if static_version else latest_tag_version()
+              major, minor, patch = parse_semver(base_version)
+              if input_bump == "major":
+                  next_version = f"{major + 1}.0.0"
+              elif input_bump == "minor":
+                  next_version = f"{major}.{minor + 1}.0"
+              else:
+                  next_version = f"{major}.{minor}.{patch + 1}"
+
+          tag = f"v{next_version}"
+
+          local_exists = subprocess.run(
+              ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
+              stdout=subprocess.DEVNULL,
+              stderr=subprocess.DEVNULL,
+              check=False,
+          ).returncode == 0
+          if local_exists:
+              fail(f"Tag already exists locally: {tag}")
+
+          remote_exists = subprocess.run(
+              ["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/{tag}"],
+              stdout=subprocess.DEVNULL,
+              stderr=subprocess.DEVNULL,
+              check=False,
+          ).returncode == 0
+          if remote_exists:
+              fail(f"Tag already exists on origin: {tag}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"version={next_version}\n")
+              fh.write(f"tag={tag}\n")
+          PY
+
+      - name: Update pyproject version (if static)
+        id: update_version
+        env:
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+          import tomllib
+
+          def set_output(key: str, value: str) -> None:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write(f"{key}={value}\n")
+
+          pyproject = Path("pyproject.toml")
+          if not pyproject.exists():
+              set_output("version_changed", "false")
+              set_output("has_static_version", "false")
+              raise SystemExit(0)
+
+          data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+          project = data.get("project", {})
+          current_version = ""
+          if isinstance(project, dict):
+              raw = project.get("version")
+              if isinstance(raw, str):
+                  current_version = raw.strip()
+
+          if not current_version:
+              set_output("version_changed", "false")
+              set_output("has_static_version", "false")
+              raise SystemExit(0)
+
+          release_version = os.environ["RELEASE_VERSION"].strip()
+          if current_version == release_version:
+              set_output("version_changed", "false")
+              set_output("has_static_version", "true")
+              raise SystemExit(0)
+
+          lines = pyproject.read_text(encoding="utf-8").splitlines(keepends=True)
+          in_project = False
+          changed = False
+          pattern = re.compile(r'^(\s*version\s*=\s*")[^"]+(".*)$')
+
+          for index, line in enumerate(lines):
+              stripped = line.strip()
+              if stripped.startswith("[") and stripped.endswith("]"):
+                  in_project = stripped == "[project]"
+                  continue
+              if in_project and "version" in stripped:
+                  newline = "\n" if line.endswith("\n") else ""
+                  content = line[:-1] if newline else line
+                  match = pattern.match(content)
+                  if match:
+                      lines[index] = f"{match.group(1)}{release_version}{match.group(2)}{newline}"
+                      changed = True
+                      break
+
+          if not changed:
+              print("::error::Could not update [project].version in pyproject.toml")
+              raise SystemExit(1)
+
+          pyproject.write_text("".join(lines), encoding="utf-8")
+          set_output("version_changed", "true")
+          set_output("has_static_version", "true")
+          PY
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --group dev
+
+      - name: Run Python tests
+        run: uv run pytest
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Build sdist and wheel
+        run: |
+          rm -rf dist
+          python -m build
+
+      - name: Check distributions
+        run: python -m twine check --strict dist/*
+
+      - name: Ensure GHCR secrets are configured
+        if: ${{ !inputs.dry_run }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "::error::Missing GHCR_TOKEN secret. Configure GHCR_TOKEN (and optional GHCR_USERNAME) in repository secrets."
+            exit 1
+          fi
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: ${{ !inputs.dry_run }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Generate image metadata
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.compute_version.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and publish container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ !inputs.dry_run }}
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Configure git identity
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version update
+        if: ${{ !inputs.dry_run && steps.update_version.outputs.version_changed == 'true' }}
+        env:
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
+        run: |
+          git add pyproject.toml
+          git commit -m "release: v${RELEASE_VERSION}"
+
+      - name: Create annotated tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE_TAG: ${{ steps.compute_version.outputs.tag }}
+        run: git tag -a "${RELEASE_TAG}" -m "Briefcast ${RELEASE_TAG}"
+
+      - name: Push commit and tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION_CHANGED: ${{ steps.update_version.outputs.version_changed }}
+          RELEASE_TAG: ${{ steps.compute_version.outputs.tag }}
+        run: |
+          if [ "${VERSION_CHANGED}" = "true" ]; then
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          git push origin "${RELEASE_TAG}"
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.compute_version.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run complete."
+          echo "Computed version: ${{ steps.compute_version.outputs.version }}"
+          echo "Computed tag: ${{ steps.compute_version.outputs.tag }}"
+
+  publish:
+    name: Publish To PyPI
+    needs: release
+    if: ${{ inputs.publish_pypi && !inputs.dry_run && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
