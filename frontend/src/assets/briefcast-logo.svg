@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="360" viewBox="0 0 1240 360" role="img" aria-labelledby="title desc">
+  <title id="title">Briefcast logo</title>
+  <desc id="desc">Stylized microphone with radio waves and the Briefcast wordmark.</desc>
+  <defs>
+    <linearGradient id="brandBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea7e0"/>
+      <stop offset="100%" stop-color="#1a2d6b"/>
+    </linearGradient>
+    <linearGradient id="paperGray" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b8c2cc"/>
+      <stop offset="100%" stop-color="#65748c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#10204f" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <g transform="translate(20 8)" filter="url(#shadow)">
+    <path d="M100 36 L360 0 L338 250 L52 278 Z" fill="url(#paperGray)"/>
+    <path d="M120 66 L330 30 L312 226 L76 252 Z" fill="#f2f5f8"/>
+    <rect x="118" y="86" width="162" height="14" rx="7" fill="#8ea0b3"/>
+    <rect x="118" y="116" width="124" height="12" rx="6" fill="#8ea0b3"/>
+    <rect x="118" y="146" width="146" height="12" rx="6" fill="#8ea0b3"/>
+    <rect x="118" y="176" width="104" height="12" rx="6" fill="#8ea0b3"/>
+    <rect x="118" y="206" width="126" height="12" rx="6" fill="#8ea0b3"/>
+
+    <rect x="170" y="74" width="128" height="220" rx="64" fill="url(#brandBlue)"/>
+    <polygon points="218,154 218,212 266,183" fill="#f6fbff"/>
+    <rect x="230" y="294" width="12" height="70" fill="#24356f"/>
+    <rect x="168" y="352" width="138" height="20" rx="10" fill="#1d2d66"/>
+
+    <path d="M138 190 a50 50 0 0 0 100 0" fill="none" stroke="#f2f5f8" stroke-width="10" stroke-linecap="round"/>
+    <path d="M150 220 a68 68 0 0 0 136 0" fill="none" stroke="#f2f5f8" stroke-width="10" stroke-linecap="round"/>
+
+    <path d="M96 104 q-36 32 -4 68" fill="none" stroke="url(#brandBlue)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M62 88 q-52 48 -8 94" fill="none" stroke="url(#brandBlue)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M310 104 q36 32 4 68" fill="none" stroke="url(#brandBlue)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M344 88 q52 48 8 94" fill="none" stroke="url(#brandBlue)" stroke-width="12" stroke-linecap="round"/>
+  </g>
+
+  <text x="430" y="234" fill="url(#brandBlue)" font-family="Segoe UI, Arial, sans-serif" font-style="italic" font-weight="700" font-size="178">
+    Briefcast
+  </text>
+</svg>

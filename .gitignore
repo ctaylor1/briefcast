@@ -33,16 +33,16 @@ coverage.html
 *.trace
 
 # Runtime data
-assets/
-data/
-backups/
-config/
-briefcast.db
-briefcast.db-journal
-briefcast.db-shm
-briefcast.db-wal
-*.sqlite
-*.sqlite3
+/assets/
+/data/
+/backups/
+/config/
+/briefcast.db
+/briefcast.db-journal
+/briefcast.db-shm
+/briefcast.db-wal
+/*.sqlite
+/*.sqlite3
 
 # Logs
 *.log
