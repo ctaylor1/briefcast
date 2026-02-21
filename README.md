@@ -152,7 +152,7 @@ docker compose up -d
 ```
 
 - Copy `.env.example` to `.env`, then edit only the values you care about (password, logs, check frequency, paths, image tag).
-- Default logs go to both container stdout and `/config/logs/briefcast.log`.
+- Default logs go to both container stdout and `/logs/briefcast-{startup_ts}.log`.
 - Advanced WhisperX tuning can live in `.env.whisperx` (template: `whisperx.env.example`).
 
 - Default service uses **SQLite**
@@ -196,8 +196,9 @@ docker run -d \
 
 | Path       | Required | Purpose                                  | Sizing guidance |
 |-----------|----------|-------------------------------------------|-----------------|
-| `/config` | ✅       | SQLite DB, app config, backups, logs      | start 5–20 GB   |
+| `/config` | ✅       | SQLite DB, app config, backups            | start 5–20 GB   |
 | `/assets` | ✅       | downloaded media + episode/podcast images | often 100+ GB   |
+| `/logs`   | ✅       | rotating application log files            | start 1–5 GB    |
 
 Recommendations:
 
@@ -221,7 +222,7 @@ docker run -d \
 ## Configuration
 
 For Docker Compose end users, most setups only need:
-`PASSWORD`, `CHECK_FREQUENCY`, `LOG_OUTPUT`, optional `DATABASE_URL`, plus host path/port values in `.env`.
+`PASSWORD`, `CHECK_FREQUENCY`, `LOG_OUTPUT`, optional `DATABASE_URL`, plus host path/port values in `.env` (`HOST_CONFIG_DIR`, `HOST_ASSETS_DIR`, `HOST_LOGS_DIR`, `HOST_PORT`).
 
 ### Core runtime
 
@@ -253,17 +254,19 @@ For Docker Compose end users, most setups only need:
 - `LOG_LEVEL`: `debug|info|warn|error` (default `info`)
 - `LOG_FORMAT`: `json|text` (default `json` for Go services; Python helper defaults to `text`)
 - `LOG_OUTPUT`: comma-separated outputs: `stdout`, `stderr`, or a file path  
-  e.g. `LOG_OUTPUT=stdout,/var/log/briefcast/app.log`
+  e.g. `LOG_OUTPUT=stdout,file:/logs/briefcast-{startup_ts}.log`
 - `LOG_FILE_MAX_SIZE_MB`: default `50`
 - `LOG_FILE_MAX_BACKUPS`: default `7`
 - `LOG_FILE_MAX_AGE_DAYS`: default `14`
 - `LOG_FILE_COMPRESS`: default `true`
+- `LOG_RUN_TIMESTAMP`: optional shared run ID for timestamp token expansion (auto-generated if empty)
 
 Notes:
 
 - Incoming `X-Request-ID` is propagated; otherwise generated.
 - Background jobs include `job_name` and `job_id` in logs.
-- Python helpers also honor `LOG_LEVEL` / `LOG_FORMAT`, log to `stderr`, and redact common secret fields.
+- File paths can include `{startup_ts}`, `{timestamp}`, or `{run_ts}` tokens.
+- Python helpers also honor `LOG_LEVEL` / `LOG_FORMAT` / `LOG_OUTPUT`, and redact common secret fields.
 
 ### Search providers
 
@@ -504,7 +507,7 @@ What it does:
 Required setup:
 
 - Run the workflow from the default branch only.
-- Configure repository secret `GHCR_TOKEN` (and optional `GHCR_USERNAME`) for GHCR image push.
+- Ensure Actions permissions allow package write (workflow sets this with `packages: write`).
 - If using PyPI publish, configure PyPI Trusted Publishing for this repository/workflow.
 
 Run from CLI with `gh` (single command each):

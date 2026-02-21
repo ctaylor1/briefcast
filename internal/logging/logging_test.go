@@ -16,6 +16,8 @@ import (
 func resetBaseLogger() {
 	baseLogger = nil
 	baseLoggerOnce = sync.Once{}
+	logRunTimestamp = ""
+	logRunTimestampOnce = sync.Once{}
 }
 
 func TestParseLogLevel(t *testing.T) {
@@ -78,6 +80,19 @@ func TestResolveLogOutputsDefaultAndFile(t *testing.T) {
 	}
 	if _, err := filepath.Abs(logFile); err != nil {
 		t.Fatalf("expected valid log path: %v", err)
+	}
+}
+
+func TestResolveLogFilePathExpandsTimestampTokens(t *testing.T) {
+	resetBaseLogger()
+	t.Setenv(LogRunTimestamp, "20260221-014500")
+
+	resolved := resolveLogFilePath("logs/briefcast-{startup_ts}.log")
+	if strings.Contains(resolved, "{startup_ts}") {
+		t.Fatalf("expected startup token to be expanded, got %q", resolved)
+	}
+	if !strings.Contains(resolved, "20260221-014500") {
+		t.Fatalf("expected resolved path to include run timestamp, got %q", resolved)
 	}
 }
 

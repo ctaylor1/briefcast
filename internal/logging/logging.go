@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,11 +18,14 @@ const (
 	RequestIDKey     = "request_id"
 	RequestIDHeader  = "X-Request-ID"
 	RequestLoggerKey = "request_logger"
+	LogRunTimestamp  = "LOG_RUN_TIMESTAMP"
 )
 
 var (
-	baseLogger     *zap.Logger
-	baseLoggerOnce sync.Once
+	baseLogger          *zap.Logger
+	baseLoggerOnce      sync.Once
+	logRunTimestamp     string
+	logRunTimestampOnce sync.Once
 )
 
 func Base() *zap.Logger {
@@ -125,6 +129,7 @@ func resolveLogOutputs() []zapcore.WriteSyncer {
 			if path == "" {
 				continue
 			}
+			path = resolveLogFilePath(path)
 			if dir := filepath.Dir(path); dir != "." && dir != "" {
 				_ = os.MkdirAll(dir, 0o755)
 			}
@@ -139,6 +144,55 @@ func resolveLogOutputs() []zapcore.WriteSyncer {
 	}
 
 	return outputs
+}
+
+func resolveLogFilePath(path string) string {
+	resolved := strings.TrimSpace(path)
+	if resolved == "" {
+		return ""
+	}
+
+	timestamp := logRunTimestampValue()
+	replacer := strings.NewReplacer(
+		"{startup_ts}", timestamp,
+		"{timestamp}", timestamp,
+		"{run_ts}", timestamp,
+	)
+	return replacer.Replace(resolved)
+}
+
+func logRunTimestampValue() string {
+	logRunTimestampOnce.Do(func() {
+		value := strings.TrimSpace(os.Getenv(LogRunTimestamp))
+		if value == "" {
+			value = time.Now().UTC().Format("20060102-150405")
+		}
+		value = sanitizeLogRunTimestamp(value)
+		if value == "" {
+			value = time.Now().UTC().Format("20060102-150405")
+		}
+
+		logRunTimestamp = value
+		_ = os.Setenv(LogRunTimestamp, value)
+	})
+	return logRunTimestamp
+}
+
+func sanitizeLogRunTimestamp(raw string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(raw) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func getEnvInt(name string, fallback int) int {

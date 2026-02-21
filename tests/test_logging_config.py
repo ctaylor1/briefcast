@@ -25,6 +25,7 @@ def test_redact_sensitive_recurses_nested_structures() -> None:
 def test_setup_logging_json_format_redacts_context(monkeypatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "INFO")
     monkeypatch.setenv("LOG_FORMAT", "json")
+    monkeypatch.setenv("LOG_OUTPUT", "stderr")
 
     capture = StringIO()
     with redirect_stderr(capture):
@@ -45,3 +46,22 @@ def test_setup_logging_json_format_redacts_context(monkeypatch) -> None:
     assert context["api_key"] == "***REDACTED***"
     assert context["password"] == "***REDACTED***"
     assert context["safe"] == "ok"
+
+
+def test_setup_logging_file_output_uses_timestamp_template(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    monkeypatch.setenv("LOG_FORMAT", "text")
+    monkeypatch.setenv("LOG_RUN_TIMESTAMP", "20260221-120000")
+    monkeypatch.setenv("LOG_OUTPUT", f"file:{tmp_path}/briefcast-{{startup_ts}}.log")
+
+    setup_logging(service_name="briefcast-test", force=True)
+    logger = logging.getLogger(__name__)
+    logger.info("file sink works")
+
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+
+    log_file = tmp_path / "briefcast-20260221-120000.log"
+    assert log_file.exists()
+    text = log_file.read_text(encoding="utf-8")
+    assert "file sink works" in text

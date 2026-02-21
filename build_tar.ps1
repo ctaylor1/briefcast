@@ -1,0 +1,51 @@
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [string]$Version,
+    [string]$ImageName = "briefcast"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $scriptDir
+
+if (-not $Version) {
+    $latestTag = git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | Select-Object -First 1
+    if (-not $latestTag) {
+        throw "No semantic version tags found. Pass -Version X.Y.Z."
+    }
+
+    $Version = $latestTag.Trim()
+    if ($Version.StartsWith("v")) {
+        $Version = $Version.Substring(1)
+    }
+}
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Invalid version '$Version'. Expected X.Y.Z."
+}
+
+$imageTag = "${ImageName}:latest"
+$tarName = "${ImageName}_v$Version.tar"
+$buildsDir = Join-Path $scriptDir "builds"
+$tarPath = Join-Path $buildsDir $tarName
+
+if (-not (Test-Path $buildsDir)) {
+    New-Item -ItemType Directory -Path $buildsDir | Out-Null
+}
+
+Write-Host "Building Docker image: $imageTag"
+docker build -t $imageTag .
+if ($LASTEXITCODE -ne 0) {
+    throw "docker build failed for image tag '$imageTag'."
+}
+
+Write-Host "Saving Docker image: $tarPath"
+docker image save -o $tarPath $imageTag
+if ($LASTEXITCODE -ne 0) {
+    throw "docker image save failed for image tag '$imageTag'."
+}
+
+Write-Host "Done: $tarPath"

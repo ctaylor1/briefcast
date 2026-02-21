@@ -9,13 +9,18 @@ import re
 import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Literal
 
 LOG_LEVEL_ENV = "LOG_LEVEL"
 LOG_FORMAT_ENV = "LOG_FORMAT"
+LOG_OUTPUT_ENV = "LOG_OUTPUT"
+LOG_RUN_TIMESTAMP_ENV = "LOG_RUN_TIMESTAMP"
 
 _DEFAULT_LOG_LEVEL = "INFO"
 _DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
+_DEFAULT_LOG_OUTPUT = "stderr"
 _REDACTED = "***REDACTED***"
 _SENSITIVE_KEYWORDS = (
     "api_key",
@@ -32,29 +37,30 @@ _SENSITIVE_KEYWORDS = (
     "token",
 )
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
+_NON_TS = re.compile(r"[^A-Za-z0-9_-]+")
 _configured = False
+_run_timestamp: str | None = None
 
 
 def setup_logging(service_name: str = "briefcast-python", *, force: bool = False) -> None:
-    """Configure root logging once using LOG_LEVEL and LOG_FORMAT env vars."""
+    """Configure root logging once using LOG_LEVEL/LOG_FORMAT/LOG_OUTPUT env vars."""
     global _configured
+    global _run_timestamp
     if _configured and not force:
         return
+    if force:
+        _run_timestamp = None
 
     root_logger = logging.getLogger()
     log_level = _parse_log_level(os.getenv(LOG_LEVEL_ENV, _DEFAULT_LOG_LEVEL))
     log_format = _parse_log_format(os.getenv(LOG_FORMAT_ENV, _DEFAULT_LOG_FORMAT))
+    handlers = _build_handlers(service_name=service_name, log_format=log_format)
 
-    handler = logging.StreamHandler(stream=sys.stderr)
-    formatter: logging.Formatter
-    if log_format == "json":
-        formatter = _JSONFormatter(service_name=service_name)
-    else:
-        formatter = _TextFormatter(service_name=service_name)
-    handler.setFormatter(formatter)
-
+    for handler in root_logger.handlers:
+        handler.close()
     root_logger.handlers.clear()
-    root_logger.addHandler(handler)
+    for handler in handlers:
+        root_logger.addHandler(handler)
     root_logger.setLevel(log_level)
     _configured = True
 
@@ -99,6 +105,110 @@ def _parse_log_format(raw_format: str) -> Literal["text", "json"]:
     if value == "json":
         return "json"
     return "text"
+
+
+def _build_handlers(
+    *, service_name: str, log_format: Literal["text", "json"]
+) -> list[logging.Handler]:
+    formatter: logging.Formatter
+    if log_format == "json":
+        formatter = _JSONFormatter(service_name=service_name)
+    else:
+        formatter = _TextFormatter(service_name=service_name)
+
+    handlers: list[logging.Handler] = []
+    for token in _parse_log_outputs(os.getenv(LOG_OUTPUT_ENV, _DEFAULT_LOG_OUTPUT)):
+        handler = _build_handler(token)
+        if handler is None:
+            continue
+        handler.setFormatter(formatter)
+        handlers.append(handler)
+
+    if handlers:
+        return handlers
+
+    fallback = logging.StreamHandler(stream=sys.stderr)
+    fallback.setFormatter(formatter)
+    return [fallback]
+
+
+def _parse_log_outputs(raw_outputs: str) -> list[str]:
+    outputs = [token.strip() for token in raw_outputs.split(",") if token.strip()]
+    if outputs:
+        return outputs
+    return [_DEFAULT_LOG_OUTPUT]
+
+
+def _build_handler(token: str) -> logging.Handler | None:
+    value = token.strip()
+    if not value:
+        return None
+
+    lowered = value.lower()
+    if lowered == "stdout":
+        return logging.StreamHandler(stream=sys.stdout)
+    if lowered == "stderr":
+        return logging.StreamHandler(stream=sys.stderr)
+
+    path_value = value
+    if lowered.startswith("file:"):
+        path_value = value[len("file:") :]
+    path_value = _expand_log_path(path_value)
+    if not path_value:
+        return None
+
+    log_path = Path(path_value)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    max_bytes = max(_parse_int_env("LOG_FILE_MAX_SIZE_MB", 50), 1) * 1024 * 1024
+    backup_count = max(_parse_int_env("LOG_FILE_MAX_BACKUPS", 7), 0)
+
+    return RotatingFileHandler(
+        log_path,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+
+
+def _expand_log_path(path: str) -> str:
+    resolved = path.strip()
+    if not resolved:
+        return ""
+
+    timestamp = _resolve_run_timestamp()
+    return (
+        resolved.replace("{startup_ts}", timestamp)
+        .replace("{timestamp}", timestamp)
+        .replace("{run_ts}", timestamp)
+    )
+
+
+def _resolve_run_timestamp() -> str:
+    global _run_timestamp
+    if _run_timestamp is not None:
+        return _run_timestamp
+
+    raw = os.getenv(LOG_RUN_TIMESTAMP_ENV, "").strip()
+    if not raw:
+        raw = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
+
+    sanitized = _NON_TS.sub("", raw)
+    if not sanitized:
+        sanitized = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
+
+    _run_timestamp = sanitized
+    os.environ[LOG_RUN_TIMESTAMP_ENV] = sanitized
+    return sanitized
+
+
+def _parse_int_env(name: str, fallback: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return fallback
+    try:
+        return int(raw)
+    except ValueError:
+        return fallback
 
 
 def _is_sensitive_key(key: str) -> bool:
