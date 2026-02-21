@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useDebouncedWatch } from "../composables/useDebouncedWatch";
+import { useGlobalSearch } from "../composables/useGlobalSearch";
+import type { LocalSearchResult } from "../types/api";
 import UiDropdown from "./ui/UiDropdown.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
 
@@ -14,6 +17,26 @@ interface NavItem {
   meta: string;
   keywords: string;
 }
+
+interface CommandRouteItem {
+  kind: "route";
+  key: string;
+  label: string;
+  section: string;
+  meta: string;
+  to: string;
+}
+
+interface CommandLocalItem {
+  kind: "local";
+  key: string;
+  label: string;
+  section: string;
+  meta: string;
+  result: LocalSearchResult;
+}
+
+type CommandItem = CommandRouteItem | CommandLocalItem;
 
 const route = useRoute();
 const router = useRouter();
@@ -86,6 +109,15 @@ const commandOpen = ref(false);
 const commandQuery = ref("");
 const commandActiveIndex = ref(0);
 const commandInputRef = ref<HTMLInputElement | null>(null);
+const {
+  query: globalSearchQuery,
+  results: globalSearchResults,
+  loading: globalSearchLoading,
+  error: globalSearchError,
+  run: runGlobalSearch,
+  typeLabel: localResultTypeLabel,
+  summary: localResultSummary,
+} = useGlobalSearch(50);
 
 const isDesktop = computed(() => viewportWidth.value >= 1024);
 const showSidebar = computed(() => viewportWidth.value >= 768);
@@ -111,15 +143,40 @@ const breadcrumbs = computed(() => {
   return ["Home", active.section, active.label];
 });
 
-const filteredCommandItems = computed(() => {
+const routeCommandItems = computed<CommandRouteItem[]>(() => {
   const query = commandQuery.value.trim().toLowerCase();
+  return navItems
+    .filter((item) => {
+      const haystack = `${item.label} ${item.section} ${item.keywords}`.toLowerCase();
+      return !query || haystack.includes(query);
+    })
+    .map((item) => ({
+      kind: "route",
+      key: `route:${item.to}`,
+      label: item.label,
+      section: item.section,
+      meta: item.meta,
+      to: item.to,
+    }));
+});
+
+const localCommandItems = computed<CommandLocalItem[]>(() =>
+  globalSearchResults.value.map((result, index) => ({
+    kind: "local",
+    key: `local:${result.type}:${result.episodeId || result.podcastId || index}:${index}`,
+    label: localResultLabel(result),
+    section: `${localResultTypeLabel(result)} result`,
+    meta: localResultSummary(result) || result.podcastTitle || "Library match",
+    result,
+  })),
+);
+
+const commandItems = computed<CommandItem[]>(() => {
+  const query = commandQuery.value.trim();
   if (!query) {
-    return navItems;
+    return routeCommandItems.value;
   }
-  return navItems.filter((item) => {
-    const haystack = `${item.label} ${item.section} ${item.keywords}`.toLowerCase();
-    return haystack.includes(query);
-  });
+  return [...routeCommandItems.value, ...localCommandItems.value];
 });
 
 const commandHint = computed(() => (isMac() ? "Cmd+K" : "Ctrl+K"));
@@ -203,15 +260,22 @@ function openCommandPalette(): void {
 }
 
 function closeCommandPalette(): void {
+  const wasOpen = commandOpen.value;
   commandOpen.value = false;
+  if (!wasOpen && commandQuery.value.trim() === "") {
+    return;
+  }
+  commandQuery.value = "";
+  globalSearchQuery.value = "";
+  void runGlobalSearch();
 }
 
 function moveCommandSelection(direction: 1 | -1): void {
-  if (filteredCommandItems.value.length === 0) {
+  if (commandItems.value.length === 0) {
     commandActiveIndex.value = 0;
     return;
   }
-  const maxIndex = filteredCommandItems.value.length - 1;
+  const maxIndex = commandItems.value.length - 1;
   const next = commandActiveIndex.value + direction;
   if (next > maxIndex) {
     commandActiveIndex.value = 0;
@@ -224,14 +288,70 @@ function moveCommandSelection(direction: 1 | -1): void {
   commandActiveIndex.value = next;
 }
 
-function selectCommand(item: NavItem): void {
+function localResultLabel(result: LocalSearchResult): string {
+  switch (result.type) {
+    case "podcast":
+      return result.podcastTitle || "Podcast match";
+    case "episode":
+      return result.episodeTitle || "Episode match";
+    case "chapter":
+      return result.chapterTitle || result.episodeTitle || "Chapter match";
+    case "transcript":
+      return result.episodeTitle || result.podcastTitle || "Transcript match";
+    default:
+      return "Search result";
+  }
+}
+
+function localResultRoute(result: LocalSearchResult): { path: string; query?: Record<string, string> } {
+  if (result.type === "podcast" && result.podcastId) {
+    return {
+      path: "/episodes",
+      query: { podcastIds: result.podcastId },
+    };
+  }
+
+  const q = ((): string => {
+    if (result.type === "episode") {
+      return result.episodeTitle || "";
+    }
+    if (result.type === "chapter") {
+      return result.chapterTitle || result.episodeTitle || "";
+    }
+    if (result.type === "transcript") {
+      return result.episodeTitle || result.transcriptSnippet || "";
+    }
+    return result.podcastTitle || "";
+  })();
+
+  if (q) {
+    return {
+      path: "/episodes",
+      query: { q },
+    };
+  }
+
+  if (result.podcastId) {
+    return {
+      path: "/episodes",
+      query: { podcastIds: result.podcastId },
+    };
+  }
+
+  return { path: "/episodes" };
+}
+
+function selectCommand(item: CommandItem): void {
   closeCommandPalette();
-  commandQuery.value = "";
-  void router.push(item.to);
+  if (item.kind === "route") {
+    void router.push(item.to);
+    return;
+  }
+  void router.push(localResultRoute(item.result));
 }
 
 function runActiveCommand(): void {
-  const item = filteredCommandItems.value[commandActiveIndex.value];
+  const item = commandItems.value[commandActiveIndex.value];
   if (item) {
     selectCommand(item);
   }
@@ -303,7 +423,7 @@ watch(commandOpen, async (open) => {
   commandInputRef.value?.select();
 });
 
-watch(filteredCommandItems, (items) => {
+watch(commandItems, (items) => {
   if (items.length === 0) {
     commandActiveIndex.value = 0;
     return;
@@ -312,6 +432,18 @@ watch(filteredCommandItems, (items) => {
     commandActiveIndex.value = 0;
   }
 });
+
+useDebouncedWatch(
+  () => commandQuery.value,
+  () => {
+    if (!commandOpen.value) {
+      return;
+    }
+    globalSearchQuery.value = commandQuery.value;
+    void runGlobalSearch();
+  },
+  250,
+);
 
 onMounted(() => {
   restoreSidebarPreference();
@@ -485,21 +617,35 @@ onBeforeUnmount(() => {
     @click.self="closeCommandPalette"
   >
     <div class="command-panel">
-      <label class="sr-only" for="command-palette-input">Search routes</label>
+      <label class="sr-only" for="command-palette-input">Search routes and library</label>
       <input
         id="command-palette-input"
         ref="commandInputRef"
         v-model="commandQuery"
         type="text"
         class="ui-input command-input"
-        placeholder="Search routes and actions"
+        placeholder="Search routes, podcasts, episodes, chapters, transcripts"
         @keydown="handleCommandInputKeydown"
       />
       <ul class="command-list visually-scrollable">
-        <li v-if="filteredCommandItems.length === 0" class="command-empty">No matches.</li>
         <li
-          v-for="(item, index) in filteredCommandItems"
-          :key="item.to"
+          v-if="globalSearchLoading && commandQuery.trim().length > 0"
+          class="command-empty"
+        >
+          Searching library...
+        </li>
+        <li v-if="globalSearchError" class="command-empty">
+          {{ globalSearchError }}
+        </li>
+        <li
+          v-if="commandItems.length === 0 && !globalSearchLoading && !globalSearchError"
+          class="command-empty"
+        >
+          No matches.
+        </li>
+        <li
+          v-for="(item, index) in commandItems"
+          :key="item.key"
           class="command-item"
         >
           <button

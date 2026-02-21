@@ -115,6 +115,28 @@ function parseRoutePodcastIds(): string[] {
   return Array.from(new Set(ids));
 }
 
+function parseRouteQueryText(): string {
+  const query = route.query as Record<string, unknown>;
+  const raw = query.q;
+  if (typeof raw === "string") {
+    return raw.trim();
+  }
+  if (Array.isArray(raw)) {
+    const first = raw.find((value): value is string => typeof value === "string");
+    return first?.trim() || "";
+  }
+  return "";
+}
+
+function sameStringList(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
+}
+
 async function loadPodcastOptions(): Promise<void> {
   try {
     podcastOptions.value = await podcastsApi.list();
@@ -240,11 +262,29 @@ useDebouncedWatch(
   300,
 );
 
+watch(
+  () => route.query,
+  () => {
+    const nextQuery = parseRouteQueryText();
+    const nextPodcastIds = parseRoutePodcastIds();
+    const queryChanged = nextQuery !== filter.q;
+    const podcastsChanged = !sameStringList(nextPodcastIds, filter.podcastIds);
+    if (!queryChanged && !podcastsChanged) {
+      return;
+    }
+    filter.page = 1;
+    filter.q = nextQuery;
+    filter.podcastIds = nextPodcastIds;
+  },
+);
+
 onMounted(() => {
+  filter.q = parseRouteQueryText();
   const routePodcastIds = parseRoutePodcastIds();
   if (routePodcastIds.length > 0) {
     filter.podcastIds = routePodcastIds;
-  } else {
+  }
+  if (routePodcastIds.length === 0 && filter.q.trim() === "") {
     void fetchEpisodes();
   }
   void loadPodcastOptions();
