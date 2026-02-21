@@ -111,3 +111,47 @@ func TestFetchFeedWithFeedparser(t *testing.T) {
 		t.Fatalf("expected raw feed body returned, got %q", string(raw))
 	}
 }
+
+func TestSanitizeHelperLogOutput(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		output string
+	}{
+		{name: "empty falls back to stderr", input: "", output: "stderr"},
+		{name: "stdout only falls back to stderr", input: "stdout", output: "stderr"},
+		{name: "remove stdout preserve stderr and file", input: "stdout,stderr,file:/logs/app.log", output: "stderr,file:/logs/app.log"},
+		{name: "keep non stdout tokens", input: "file:/logs/app.log", output: "file:/logs/app.log"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeHelperLogOutput(tc.input)
+			if got != tc.output {
+				t.Fatalf("sanitizeHelperLogOutput(%q) = %q, expected %q", tc.input, got, tc.output)
+			}
+		})
+	}
+}
+
+func TestParseFeedWithFeedparserSuppressesStdoutLoggingNoise(t *testing.T) {
+	pythonPath := requireWorkingPython(t)
+
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "feedparser_noisy.py")
+	body := "#!/usr/bin/env python3\nimport json\nimport os\nif 'stdout' in os.getenv('LOG_OUTPUT', '').lower():\n    print('debug-line-that-breaks-json')\nprint(json.dumps({'feed': {'title':'Noise Safe Feed'}, 'entries': []}))\n"
+	if err := os.WriteFile(scriptPath, []byte(body), 0o755); err != nil {
+		t.Fatalf("failed to write noisy script: %v", err)
+	}
+
+	t.Setenv(feedparserPythonEnv, pythonPath)
+	t.Setenv(feedparserScriptEnv, scriptPath)
+	t.Setenv(logOutputEnv, "stdout,file:/tmp/briefcast.log")
+
+	parsed, err := ParseFeedWithFeedparser([]byte("<rss/>"))
+	if err != nil {
+		t.Fatalf("ParseFeedWithFeedparser failed with stdout log noise: %v", err)
+	}
+	if parsed.Feed["title"] != "Noise Safe Feed" {
+		t.Fatalf("expected parsed feed title, got %+v", parsed.Feed)
+	}
+}

@@ -22,11 +22,12 @@ type FeedParserResult struct {
 }
 
 const (
-	defaultFeedparserScript = "scripts/feedparser_parse.py"
+	defaultFeedparserScript         = "scripts/feedparser_parse.py"
 	defaultFeedparserTimeoutSeconds = 30
-	feedparserPythonEnv     = "FEEDPARSER_PYTHON"
-	feedparserScriptEnv     = "FEEDPARSER_SCRIPT"
-	feedparserTimeoutEnv    = "FEEDPARSER_TIMEOUT_SECONDS"
+	feedparserPythonEnv             = "FEEDPARSER_PYTHON"
+	feedparserScriptEnv             = "FEEDPARSER_SCRIPT"
+	feedparserTimeoutEnv            = "FEEDPARSER_TIMEOUT_SECONDS"
+	logOutputEnv                    = "LOG_OUTPUT"
 )
 
 func FetchFeedWithFeedparser(url string) (FeedParserResult, []byte, error) {
@@ -64,6 +65,7 @@ func ParseFeedWithFeedparser(body []byte) (FeedParserResult, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath)
+	cmd.Env = helperCommandEnv()
 	cmd.Stdin = bytes.NewReader(body)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -105,4 +107,36 @@ func resolvePython() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("python interpreter not found; set %s or install python", feedparserPythonEnv)
+}
+
+func helperCommandEnv() []string {
+	base := os.Environ()
+	env := make([]string, 0, len(base)+1)
+	for _, entry := range base {
+		if strings.HasPrefix(entry, logOutputEnv+"=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, logOutputEnv+"="+sanitizeHelperLogOutput(os.Getenv(logOutputEnv)))
+	return env
+}
+
+func sanitizeHelperLogOutput(raw string) string {
+	parts := strings.Split(raw, ",")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		if strings.EqualFold(token, "stdout") {
+			continue
+		}
+		filtered = append(filtered, token)
+	}
+	if len(filtered) == 0 {
+		return "stderr"
+	}
+	return strings.Join(filtered, ",")
 }

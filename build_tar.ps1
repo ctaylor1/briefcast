@@ -37,6 +37,11 @@ if (-not (Test-Path $buildsDir)) {
     New-Item -ItemType Directory -Path $buildsDir | Out-Null
 }
 
+if (Test-Path -LiteralPath $tarPath) {
+    Write-Host "Removing existing tar: $tarPath"
+    Remove-Item -LiteralPath $tarPath -Force
+}
+
 Write-Host "Building Docker image: $imageTag"
 docker build -t $imageTag .
 if ($LASTEXITCODE -ne 0) {
