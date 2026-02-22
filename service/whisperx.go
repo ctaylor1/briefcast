@@ -130,6 +130,7 @@ func TranscribePendingEpisodes() error {
 
 	lock := db.GetLock("TranscribePendingEpisodes")
 	if lock.IsLocked() {
+		// Another run is already processing; skip this cron tick.
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
@@ -145,6 +146,7 @@ func TranscribePendingEpisodes() error {
 		return err
 	}
 
+	// Include "processing" so interrupted work can be resumed after restarts.
 	statuses := []string{"pending_whisperx", "processing"}
 	if cfg.RetryFailed {
 		statuses = append(statuses, "failed")
@@ -179,6 +181,7 @@ func TranscribePendingEpisodes() error {
 	}
 
 	runWorkerPool(*items, workers, func(item db.PodcastItem) {
+		// WhisperX only runs against local downloaded audio files.
 		if item.DownloadPath == "" || !FileExists(item.DownloadPath) {
 			jobLogger.Warnw("audio file missing for transcription", "podcast_item_id", item.ID, "path", item.DownloadPath)
 			item.TranscriptStatus = "failed"

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2026-02-22
+
+- Enforced WhisperX in all container builds by default (`INSTALL_WHISPERX=true`) and made non-WhisperX builds fail fast.
+- Updated release automation to publish WhisperX-enabled images on `linux/amd64` and pass `INSTALL_WHISPERX=true` during image builds.
+- Updated `build_tar.ps1` to always build WhisperX-enabled `linux/amd64` images before saving versioned tar artifacts.
+- Added `scripts/reset_app_data.sh` to reset runtime/transactional data (DB records, assets, logs, backups) while preserving configuration files.
+- Improved Synology deployment compatibility and docs: short `env_file` compose syntax, safer `LOG_OUTPUT` handling, and expanded NAS runbook guidance.
+- Added targeted maintenance comments in download and transcription code paths to clarify lock behavior, transcript eligibility, and resume-download semantics.
+
 ## [1.0.4] - 2026-02-21
 
 - Added deterministic download queue ordering in the modern UI so active downloads are shown first.

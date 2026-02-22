@@ -6,7 +6,7 @@ Podcast downloader and library manager with a modern web UI.
 - **Frontend:** Vue 3 + Vite + TypeScript + Tailwind (served at `/app`)
 - **Database:** SQLite (default) or Postgres via `DATABASE_URL`
 - **Automation:** scheduled refresh, downloads, image sync, backups, and maintenance
-- **Optional:** WhisperX transcription pipeline (external deps)
+- **Built-in:** WhisperX transcription dependencies in Docker images (linux/amd64)
 
 ---
 
@@ -26,6 +26,7 @@ Podcast downloader and library manager with a modern web UI.
   - [Docker](#docker)
     - [docker compose (recommended)](#docker-compose-recommended)
     - [Run the published image](#run-the-published-image)
+    - [Run WhisperX Image From Local Tar (NAS-friendly)](#run-whisperx-image-from-local-tar-nas-friendly)
     - [Use external Postgres](#use-external-postgres)
     - [Storage (containers)](#storage-containers)
   - [Configuration](#configuration)
@@ -45,6 +46,7 @@ Podcast downloader and library manager with a modern web UI.
   - [Python tooling](#python-tooling)
   - [Release basics](#release-basics)
   - [One-command release](#one-command-release)
+  - [Reset App Runtime Data](#reset-app-runtime-data)
   - [Reset and share on GitHub](#reset-and-share-on-github)
   - [Migration note (rename to Briefcast)](#migration-note-rename-to-briefcast)
 
@@ -56,7 +58,7 @@ Podcast downloader and library manager with a modern web UI.
 - Download episode media and manage a local library
 - Sync episode/podcast artwork and track file sizes
 - Built-in backups and periodic maintenance jobs
-- Optional WhisperX transcription workflow
+- WhisperX transcription workflow (runtime configurable)
 
 ---
 
@@ -155,6 +157,7 @@ docker compose up -d
 - Compose now explicitly loads `.env` into the container runtime environment.
 - Default logs go to both container stdout and `/logs/briefcast-{startup_ts}.log`.
 - Advanced WhisperX tuning can live in `.env.whisperx` (template: `whisperx.env.example`).
+- For older compose parsers (common on Synology), keep `env_file` entries as plain strings and create an empty `.env.whisperx` if you do not use advanced overrides.
 
 - Default service uses **SQLite**
 - A **Postgres** service is available under the `postgres` profile
@@ -174,10 +177,24 @@ docker exec briefcast sh -lc 'ls -lah /logs'
 
 If the `LOG_OUTPUT` value and `/logs` mount are correct, log files should appear under your host `HOST_LOGS_DIR`.
 
+If your compose parser is older and rejects object-style `env_file` entries, use:
+
+```yaml
+env_file:
+  - .env
+  - .env.whisperx
+```
+
+and create the optional file once:
+
+```bash
+touch .env.whisperx
+```
+
 ### Run the published image
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.0.4
+docker pull ghcr.io/ctaylor1/briefcast:1.0.5
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -187,10 +204,47 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.4
+  ghcr.io/ctaylor1/briefcast:1.0.5
 ```
 
-`latest` should point to the current release tag (`1.0.4`).
+`latest` should point to the current release tag (`1.0.5`).
+
+### Run WhisperX Image From Local Tar (NAS-friendly)
+
+If your NAS runs local tar deployments (without GHCR pull):
+
+1. Build WhisperX image on your build machine:
+
+```bash
+docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t briefcast:with-whisperx --load .
+docker image save -o builds/briefcast_with_whisperx.tar briefcast:with-whisperx
+```
+
+2. Copy tar to NAS and load:
+
+```bash
+scp builds/briefcast_with_whisperx.tar grandmaster@ATLAS:/volume1/docker/podcasts-briefcast/
+ssh grandmaster@ATLAS
+cd /volume1/docker/podcasts-briefcast
+docker load -i briefcast_with_whisperx.tar
+```
+
+3. Point compose to the local image and enable workers in `.env`:
+
+```bash
+BRIEFCAST_IMAGE=briefcast:with-whisperx
+WHISPERX_ENABLED=true
+WHISPERX_CHECK_FREQUENCY=1
+WHISPERX_MAX_CONCURRENCY=2
+```
+
+4. Restart and verify:
+
+```bash
+docker compose --env-file .env up -d --force-recreate
+docker exec briefcast /opt/venv/bin/python -c "import whisperx; print('whisperx ok')"
+docker logs --since 20m briefcast | grep -E 'TranscribePendingEpisodes|whisperx worker pool started|whisperx transcription failed'
+```
 
 ### Use external Postgres
 
@@ -205,7 +259,7 @@ docker run -d \
   -v briefcast_data:/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.0.4
+  ghcr.io/ctaylor1/briefcast:1.0.5
 ```
 
 ### Storage (containers)
@@ -230,7 +284,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.4
+  ghcr.io/ctaylor1/briefcast:1.0.5
 ```
 
 ---
@@ -283,6 +337,7 @@ Notes:
 - Background jobs include `job_name` and `job_id` in logs.
 - File paths can include `{startup_ts}`, `{timestamp}`, or `{run_ts}` tokens.
 - Python helpers also honor `LOG_LEVEL` / `LOG_FORMAT` / `LOG_OUTPUT`, and redact common secret fields.
+- Put `LOG_OUTPUT` value in `.env`. Avoid using a compose fallback containing `{startup_ts}` in `${...:-...}` because older compose parsers can mis-handle nested braces.
 
 ### Search providers
 
@@ -305,9 +360,10 @@ ID3 extraction:
 
 ### WhisperX transcription (optional)
 
-**Not bundled** in the default Docker image. You must install WhisperX + dependencies yourself.
+WhisperX dependencies are bundled in Docker builds by default (currently `linux/amd64` only).
+Transcription itself remains runtime-configurable with environment variables.
 
-To build an image with WhisperX preinstalled (currently `linux/amd64` only):
+If you build manually, keep WhisperX enabled:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t ghcr.io/ctaylor1/briefcast:with-whisperx --push .
@@ -346,6 +402,7 @@ Recommended config split:
 - Keep `WHISPERX_ENABLED`, `WHISPERX_DIARIZATION`, and `WHISPERX_CHECK_FREQUENCY` in `.env`
 - Put advanced WhisperX overrides in `.env.whisperx` (start from `whisperx.env.example`)
 - Compose loads that optional file via `WHISPERX_ENV_FILE` (default `.env.whisperx`)
+- On older compose parsers, keep `.env.whisperx` present even if empty
 
 ---
 
@@ -505,7 +562,7 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
-- For `v1.0.4`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.4` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- For `v1.0.5`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.5` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
 ## One-command release
 
@@ -569,11 +626,40 @@ You can also run the same workflow from the GitHub Actions UI (`Actions` -> `rel
 Legacy/manual image publish command:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/ctaylor1/briefcast:1.0.4 \
+docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
+  -t ghcr.io/ctaylor1/briefcast:1.0.5 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
+
+---
+
+## Reset App Runtime Data
+
+Use `scripts/reset_app_data.sh` to wipe transactional app data while preserving config files.
+
+What it clears:
+
+- Database records (Postgres truncation or SQLite file reset)
+- Downloaded assets
+- Log files
+- Generated backups
+
+What it keeps:
+
+- `.env`, compose files, repository code, and other configuration files
+
+Example:
+
+```bash
+./scripts/reset_app_data.sh --env-file /volume1/docker/podcasts-briefcast/.env --yes
+```
+
+Options:
+
+- `--no-start`: do not restart services after reset
+- `--yes`: skip confirmation prompt
+- `--env-file <path>`: select a specific runtime env file
 
 ---
 
@@ -617,7 +703,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v1.0.4 -m "Briefcast v1.0.4"
+git tag -a v1.0.5 -m "Briefcast v1.0.5"
 ```
 
 6) Push:
@@ -625,7 +711,7 @@ git tag -a v1.0.4 -m "Briefcast v1.0.4"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v1.0.4
+git push origin v1.0.5
 ```
 
 PowerShell variant for step 2:

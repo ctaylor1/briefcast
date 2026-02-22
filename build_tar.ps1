@@ -3,6 +3,7 @@ param(
     [Parameter(Position = 0)]
     [string]$Version,
     [string]$ImageName = "briefcast",
+    [string]$Platform = "linux/amd64",
     [string]$CopyTo = "\\ATLAS\docker\-builds"
 )
 
@@ -43,7 +44,7 @@ if (Test-Path -LiteralPath $tarPath) {
 }
 
 Write-Host "Building Docker image: $imageTag"
-docker build -t $imageTag .
+docker build --platform $Platform --build-arg INSTALL_WHISPERX=true -t $imageTag .
 if ($LASTEXITCODE -ne 0) {
     throw "docker build failed for image tag '$imageTag'."
 }

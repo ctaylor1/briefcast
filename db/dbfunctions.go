@@ -206,6 +206,7 @@ func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
 
 func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
+	// Transcript workers consume only downloaded episodes with empty transcript payloads.
 	query := DB.Where("download_status=?", Downloaded).
 		Where("transcript_status IN ?", statuses).
 		Where("download_path <> ''").

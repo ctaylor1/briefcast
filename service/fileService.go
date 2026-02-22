@@ -56,6 +56,8 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	if info, statErr := os.Stat(finalPath); statErr == nil {
 		resumeOffset = info.Size()
 	}
+	// If a partial file already exists, request the remaining bytes.
+	// Callers treat non-2xx responses as hard failures and reset item state.
 	if resumeOffset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
 	}
@@ -68,13 +70,16 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		resp.Body.Close()
+		// Keep upstream status visible in logs/UI (for example 416 resume mismatches).
 		return "", fmt.Errorf("download failed with status %s", resp.Status)
 	}
 
 	var file *os.File
 	if resumeOffset > 0 && resp.StatusCode == http.StatusPartialContent {
+		// Continue writing to an existing partial file only for 206 responses.
 		file, err = os.OpenFile(finalPath, os.O_WRONLY|os.O_APPEND, 0o644)
 	} else {
+		// Servers that ignore range requests can still succeed with a full-body response.
 		resumeOffset = 0
 		file, err = os.Create(finalPath)
 	}

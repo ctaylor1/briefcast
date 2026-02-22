@@ -271,7 +271,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # WhisperX is required in all published images and currently supported on amd64 builds.
+          platforms: linux/amd64
+          build-args: |
+            INSTALL_WHISPERX=true
           push: ${{ !inputs.dry_run }}
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}

@@ -31,7 +31,7 @@ ARG TARGETARCH
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG TORCH_VERSION=2.8.0
 ARG TORCH_BUILD=+cpu
-ARG INSTALL_WHISPERX=false
+ARG INSTALL_WHISPERX=true
 
 LABEL org.opencontainers.image.source="https://github.com/ctaylor1/briefcast"
 
@@ -48,17 +48,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/venv/bin/pip install --no-cache-dir feedparser mutagen && \
-    if [ "${INSTALL_WHISPERX}" = "true" ]; then \
-        if [ "${TARGETARCH}" != "amd64" ]; then \
-            echo "INSTALL_WHISPERX=true is currently only supported for linux/amd64 (got ${TARGETARCH})" >&2; \
-            exit 1; \
-        fi; \
-        echo "torch==${TORCH_VERSION}${TORCH_BUILD}" > /tmp/torch-constraints.txt && \
-        echo "torchaudio==${TORCH_VERSION}${TORCH_BUILD}" >> /tmp/torch-constraints.txt && \
-        /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} -c /tmp/torch-constraints.txt torch torchaudio && \
-        /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} --extra-index-url https://pypi.org/simple -c /tmp/torch-constraints.txt whisperx && \
-        rm -f /tmp/torch-constraints.txt; \
-    fi
+    if [ "${INSTALL_WHISPERX}" != "true" ]; then \
+        echo "INSTALL_WHISPERX must be true; WhisperX is required for all builds." >&2; \
+        exit 1; \
+    fi && \
+    if [ "${TARGETARCH}" != "amd64" ]; then \
+        echo "WhisperX-enabled image build is currently supported only for linux/amd64 (got ${TARGETARCH})" >&2; \
+        exit 1; \
+    fi && \
+    echo "torch==${TORCH_VERSION}${TORCH_BUILD}" > /tmp/torch-constraints.txt && \
+    echo "torchaudio==${TORCH_VERSION}${TORCH_BUILD}" >> /tmp/torch-constraints.txt && \
+    /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} -c /tmp/torch-constraints.txt torch torchaudio && \
+    /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} --extra-index-url https://pypi.org/simple -c /tmp/torch-constraints.txt whisperx && \
+    rm -f /tmp/torch-constraints.txt
 RUN mkdir -p /config; \
     mkdir -p /assets; \
     mkdir -p /api
