@@ -18,17 +18,21 @@ type SearchService interface {
 type ItunesService struct {
 }
 
-const ITUNES_BASE = "https://itunes.apple.com"
+var itunesBaseURL = "https://itunes.apple.com"
 
 func (service ItunesService) Query(q string) []*model.CommonSearchResultModel {
-	url := fmt.Sprintf("%s/search?term=%s&entity=podcast", ITUNES_BASE, url.QueryEscape(q))
+	url := fmt.Sprintf("%s/search?term=%s&entity=podcast", itunesBaseURL, url.QueryEscape(q))
 
 	body, err := makeQuery(url)
 	if err != nil {
 		Logger.Warnw("itunes search failed", "url", url, "error", err)
+		return []*model.CommonSearchResultModel{}
 	}
 	var response model.ItunesResponse
-	json.Unmarshal(body, &response)
+	if err := json.Unmarshal(body, &response); err != nil {
+		Logger.Warnw("itunes response decode failed", "url", url, "error", err)
+		return []*model.CommonSearchResultModel{}
+	}
 
 	var toReturn []*model.CommonSearchResultModel
 

@@ -13,6 +13,7 @@ const actionError = ref("");
 const DOWNLOAD_STATUS_QUEUED = 0;
 const DOWNLOAD_STATUS_DOWNLOADING = 1;
 const DOWNLOAD_STATUS_PAUSED = 4;
+type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
 const {
   queueItems,
@@ -27,6 +28,7 @@ const {
   resumeEpisodeDownload,
   queueProgressPercent,
   queueProgressLabel,
+  queueProgressRemainingLabel,
   queueHasKnownTotal,
 } = useDownloadQueue();
 
@@ -52,6 +54,23 @@ function queueStatusTone(item: PodcastItem): "info" | "neutral" {
     return "info";
   }
   return "neutral";
+}
+
+function transcriptQueueBadge(item: PodcastItem): { visible: boolean; label: string; tone: BadgeTone } {
+  const status = String(item.TranscriptStatus || "").trim().toLowerCase();
+  if (status === "processing") {
+    return { visible: true, label: "Transcript in progress", tone: "info" };
+  }
+  if (status.startsWith("pending_")) {
+    return { visible: true, label: "Transcript queued", tone: "warning" };
+  }
+  if (status === "failed") {
+    return { visible: true, label: "Transcript failed", tone: "danger" };
+  }
+  if (status === "available") {
+    return { visible: true, label: "Transcript ready", tone: "success" };
+  }
+  return { visible: false, label: "", tone: "neutral" };
 }
 
 function queueSortPriority(item: PodcastItem): number {
@@ -250,6 +269,7 @@ onUnmounted(() => {
                 />
               </div>
               <p class="meta-text">{{ queueProgressLabel(item) }}</p>
+              <p class="meta-text">{{ queueProgressRemainingLabel(item) }}</p>
             </div>
             <p v-else class="queue-list__paused-note">Paused. Resume downloads to continue.</p>
           </div>
@@ -264,6 +284,12 @@ onUnmounted(() => {
             </UiButton>
             <UiBadge v-else :tone="queueStatusTone(item)">
               {{ queueStatusLabel(item) }}
+            </UiBadge>
+            <UiBadge
+              v-if="transcriptQueueBadge(item).visible"
+              :tone="transcriptQueueBadge(item).tone"
+            >
+              {{ transcriptQueueBadge(item).label }}
             </UiBadge>
             <UiButton size="sm" variant="outline" @click="openPlayer(item)">
               Play

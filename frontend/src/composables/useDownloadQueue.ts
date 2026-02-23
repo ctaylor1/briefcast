@@ -64,15 +64,25 @@ export function useDownloadQueue() {
 
   function queueProgressLabel(item: PodcastItem): string {
     if (item.DownloadTotalBytes > 0) {
-      return `${queueProgressPercent(item)}% (${formatBytes(item.DownloadedBytes)} / ${formatBytes(item.DownloadTotalBytes)})`;
+      return `${queueProgressPercent(item)}% complete (${formatBytes(item.DownloadedBytes)} / ${formatBytes(item.DownloadTotalBytes)})`;
     }
     if (item.DownloadedBytes > 0) {
-      return `${formatBytes(item.DownloadedBytes)} downloaded`;
+      return `${formatBytes(item.DownloadedBytes)} downloaded (total size unknown)`;
     }
     if (item.DownloadStatus === 4) {
       return "Paused";
     }
     return item.DownloadStatus === 1 ? "Downloading..." : "Queued";
+  }
+
+  function queueProgressRemainingLabel(item: PodcastItem): string {
+    if (item.DownloadTotalBytes > 0) {
+      const downloadedPercent = queueProgressPercent(item);
+      const remainingPercent = Math.max(0, 100 - downloadedPercent);
+      const remainingBytes = Math.max(0, item.DownloadTotalBytes - item.DownloadedBytes);
+      return `${remainingPercent}% left (${formatBytes(remainingBytes)} remaining)`;
+    }
+    return "Time left unavailable (no total size reported by source)";
   }
 
   function queueHasKnownTotal(item: PodcastItem): boolean {
@@ -93,6 +103,7 @@ export function useDownloadQueue() {
     resumeEpisodeDownload,
     queueProgressPercent,
     queueProgressLabel,
+    queueProgressRemainingLabel,
     queueHasKnownTotal,
   };
 }

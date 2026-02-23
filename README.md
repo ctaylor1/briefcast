@@ -194,7 +194,7 @@ touch .env.whisperx
 ### Run the published image
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.0.5
+docker pull ghcr.io/ctaylor1/briefcast:1.0.6
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -204,10 +204,10 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.5
+  ghcr.io/ctaylor1/briefcast:1.0.6
 ```
 
-`latest` should point to the current release tag (`1.0.5`).
+`latest` should point to the current release tag (`1.0.6`).
 
 ### Run WhisperX Image From Local Tar (NAS-friendly)
 
@@ -259,7 +259,7 @@ docker run -d \
   -v briefcast_data:/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.0.5
+  ghcr.io/ctaylor1/briefcast:1.0.6
 ```
 
 ### Storage (containers)
@@ -284,7 +284,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.5
+  ghcr.io/ctaylor1/briefcast:1.0.6
 ```
 
 ---
@@ -396,6 +396,15 @@ docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t 
 - `WHISPERX_MAX_ITEMS`: default `0` (no limit)
 - `WHISPERX_RETRY_FAILED`: default `false`
 - `WHISPERX_CHECK_FREQUENCY`: defaults to `CHECK_FREQUENCY`
+- `WHISPERX_HF_HOME`: Hugging Face cache location (default `/config/.cache/huggingface` when `/config` exists)
+- `WHISPERX_DISABLE_TELEMETRY`: default `true` (sets `HF_HUB_DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, `PYANNOTE_METRICS_ENABLED=0`)
+- `WHISPERX_THIRD_PARTY_LOG_LEVEL`: default `warning` (clamps noisy dependency loggers like `filelock`/`urllib3`)
+
+Runtime resilience notes:
+
+- If `pyannote` VAD fails to initialize, transcription automatically retries with `silero` VAD.
+- If alignment or diarization fails, transcription still completes (without those enrichments) instead of marking the job failed.
+- When diarization is enabled, Briefcast forces WhisperX worker count to `1` for lock/contention stability on NAS/CPU hosts.
 
 Recommended config split:
 
@@ -562,7 +571,7 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
-- For `v1.0.5`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.5` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- For `v1.0.6`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.6` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
 ## One-command release
 
@@ -627,7 +636,7 @@ Legacy/manual image publish command:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
-  -t ghcr.io/ctaylor1/briefcast:1.0.5 \
+  -t ghcr.io/ctaylor1/briefcast:1.0.6 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -703,7 +712,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v1.0.5 -m "Briefcast v1.0.5"
+git tag -a v1.0.6 -m "Briefcast v1.0.6"
 ```
 
 6) Push:
@@ -711,7 +720,7 @@ git tag -a v1.0.5 -m "Briefcast v1.0.5"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v1.0.5
+git push origin v1.0.6
 ```
 
 PowerShell variant for step 2:
@@ -735,4 +744,5 @@ git clean -fd
 Default SQLite filename is now `briefcast.db`.
 
 If you are migrating from an older deployment that used a different SQLite filename, set `DATABASE_URL` explicitly to your existing DB file path.
+
 

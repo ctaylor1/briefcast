@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2026-02-23
+
+### Added
+- Added icon-based episode track controls (play, stop, played toggle, bookmark toggle, download states) with 44x44 hit targets, tooltips, ARIA labels, and keyboard-focus styling.
+- Added cross-window player stop messaging so episode list stop controls can halt the active `/player` session.
+- Added focused coverage expansion tests for controllers and service packages.
+
+### Changed
+- Changed played and bookmark toggles to optimistic UI updates with rollback on API failure.
+- Changed transcript badges in episode lists/tables to clearly display queued, in-progress, ready, and failed states.
+- Changed episode actions layout in table and list views to use a unified control component.
+
+### Fixed
+- Fixed feed refresh failures caused by helper stdout log noise corrupting feedparser JSON output handling.
+- Fixed bookmark-state detection for zero-date values by centralizing bookmark-date parsing logic.
+- Fixed WhisperX retry behavior to back off failed transcripts and requeue them for later processing without tight retry loops.
+
+### Security
+- Verified dependency audits for npm, Python, and Go toolchain with no HIGH/CRITICAL vulnerabilities.
+
 ## [1.0.5] - 2026-02-22
 
 - Enforced WhisperX in all container builds by default (`INSTALL_WHISPERX=true`) and made non-WhisperX builds fail fast.

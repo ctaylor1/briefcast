@@ -122,10 +122,8 @@ func getItemsToPlay(itemIds []string, podcastId string, tagIds []string) []db.Po
 		items = pod.PodcastItems
 	} else if len(tagIds) != 0 {
 		tags := service.GetTagsByIds(tagIds)
-		var tagNames []string
 		var podIds []string
 		for _, tag := range *tags {
-			tagNames = append(tagNames, tag.Label)
 			for _, pod := range tag.Podcasts {
 				podIds = append(podIds, pod.ID)
 			}
@@ -243,7 +241,10 @@ func getSortOptions() interface{} {
 }
 func AllEpisodesPage(c *gin.Context) {
 	var filter model.EpisodesFilter
-	c.ShouldBindQuery(&filter)
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	filter.VerifyPaginationValues()
 	setting := c.MustGet("setting").(*db.Setting)
 	podcasts := service.GetAllPodcasts("")
@@ -266,7 +267,10 @@ func AllEpisodesPage(c *gin.Context) {
 func AllTagsPage(c *gin.Context) {
 	var pagination model.Pagination
 	var page, count int
-	c.ShouldBindQuery(&pagination)
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if page = pagination.Page; page == 0 {
 		page = 1
 	}
@@ -358,7 +362,7 @@ func UploadOpml(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request"})
 		return
 	}
-	content := string(buf.Bytes())
+	content := buf.String()
 	err = service.AddOpml(content)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -375,7 +379,11 @@ func AddNewPodcast(c *gin.Context) {
 
 		_, err = service.AddPodcast(addPodcastData.Url)
 		if err == nil {
-			go service.RefreshEpisodes()
+			go func() {
+				if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
+					controllerLogger.Warnw("background refresh after add page failed", "error", refreshErr)
+				}
+			}()
 			c.Redirect(http.StatusFound, "/")
 
 		} else {

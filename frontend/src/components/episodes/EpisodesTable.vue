@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
+import { isBookmarkedDate } from "../../lib/bookmarks";
 import type { PodcastItem } from "../../types/api";
+import EpisodeTrackControls from "./EpisodeTrackControls.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
 
 defineProps<{
   items: PodcastItem[];
+  playingEpisodeId: string | null;
 }>();
 
 const emit = defineEmits<{
   (event: "play", item: PodcastItem): void;
+  (event: "stop-playback", item: PodcastItem): void;
   (event: "toggle-played", item: PodcastItem): void;
   (event: "toggle-bookmark", item: PodcastItem): void;
   (event: "queue-download", item: PodcastItem): void;
   (event: "cancel-download", item: PodcastItem): void;
   (event: "open-details", item: PodcastItem, tab?: "overview" | "chapters" | "transcript"): void;
 }>();
-
-function isBookmarked(value: string): boolean {
-  return value !== "0001-01-01T00:00:00Z";
-}
 
 function downloadStatusLabel(status: number): string {
   switch (status) {
@@ -56,30 +56,18 @@ function downloadStatusTone(status: number): "neutral" | "info" | "success" | "w
   }
 }
 
-function canCancel(status: number): boolean {
-  return status === 0 || status === 1;
-}
-
-function isDownloaded(status: number): boolean {
-  return status === 2;
-}
-
-function isPaused(status: number): boolean {
-  return status === 4;
-}
-
 function transcriptPill(status: string): { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger"; visible: boolean } {
-  if (status.startsWith("pending_")) {
-    return { label: "Transcript pending", tone: "warning", visible: true };
-  }
   switch (status) {
     case "available":
       return { label: "Transcript ready", tone: "success", visible: true };
     case "processing":
-      return { label: "Transcribing", tone: "info", visible: true };
+      return { label: "Transcript in progress", tone: "info", visible: true };
     case "failed":
       return { label: "Transcript failed", tone: "danger", visible: true };
     default:
+      if (status.startsWith("pending_")) {
+        return { label: "Transcript queued", tone: "warning", visible: true };
+      }
       return { label: "Transcript missing", tone: "neutral", visible: false };
   }
 }
@@ -159,8 +147,8 @@ function hasKnownTotal(item: PodcastItem): boolean {
                 <UiBadge :tone="item.IsPlayed ? 'success' : 'neutral'">
                   {{ item.IsPlayed ? "Played" : "Unplayed" }}
                 </UiBadge>
-                <UiBadge :tone="isBookmarked(item.BookmarkDate) ? 'info' : 'neutral'">
-                  {{ isBookmarked(item.BookmarkDate) ? "Bookmarked" : "No bookmark" }}
+                <UiBadge :tone="isBookmarkedDate(item.BookmarkDate) ? 'info' : 'neutral'">
+                  {{ isBookmarkedDate(item.BookmarkDate) ? "Bookmarked" : "No bookmark" }}
                 </UiBadge>
                 <UiBadge :tone="downloadStatusTone(item.DownloadStatus)">
                   {{ downloadStatusLabel(item.DownloadStatus) }}
@@ -179,43 +167,22 @@ function hasKnownTotal(item: PodcastItem): boolean {
             </td>
             <td>
               <div class="episodes-table__actions">
-                <UiButton size="sm" variant="outline" @click="emit('play', item)">
-                  Play
-                </UiButton>
-                <UiButton size="sm" variant="outline" @click="emit('toggle-played', item)">
-                  {{ item.IsPlayed ? "Unplay" : "Played" }}
-                </UiButton>
-                <UiButton size="sm" variant="outline" @click="emit('toggle-bookmark', item)">
-                  {{ isBookmarked(item.BookmarkDate) ? "Unbookmark" : "Bookmark" }}
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="secondary"
-                  :disabled="isDownloaded(item.DownloadStatus)"
-                  @click="emit('queue-download', item)"
-                >
-                  {{
-                    isDownloaded(item.DownloadStatus)
-                      ? "Downloaded"
-                      : isPaused(item.DownloadStatus)
-                        ? "Resume"
-                        : "Download"
-                  }}
-                </UiButton>
+                <EpisodeTrackControls
+                  :item="item"
+                  :is-playing-track="playingEpisodeId === item.ID"
+                  @play="emit('play', item)"
+                  @stop-playback="emit('stop-playback', item)"
+                  @toggle-played="emit('toggle-played', item)"
+                  @toggle-bookmark="emit('toggle-bookmark', item)"
+                  @queue-download="emit('queue-download', item)"
+                  @cancel-download="emit('cancel-download', item)"
+                />
                 <UiButton
                   size="sm"
                   variant="ghost"
                   @click="emit('open-details', item, 'overview')"
                 >
                   Details
-                </UiButton>
-                <UiButton
-                  v-if="canCancel(item.DownloadStatus)"
-                  size="sm"
-                  variant="danger"
-                  @click="emit('cancel-download', item)"
-                >
-                  Stop
                 </UiButton>
               </div>
             </td>
@@ -299,10 +266,11 @@ function hasKnownTotal(item: PodcastItem): boolean {
 }
 
 .episodes-table__actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
-  min-width: 220px;
+  min-width: 280px;
 }
 
 @keyframes pulse-track {

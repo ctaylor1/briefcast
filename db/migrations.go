@@ -60,13 +60,31 @@ var migrations = []localMigration{
 		Name:  "2026_02_17_01_01_BackfillAutoSkipSponsorChapters",
 		Query: "update podcasts set auto_skip_sponsor_chapters = false where auto_skip_sponsor_chapters is null",
 	},
+	{
+		Name:  "2026_02_23_01_00_AddTranscriptRetryCount",
+		Query: "alter table podcast_items add column if not exists transcript_retry_count integer default 0",
+	},
+	{
+		Name:  "2026_02_23_01_01_AddTranscriptNextAttempt",
+		Query: "alter table podcast_items add column if not exists transcript_next_attempt timestamp",
+	},
+	{
+		Name:  "2026_02_23_01_02_AddTranscriptLastError",
+		Query: "alter table podcast_items add column if not exists transcript_last_error text",
+	},
+	{
+		Name:  "2026_02_23_01_03_BackfillTranscriptRetryCount",
+		Query: "update podcast_items set transcript_retry_count = 0 where transcript_retry_count is null",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
 
 func RunMigrations() {
 	for _, mig := range migrations {
-		ExecuteAndSaveMigration(mig.Name, mig.Query)
+		if err := ExecuteAndSaveMigration(mig.Name, mig.Query); err != nil {
+			logging.Sugar().Errorw("database migration failed", "name", mig.Name, "error", err)
+		}
 	}
 }
 func ExecuteAndSaveMigration(name string, query string) error {

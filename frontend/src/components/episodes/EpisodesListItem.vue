@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
 import type { PodcastItem } from "../../types/api";
+import EpisodeTrackControls from "./EpisodeTrackControls.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
 
 const props = defineProps<{
   item: PodcastItem;
+  playingEpisodeId: string | null;
 }>();
 
 const emit = defineEmits<{
   (event: "play", item: PodcastItem): void;
+  (event: "stop-playback", item: PodcastItem): void;
   (event: "toggle-played", item: PodcastItem): void;
   (event: "toggle-bookmark", item: PodcastItem): void;
   (event: "queue-download", item: PodcastItem): void;
@@ -20,10 +23,6 @@ const emit = defineEmits<{
 
 function getImage(id: string): string {
   return `/podcastitems/${id}/image`;
-}
-
-function isBookmarked(value: string): boolean {
-  return value !== "0001-01-01T00:00:00Z";
 }
 
 function downloadStatusLabel(status: number): string {
@@ -60,30 +59,18 @@ function downloadStatusTone(status: number): "neutral" | "info" | "success" | "w
   }
 }
 
-function canCancel(status: number): boolean {
-  return status === 0 || status === 1;
-}
-
-function isDownloaded(status: number): boolean {
-  return status === 2;
-}
-
-function isPaused(status: number): boolean {
-  return status === 4;
-}
-
 function transcriptPill(status: string): { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger"; visible: boolean } {
-  if (status.startsWith("pending_")) {
-    return { label: "Transcript pending", tone: "warning", visible: true };
-  }
   switch (status) {
     case "available":
       return { label: "Transcript ready", tone: "success", visible: true };
     case "processing":
-      return { label: "Transcribing", tone: "info", visible: true };
+      return { label: "Transcript in progress", tone: "info", visible: true };
     case "failed":
       return { label: "Transcript failed", tone: "danger", visible: true };
     default:
+      if (status.startsWith("pending_")) {
+        return { label: "Transcript queued", tone: "warning", visible: true };
+      }
       return { label: "Transcript missing", tone: "neutral", visible: false };
   }
 }
@@ -148,43 +135,22 @@ function hasKnownTotal(item: PodcastItem): boolean {
           </div>
         </div>
         <div class="episode-list-item__actions">
-          <UiButton size="sm" variant="outline" @click="emit('play', props.item)">
-            Play
-          </UiButton>
-          <UiButton size="sm" variant="outline" @click="emit('toggle-played', props.item)">
-            {{ props.item.IsPlayed ? "Mark unplayed" : "Mark played" }}
-          </UiButton>
-          <UiButton size="sm" variant="outline" @click="emit('toggle-bookmark', props.item)">
-            {{ isBookmarked(props.item.BookmarkDate) ? "Unbookmark" : "Bookmark" }}
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            :disabled="isDownloaded(props.item.DownloadStatus)"
-            @click="emit('queue-download', props.item)"
-          >
-            {{
-              isDownloaded(props.item.DownloadStatus)
-                ? "Downloaded"
-                : isPaused(props.item.DownloadStatus)
-                  ? "Resume"
-                  : "Download"
-            }}
-          </UiButton>
+          <EpisodeTrackControls
+            :item="props.item"
+            :is-playing-track="props.playingEpisodeId === props.item.ID"
+            @play="emit('play', props.item)"
+            @stop-playback="emit('stop-playback', props.item)"
+            @toggle-played="emit('toggle-played', props.item)"
+            @toggle-bookmark="emit('toggle-bookmark', props.item)"
+            @queue-download="emit('queue-download', props.item)"
+            @cancel-download="emit('cancel-download', props.item)"
+          />
           <UiButton
             size="sm"
             variant="ghost"
             @click="emit('open-details', props.item, 'overview')"
           >
             Details
-          </UiButton>
-          <UiButton
-            v-if="canCancel(props.item.DownloadStatus)"
-            size="sm"
-            variant="danger"
-            @click="emit('cancel-download', props.item)"
-          >
-            Stop
           </UiButton>
         </div>
       </div>

@@ -2,7 +2,7 @@ package model
 
 import "encoding/xml"
 
-//PodcastData is
+// PodcastData is
 type RssPodcastData struct {
 	XMLName    xml.Name   `xml:"rss"`
 	Text       string     `xml:",chardata"`

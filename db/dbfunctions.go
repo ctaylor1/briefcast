@@ -187,7 +187,12 @@ func UpdatePodcastItemFileSize(podcastItemId string, size int64) error {
 
 func GetAllPodcastItemsWithoutImage() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
-	result := podcastItemsWithAssociations(DB).Where("local_image is ?", nil).Where("image != ?", "").Where("download_status=?", Downloaded).Order("created_at desc").Find(&podcastItems)
+	result := podcastItemsWithAssociations(DB).
+		Where("(local_image IS NULL OR local_image = '')").
+		Where("image != ?", "").
+		Where("download_status = ?", Downloaded).
+		Order("created_at desc").
+		Find(&podcastItems)
 	//fmt.Println("To be downloaded : " + string(len(podcastItems)))
 	return &podcastItems, result.Error
 }
@@ -207,10 +212,19 @@ func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
 func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	// Transcript workers consume only downloaded episodes with empty transcript payloads.
+	now := time.Now().UTC()
 	query := DB.Where("download_status=?", Downloaded).
 		Where("transcript_status IN ?", statuses).
 		Where("download_path <> ''").
 		Where("(transcript_json IS NULL OR transcript_json = '')").
+		Where("(transcript_next_attempt IS NULL OR transcript_next_attempt <= ?)", now).
+		Order(`CASE
+			WHEN transcript_status = 'pending_whisperx' THEN 0
+			WHEN transcript_status = 'processing' THEN 1
+			WHEN transcript_status = 'failed' THEN 2
+			ELSE 3
+		END ASC`).
+		Order("COALESCE(transcript_next_attempt, download_date) asc").
 		Order("download_date asc")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -400,8 +414,7 @@ func UnlockMissedJobs() {
 		if (job.Date == time.Time{}) {
 			continue
 		}
-		var duration time.Duration
-		duration = time.Duration(job.Duration)
+		duration := time.Duration(job.Duration)
 		d := job.Date.Add(time.Minute * duration)
 		if d.Before(time.Now().UTC()) {
 			logging.Sugar().Infow("unlocking stale job lock", "job_name", job.Name)

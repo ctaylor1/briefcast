@@ -62,22 +62,29 @@ func Wshandler(c *gin.Context) {
 
 func HandleWebsocketMessages() {
 	logger := logging.Sugar().With("component", "websocket")
+	writeMessage := func(connection *websocket.Conn, message Message) {
+		if err := connection.WriteJSON(message); err != nil {
+			logger.Warnw("websocket write failed", "identifier", message.Identifier, "message_type", message.MessageType, "error", err)
+			delete(allConnections, connection)
+			delete(activePlayers, connection)
+		}
+	}
 	for {
 		msg := <-broadcast
 
 		switch msg.MessageType {
 		case "RegisterPlayer":
 			activePlayers[msg.Connection] = msg.Identifier
-			for connection, _ := range allConnections {
-				connection.WriteJSON(Message{
+			for connection := range allConnections {
+				writeMessage(connection, Message{
 					Identifier:  msg.Identifier,
 					MessageType: "PlayerExists",
 				})
 			}
 			logger.Infow("player registered", "identifier", msg.Identifier)
 		case "PlayerRemoved":
-			for connection, _ := range allConnections {
-				connection.WriteJSON(Message{
+			for connection := range allConnections {
+				writeMessage(connection, Message{
 					Identifier:  msg.Identifier,
 					MessageType: "NoPlayer",
 				})
@@ -99,7 +106,7 @@ func HandleWebsocketMessages() {
 				if player != nil {
 					payloadStr, err := json.Marshal(items)
 					if err == nil {
-						player.WriteJSON(Message{
+						writeMessage(player, Message{
 							Identifier:  msg.Identifier,
 							MessageType: "Enqueue",
 							Payload:     string(payloadStr),
@@ -121,12 +128,12 @@ func HandleWebsocketMessages() {
 
 			if player == nil {
 				logger.Infow("player lookup returned none", "identifier", msg.Identifier)
-				msg.Connection.WriteJSON(Message{
+				writeMessage(msg.Connection, Message{
 					Identifier:  msg.Identifier,
 					MessageType: "NoPlayer",
 				})
 			} else {
-				msg.Connection.WriteJSON(Message{
+				writeMessage(msg.Connection, Message{
 					Identifier:  msg.Identifier,
 					MessageType: "PlayerExists",
 				})
@@ -134,4 +141,3 @@ func HandleWebsocketMessages() {
 		}
 	}
 }
-

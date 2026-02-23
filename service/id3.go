@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	defaultMutagenScript = "scripts/mutagen_id3_extract.py"
+	defaultMutagenScript         = "scripts/mutagen_id3_extract.py"
 	defaultMutagenTimeoutSeconds = 20
-	mutagenPythonEnv     = "MUTAGEN_PYTHON"
-	mutagenScriptEnv     = "MUTAGEN_SCRIPT"
-	mutagenTimeoutEnv    = "MUTAGEN_TIMEOUT_SECONDS"
+	mutagenPythonEnv             = "MUTAGEN_PYTHON"
+	mutagenScriptEnv             = "MUTAGEN_SCRIPT"
+	mutagenTimeoutEnv            = "MUTAGEN_TIMEOUT_SECONDS"
 )
 
 func ExtractID3Metadata(path string) ([]byte, error) {

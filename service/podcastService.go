@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -33,14 +33,18 @@ func ParseOpml(content string) (model.OpmlModel, error) {
 func GetPodcastById(id string) *db.Podcast {
 	var podcast db.Podcast
 
-	db.GetPodcastById(id, &podcast)
+	if err := db.GetPodcastById(id, &podcast); err != nil {
+		Logger.Warnw("failed to load podcast by id", "podcast_id", id, "error", err)
+	}
 
 	return &podcast
 }
 func GetPodcastItemById(id string) *db.PodcastItem {
 	var podcastItem db.PodcastItem
 
-	db.GetPodcastItemById(id, &podcastItem)
+	if err := db.GetPodcastItemById(id, &podcastItem); err != nil {
+		Logger.Warnw("failed to load podcast item by id", "podcast_item_id", id, "error", err)
+	}
 
 	return &podcastItem
 }
@@ -51,7 +55,10 @@ func GetAllPodcastItemsByIds(podcastItemIds []string) (*[]db.PodcastItem, error)
 func GetAllPodcastItemsByPodcastIds(podcastIds []string) *[]db.PodcastItem {
 	var podcastItems []db.PodcastItem
 
-	db.GetAllPodcastItemsByPodcastIds(podcastIds, &podcastItems)
+	if err := db.GetAllPodcastItemsByPodcastIds(podcastIds, &podcastItems); err != nil {
+		Logger.Warnw("failed to load podcast items by podcast ids", "podcast_ids_count", len(podcastIds), "error", err)
+		return &[]db.PodcastItem{}
+	}
 	return &podcastItems
 }
 
@@ -63,9 +70,16 @@ func GetTagsByIds(ids []string) *[]db.Tag {
 }
 func GetAllPodcasts(sorting string) *[]db.Podcast {
 	var podcasts []db.Podcast
-	db.GetAllPodcasts(&podcasts, sorting)
+	if err := db.GetAllPodcasts(&podcasts, sorting); err != nil {
+		Logger.Warnw("failed to load podcasts", "sorting", sorting, "error", err)
+		return &[]db.Podcast{}
+	}
 
-	stats, _ := db.GetPodcastEpisodeStats()
+	stats, err := db.GetPodcastEpisodeStats()
+	if err != nil {
+		Logger.Warnw("failed to load podcast episode stats", "error", err)
+		return &podcasts
+	}
 
 	type Key struct {
 		PodcastID      string
@@ -125,7 +139,11 @@ func AddOpml(content string) error {
 		Logger.Warnw("Failed to add podcast from OPML", "url", url, "error", addErr)
 	})
 
-	go RefreshEpisodes()
+	go func() {
+		if refreshErr := RefreshEpisodes(); refreshErr != nil {
+			Logger.Warnw("failed to refresh episodes after OPML import", "error", refreshErr)
+		}
+	}()
 	return nil
 
 }
@@ -268,14 +286,17 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 		}
 	}
 
-	existingItems, err := db.GetPodcastItemsByPodcastIdAndGUIDs(podcast.ID, allGuids)
+	existingItems, getErr := db.GetPodcastItemsByPodcastIdAndGUIDs(podcast.ID, allGuids)
+	if getErr != nil {
+		return getErr
+	}
 	keyMap := make(map[string]int)
 
 	for _, item := range *existingItems {
 		keyMap[item.GUID] = 1
 	}
 	var latestDate = time.Time{}
-	var itemsAdded = make(map[string]string)
+	var firstItemErr error
 	for i := 0; i < len(parsed.Entries); i++ {
 		entry := parsed.Entries[i]
 		var podcastItem db.PodcastItem
@@ -349,7 +370,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				transcriptJSON = feedmeta.MarshalMetadata(transcriptAssets)
 				transcriptStatus = "available"
 			} else {
-				// TODO: Queue WhisperX transcription when available.
+				// Keep missing transcripts in a pending state so WhisperX workers can process them later.
 				Logger.Infow("podcast transcript missing; queued for WhisperX", "podcast_id", podcast.ID, "episode_guid", guid)
 			}
 
@@ -372,28 +393,24 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				TranscriptJSON:   transcriptJSON,
 				TranscriptStatus: transcriptStatus,
 			}
-			db.CreatePodcastItem(&podcastItem)
-			itemsAdded[podcastItem.ID] = podcastItem.FileURL
+			if createErr := db.CreatePodcastItem(&podcastItem); createErr != nil {
+				Logger.Errorw("failed to persist podcast item", "podcast_id", podcast.ID, "episode_guid", guid, "error", createErr)
+				if firstItemErr == nil {
+					firstItemErr = createErr
+				}
+				continue
+			}
 		}
 	}
 	if (latestDate != time.Time{}) {
-		db.UpdateLastEpisodeDateForPodcast(podcast.ID, latestDate)
-	}
-	//go updateSizeFromUrl(itemsAdded)
-	return err
-}
-
-func updateSizeFromUrl(itemUrlMap map[string]string) {
-
-	for id, url := range itemUrlMap {
-		size, err := GetFileSizeFromUrl(url)
-		if err != nil {
-			size = 1
+		if updateErr := db.UpdateLastEpisodeDateForPodcast(podcast.ID, latestDate); updateErr != nil {
+			Logger.Warnw("failed to update podcast last episode", "podcast_id", podcast.ID, "error", updateErr)
+			if firstItemErr == nil {
+				firstItemErr = updateErr
+			}
 		}
-
-		db.UpdatePodcastItemFileSize(id, size)
 	}
-
+	return firstItemErr
 }
 
 func UpdateAllFileSizes() {
@@ -402,13 +419,19 @@ func UpdateAllFileSizes() {
 		return
 	}
 	for _, item := range *items {
-		var size int64 = 1
+		size := int64(1)
 		if item.DownloadStatus == db.Downloaded {
-			size, _ = GetFileSize(item.DownloadPath)
+			if resolvedSize, sizeErr := GetFileSize(item.DownloadPath); sizeErr == nil {
+				size = resolvedSize
+			}
 		} else {
-			size, _ = GetFileSizeFromUrl(item.FileURL)
+			if resolvedSize, sizeErr := GetFileSizeFromUrl(item.FileURL); sizeErr == nil {
+				size = resolvedSize
+			}
 		}
-		db.UpdatePodcastItemFileSize(item.ID, size)
+		if updateErr := db.UpdatePodcastItemFileSize(item.ID, size); updateErr != nil {
+			Logger.Warnw("failed to update podcast item file size", "podcast_item_id", item.ID, "error", updateErr)
+		}
 	}
 }
 
@@ -466,7 +489,9 @@ func DownloadMissingImages() error {
 		return err
 	}
 	for _, item := range *items {
-		downloadImageLocally(item.ID)
+		if err := downloadImageLocally(item.ID); err != nil {
+			Logger.Warnw("failed to download episode image", "podcast_item_id", item.ID, "error", err)
+		}
 	}
 	return nil
 }
@@ -582,7 +607,9 @@ func SetAllEpisodesToDownload(podcastId string) error {
 	if err != nil {
 		return err
 	}
-	AddPodcastItems(&podcast, false)
+	if err := AddPodcastItems(&podcast, false); err != nil {
+		return err
+	}
 	return db.SetAllEpisodesToDownload(podcastId)
 }
 
@@ -716,9 +743,13 @@ func CheckMissingFiles() error {
 		fileExists := FileExists(item.DownloadPath)
 		if !fileExists {
 			if setting.DontDownloadDeletedFromDisk {
-				SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.Deleted); setErr != nil {
+					Logger.Warnw("failed to mark missing file episode deleted", "podcast_item_id", item.ID, "error", setErr)
+				}
 			} else {
-				SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
+				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded); setErr != nil {
+					Logger.Warnw("failed to requeue missing file episode", "podcast_item_id", item.ID, "error", setErr)
+				}
 			}
 		}
 	}
@@ -742,7 +773,11 @@ func DeleteEpisodeFile(podcastItemId string) error {
 	}
 
 	if podcastItem.LocalImage != "" {
-		go DeleteFile(podcastItem.LocalImage)
+		go func(localImagePath string) {
+			if deleteErr := DeleteFile(localImagePath); deleteErr != nil && !os.IsNotExist(deleteErr) {
+				Logger.Warnw("failed to delete local image", "path", localImagePath, "error", deleteErr)
+			}
+		}(podcastItem.LocalImage)
 	}
 
 	return SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
@@ -782,7 +817,9 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	err = SetPodcastItemAsDownloaded(podcastItem.ID, url)
 
 	if setting.DownloadEpisodeImages {
-		downloadImageLocally(podcastItem.ID)
+		if imageErr := downloadImageLocally(podcastItem.ID); imageErr != nil {
+			Logger.Warnw("failed to download episode image after single download", "podcast_item_id", podcastItem.ID, "error", imageErr)
+		}
 	}
 	return err
 }
@@ -847,7 +884,11 @@ func RefreshEpisodes() error {
 		}
 	})
 
-	go DownloadMissingEpisodes()
+	go func() {
+		if downloadErr := DownloadMissingEpisodes(); downloadErr != nil {
+			jobLogger.Warnw("background download job failed after refresh", "error", downloadErr)
+		}
+	}()
 
 	if firstErr != nil {
 		jobLogger.Errorw("job_completed_with_errors", "error", firstErr)
@@ -872,11 +913,17 @@ func DeletePodcastEpisodes(id string) error {
 		return err
 	}
 	for _, item := range podcastItems {
-		DeleteFile(item.DownloadPath)
-		if item.LocalImage != "" {
-			DeleteFile(item.LocalImage)
+		if err := DeleteFile(item.DownloadPath); err != nil && !os.IsNotExist(err) {
+			Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
 		}
-		SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
+		if item.LocalImage != "" {
+			if err := DeleteFile(item.LocalImage); err != nil && !os.IsNotExist(err) {
+				Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
+			}
+		}
+		if err := SetPodcastItemAsNotDownloaded(item.ID, db.Deleted); err != nil {
+			Logger.Warnw("failed to mark episode as deleted", "podcast_item_id", item.ID, "error", err)
+		}
 
 	}
 	return nil
@@ -897,13 +944,19 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	}
 	for _, item := range podcastItems {
 		if deleteFiles {
-			DeleteFile(item.DownloadPath)
+			if err := DeleteFile(item.DownloadPath); err != nil && !os.IsNotExist(err) {
+				Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
+			}
 			if item.LocalImage != "" {
-				DeleteFile(item.LocalImage)
+				if err := DeleteFile(item.LocalImage); err != nil && !os.IsNotExist(err) {
+					Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
+				}
 			}
 
 		}
-		db.DeletePodcastItemById(item.ID)
+		if deleteErr := db.DeletePodcastItemById(item.ID); deleteErr != nil {
+			return deleteErr
+		}
 
 	}
 
@@ -920,7 +973,9 @@ func DeletePodcast(id string, deleteFiles bool) error {
 
 }
 func DeleteTag(id string) error {
-	db.UntagAllByTagId(id)
+	if err := db.UntagAllByTagId(id); err != nil {
+		return err
+	}
 	err := db.DeleteTagById(id)
 	if err != nil {
 		return err
@@ -945,7 +1000,10 @@ func makeQuery(url string) ([]byte, error) {
 
 	defer resp.Body.Close()
 	Logger.Debugw("received outbound query response", "url", url, "status", resp.Status)
-	body, err := ioutil.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
 
 	return body, nil
 

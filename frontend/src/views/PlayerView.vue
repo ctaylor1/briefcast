@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
@@ -299,6 +299,26 @@ function skipSponsor(): void {
   void seekTo(segment.end);
 }
 
+function handleExternalPlayerCommand(event: MessageEvent): void {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+  const payload = event.data as { type?: string; action?: string } | null;
+  if (!payload || payload.type !== "briefcast-player-control") {
+    return;
+  }
+  if (payload.action !== "stop") {
+    return;
+  }
+  const audio = audioRef.value;
+  if (!audio) {
+    return;
+  }
+  audio.pause();
+  audio.currentTime = 0;
+  isPlaying.value = false;
+}
+
 watch(playbackRate, (rate) => {
   if (audioRef.value) {
     audioRef.value.playbackRate = rate;
@@ -328,7 +348,14 @@ watch(() => route.fullPath, () => {
   void loadItems();
 });
 
-onMounted(loadItems);
+onMounted(() => {
+  window.addEventListener("message", handleExternalPlayerCommand);
+  void loadItems();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("message", handleExternalPlayerCommand);
+});
 </script>
 
 <template>

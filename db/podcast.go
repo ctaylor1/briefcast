@@ -88,6 +88,10 @@ type PodcastItem struct {
 	ItemMetadata     string `gorm:"type:text" json:"-"`
 	TranscriptJSON   string `gorm:"type:text" json:"-"`
 	TranscriptStatus string `gorm:"type:text"`
+	// WhisperX retry bookkeeping to avoid tight failure loops and enable delayed retries.
+	TranscriptRetryCount  int `gorm:"default:0"`
+	TranscriptNextAttempt *time.Time
+	TranscriptLastError   string `gorm:"type:text" json:"-"`
 }
 
 type DownloadStatus int

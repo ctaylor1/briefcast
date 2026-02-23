@@ -3,8 +3,8 @@ package model
 import "math"
 
 type Pagination struct {
-	Page         int `uri:"page" query:"page" json:"page" form:"page" default:1`
-	Count        int `uri:"count" query:"count" json:"count" form:"count" default:20`
+	Page         int `uri:"page" query:"page" json:"page" form:"page" default:"1"`
+	Count        int `uri:"count" query:"count" json:"count" form:"count" default:"20"`
 	NextPage     int `uri:"nextPage" query:"nextPage" json:"nextPage" form:"nextPage"`
 	PreviousPage int `uri:"previousPage" query:"previousPage" json:"previousPage" form:"previousPage"`
 	TotalCount   int `uri:"totalCount" query:"totalCount" json:"totalCount" form:"totalCount"`

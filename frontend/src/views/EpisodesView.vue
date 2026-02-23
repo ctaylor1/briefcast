@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
@@ -14,6 +14,7 @@ import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { downloadsApi, episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
+import { isBookmarkedDate, UNBOOKMARKED_DATE } from "../lib/bookmarks";
 import { formatDuration } from "../lib/format";
 import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
@@ -25,6 +26,9 @@ const errorMessage = ref("");
 const infoMessage = ref("");
 const items = ref<PodcastItem[]>([]);
 const podcastOptions = ref<Podcast[]>([]);
+const playingEpisodeId = ref<string | null>(null);
+const playerWindowRef = ref<Window | null>(null);
+let playerWindowWatchTimer: number | null = null;
 
 const {
   drawerOpen,
@@ -186,26 +190,33 @@ function resetFilters(): void {
 }
 
 async function togglePlayed(item: PodcastItem): Promise<void> {
+  const previousValue = item.IsPlayed;
+  const nextValue = !previousValue;
+  item.IsPlayed = nextValue;
+
   infoMessage.value = "";
   errorMessage.value = "";
   try {
-    await episodesApi.setPlayed(item.ID, !item.IsPlayed);
-    item.IsPlayed = !item.IsPlayed;
-    infoMessage.value = item.IsPlayed ? "Episode marked played." : "Episode marked unplayed.";
+    await episodesApi.setPlayed(item.ID, nextValue);
+    infoMessage.value = nextValue ? "Episode marked played." : "Episode marked unplayed.";
   } catch (error) {
+    item.IsPlayed = previousValue;
     errorMessage.value = getErrorMessage(error, "Could not update played status.");
   }
 }
 
 async function toggleBookmark(item: PodcastItem): Promise<void> {
-  const bookmarked = item.BookmarkDate !== "0001-01-01T00:00:00Z";
+  const previousValue = item.BookmarkDate;
+  const currentlyBookmarked = isBookmarkedDate(previousValue);
+  item.BookmarkDate = currentlyBookmarked ? UNBOOKMARKED_DATE : new Date().toISOString();
+
   infoMessage.value = "";
   errorMessage.value = "";
   try {
-    await episodesApi.setBookmarked(item.ID, !bookmarked);
-    item.BookmarkDate = bookmarked ? "0001-01-01T00:00:00Z" : new Date().toISOString();
-    infoMessage.value = bookmarked ? "Bookmark removed." : "Bookmark saved.";
+    await episodesApi.setBookmarked(item.ID, !currentlyBookmarked);
+    infoMessage.value = currentlyBookmarked ? "Bookmark removed." : "Bookmark saved.";
   } catch (error) {
+    item.BookmarkDate = previousValue;
     errorMessage.value = getErrorMessage(error, "Could not update bookmark.");
   }
 }
@@ -236,7 +247,31 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
 
 function openPlayer(item: PodcastItem): void {
   const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}`;
-  window.open(target, "briefcast_player");
+  const opened = window.open(target, "briefcast_player");
+  if (opened) {
+    playerWindowRef.value = opened;
+  }
+  playingEpisodeId.value = item.ID;
+}
+
+function stopPlayback(item: PodcastItem): void {
+  if (playingEpisodeId.value !== item.ID) {
+    return;
+  }
+
+  const playerWindow = playerWindowRef.value;
+  if (playerWindow && !playerWindow.closed) {
+    playerWindow.postMessage(
+      {
+        type: "briefcast-player-control",
+        action: "stop",
+      },
+      window.location.origin,
+    );
+  }
+
+  playingEpisodeId.value = null;
+  infoMessage.value = "Playback stopped.";
 }
 
 function openPlayerAt(item: PodcastItem, startSeconds: number): void {
@@ -288,6 +323,24 @@ onMounted(() => {
     void fetchEpisodes();
   }
   void loadPodcastOptions();
+
+  playerWindowWatchTimer = window.setInterval(() => {
+    const playerWindow = playerWindowRef.value;
+    if (!playerWindow) {
+      return;
+    }
+    if (playerWindow.closed) {
+      playerWindowRef.value = null;
+      playingEpisodeId.value = null;
+    }
+  }, 1000);
+});
+
+onUnmounted(() => {
+  if (playerWindowWatchTimer !== null) {
+    clearInterval(playerWindowWatchTimer);
+    playerWindowWatchTimer = null;
+  }
 });
 </script>
 
@@ -346,7 +399,9 @@ onMounted(() => {
           v-for="item in items"
           :key="item.ID"
           :item="item"
+          :playing-episode-id="playingEpisodeId"
           @play="openPlayer"
+          @stop-playback="stopPlayback"
           @toggle-played="togglePlayed"
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"
@@ -358,7 +413,9 @@ onMounted(() => {
       <div class="episodes-list-desktop">
         <EpisodesTable
           :items="items"
+          :playing-episode-id="playingEpisodeId"
           @play="openPlayer"
+          @stop-playback="stopPlayback"
           @toggle-played="togglePlayed"
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"

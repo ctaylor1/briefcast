@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -12,7 +12,7 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from briefcast_tools import log_extra, setup_logging
+from briefcast_tools import log_extra, setup_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,10 @@ def default_config():
             "beam_size": 5,
             "patience": 1,
             "condition_on_previous_text": True,
-            "initial_prompt": "Podcast interview. Speakers are Host and Guest. Use punctuation and capitalization.",
+            "initial_prompt": (
+                "Podcast interview. Speakers are Host and Guest. "
+                "Use punctuation and capitalization."
+            ),
         },
         "vad_options": {
             "chunk_size": 45,
@@ -89,7 +92,7 @@ def choose_compute_type(config, device):
 def choose_batch_size(config, device):
     try:
         configured = int(config.get("batch_size", 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         logger.warning(
             "invalid batch size in whisperx config; using default",
             extra=log_extra({"batch_size": config.get("batch_size")}),
@@ -100,8 +103,25 @@ def choose_batch_size(config, device):
     return 16 if device == "cuda" else 4
 
 
+def configure_third_party_logging():
+    """Clamp noisy dependency loggers so app DEBUG doesn't flood container logs."""
+    level_name = os.environ.get("WHISPERX_THIRD_PARTY_LOG_LEVEL", "WARNING").strip().upper()
+    level = getattr(logging, level_name, logging.WARNING)
+    for logger_name in (
+        "filelock",
+        "urllib3",
+        "fsspec",
+        "lightning",
+        "pyannote",
+        "speechbrain",
+        "httpx",
+    ):
+        logging.getLogger(logger_name).setLevel(level)
+
+
 def main():
     setup_logging(service_name="briefcast-whisperx")
+    configure_third_party_logging()
 
     if len(sys.argv) < 2:
         logger.error("missing audio path argument")
@@ -132,7 +152,7 @@ def main():
     vad_method = config.get("vad_method", "pyannote")
     model_name = config.get("model", "medium.en")
     language = config.get("language", "en")
-    align = bool(config.get("align", True))
+    align_requested = bool(config.get("align", True))
     diarization = bool(config.get("diarization", True))
     diarization_model = config.get("diarization_model", "pyannote/speaker-diarization-3.1")
     min_speakers = config.get("min_speakers", 2)
@@ -149,7 +169,7 @@ def main():
                 "device": device,
                 "compute_type": compute_type,
                 "batch_size": batch_size,
-                "align": align,
+                "align": align_requested,
                 "diarization": diarization,
                 "has_hf_token": bool(hf_token),
             }
@@ -157,32 +177,64 @@ def main():
     )
 
     try:
-        with redirect_stdout(sys.stderr):
-            model = whisperx.load_model(
-                model_name,
-                device,
-                compute_type=compute_type,
-                language=language,
-                asr_options=asr_options,
-                vad_options=vad_options,
-                vad_method=vad_method,
+        try:
+            with redirect_stdout(sys.stderr):
+                model = whisperx.load_model(
+                    model_name,
+                    device,
+                    compute_type=compute_type,
+                    language=language,
+                    asr_options=asr_options,
+                    vad_options=vad_options,
+                    vad_method=vad_method,
+                )
+                active_vad_method = vad_method
+        except Exception:
+            # pyannote VAD can fail in constrained/offline environments; fallback to silero.
+            if str(vad_method).strip().lower() != "pyannote":
+                raise
+            logger.warning(
+                "pyannote VAD model load failed; retrying with silero",
+                extra=log_extra({"audio_file": audio_file, "vad_method": vad_method}),
             )
+            with redirect_stdout(sys.stderr):
+                model = whisperx.load_model(
+                    model_name,
+                    device,
+                    compute_type=compute_type,
+                    language=language,
+                    asr_options=asr_options,
+                    vad_options=vad_options,
+                    vad_method="silero",
+                )
+            active_vad_method = "silero"
 
+        with redirect_stdout(sys.stderr):
             audio = whisperx.load_audio(audio_file)
             result = model.transcribe(audio, batch_size=batch_size)
 
-            if align:
-                model_a, metadata = whisperx.load_align_model(
-                    language_code=result.get("language", language), device=device
-                )
-                result = whisperx.align(
-                    result.get("segments", []),
-                    model_a,
-                    metadata,
-                    audio,
-                    device,
-                    return_char_alignments=False,
-                )
+            align_used = False
+            align_error = ""
+            if align_requested:
+                try:
+                    model_a, metadata = whisperx.load_align_model(
+                        language_code=result.get("language", language), device=device
+                    )
+                    result = whisperx.align(
+                        result.get("segments", []),
+                        model_a,
+                        metadata,
+                        audio,
+                        device,
+                        return_char_alignments=False,
+                    )
+                    align_used = True
+                except Exception as exc:
+                    align_error = f"align_failed:{exc.__class__.__name__}"
+                    logger.warning(
+                        "alignment failed; continuing with base transcript segments",
+                        extra=log_extra({"audio_file": audio_file, "error": align_error}),
+                    )
 
             diarize_used = False
             diarize_error = ""
@@ -190,18 +242,25 @@ def main():
                 if not hf_token:
                     diarize_error = "missing_hf_token"
                 else:
-                    from whisperx.diarize import DiarizationPipeline, assign_word_speakers
+                    try:
+                        from whisperx.diarize import DiarizationPipeline, assign_word_speakers
 
-                    diarize_model = DiarizationPipeline(
-                        model_name=diarization_model,
-                        token=hf_token,
-                        device=device,
-                    )
-                    diarize_df = diarize_model(
-                        audio_file, min_speakers=min_speakers, max_speakers=max_speakers
-                    )
-                    result = assign_word_speakers(diarize_df, result)
-                    diarize_used = True
+                        diarize_model = DiarizationPipeline(
+                            model_name=diarization_model,
+                            token=hf_token,
+                            device=device,
+                        )
+                        diarize_df = diarize_model(
+                            audio_file, min_speakers=min_speakers, max_speakers=max_speakers
+                        )
+                        result = assign_word_speakers(diarize_df, result)
+                        diarize_used = True
+                    except Exception as exc:
+                        diarize_error = f"diarization_failed:{exc.__class__.__name__}"
+                        logger.warning(
+                            "diarization failed; continuing without speaker labels",
+                            extra=log_extra({"audio_file": audio_file, "error": diarize_error}),
+                        )
 
         payload = {
             "provider": "whisperx",
@@ -212,8 +271,13 @@ def main():
             "batch_size": batch_size,
             "asr_options": asr_options,
             "vad_options": vad_options,
-            "vad_method": vad_method,
-            "aligned": align,
+            "vad_method": active_vad_method,
+            "aligned": align_used,
+            "alignment": {
+                "requested": align_requested,
+                "used": align_used,
+                "error": align_error,
+            },
             "diarization": {
                 "enabled": diarization,
                 "used": diarize_used,
@@ -224,7 +288,7 @@ def main():
             },
             "segments": result.get("segments", []),
             "metadata": {
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
                 "whisperx_version": getattr(whisperx, "__version__", "unknown"),
                 "torch_version": getattr(torch, "__version__", "unknown"),
             },
@@ -236,6 +300,8 @@ def main():
                 {
                     "audio_file": audio_file,
                     "segment_count": len(result.get("segments", [])),
+                    "align_used": align_used,
+                    "align_error": align_error,
                     "diarization_used": diarize_used,
                     "diarization_error": diarize_error,
                 }
@@ -243,7 +309,9 @@ def main():
         )
         return 0
     except Exception:
-        logger.exception("whisperx transcription failed", extra=log_extra({"audio_file": audio_file}))
+        logger.exception(
+            "whisperx transcription failed", extra=log_extra({"audio_file": audio_file})
+        )
         emit_json({"error": "whisperx_failed"})
         return 1
 

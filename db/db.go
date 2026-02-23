@@ -55,7 +55,10 @@ func Init() (*gorm.DB, error) {
 
 // Migrate Database
 func Migrate() {
-	DB.AutoMigrate(&Podcast{}, &PodcastItem{}, &Setting{}, &Migration{}, &JobLock{}, &Tag{})
+	if err := DB.AutoMigrate(&Podcast{}, &PodcastItem{}, &Setting{}, &Migration{}, &JobLock{}, &Tag{}); err != nil {
+		logging.Sugar().Errorw("database automigrate failed", "error", err)
+		return
+	}
 	RunMigrations()
 }
 
@@ -67,4 +70,3 @@ func GetDB() *gorm.DB {
 func CurrentDriver() DatabaseDriver {
 	return activeDriver
 }
-

@@ -2,10 +2,14 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ctaylor1/briefcast/db"
 )
 
 func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
@@ -30,6 +34,15 @@ func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	}
 	if cfg.MaxConcurrency != 1 {
 		t.Fatalf("expected max concurrency normalized to 1, got %d", cfg.MaxConcurrency)
+	}
+	if !cfg.RetryFailed {
+		t.Fatalf("expected failed transcripts to be retried by default")
+	}
+	if cfg.RetryDelaySeconds != defaultWhisperXRetryDelay {
+		t.Fatalf("expected default retry delay %d, got %d", defaultWhisperXRetryDelay, cfg.RetryDelaySeconds)
+	}
+	if cfg.RetryMaxDelay != defaultWhisperXRetryMaxDelay {
+		t.Fatalf("expected default retry max delay %d, got %d", defaultWhisperXRetryMaxDelay, cfg.RetryMaxDelay)
 	}
 }
 
@@ -104,6 +117,75 @@ func TestResolveWhisperXPythonExplicitPath(t *testing.T) {
 	}
 	if path != "definitely-not-real-python" {
 		t.Fatalf("expected explicit python path back, got %q", path)
+	}
+}
+
+func TestWhisperXRetryDelayBackoff(t *testing.T) {
+	if got := whisperxRetryDelay(1, 60, 600); got != 60*time.Second {
+		t.Fatalf("expected first retry delay to be 60s, got %s", got)
+	}
+	if got := whisperxRetryDelay(2, 60, 600); got != 120*time.Second {
+		t.Fatalf("expected second retry delay to be 120s, got %s", got)
+	}
+	if got := whisperxRetryDelay(5, 60, 600); got != 600*time.Second {
+		t.Fatalf("expected capped retry delay to be 600s, got %s", got)
+	}
+}
+
+func TestScheduleTranscriptRetry(t *testing.T) {
+	cfg := WhisperXConfig{
+		RetryFailed:        true,
+		RetryDelaySeconds:  60,
+		RetryMaxDelay:      600,
+		RetryMaxErrorChars: 10,
+	}
+	item := db.PodcastItem{}
+
+	scheduleTranscriptRetry(&item, cfg, errors.New("1234567890ABCD"))
+	if item.TranscriptStatus != "failed" {
+		t.Fatalf("expected status failed, got %q", item.TranscriptStatus)
+	}
+	if item.TranscriptRetryCount != 1 {
+		t.Fatalf("expected retry count 1, got %d", item.TranscriptRetryCount)
+	}
+	if item.TranscriptNextAttempt == nil {
+		t.Fatalf("expected next attempt to be scheduled")
+	}
+	if item.TranscriptLastError != "1234567890" {
+		t.Fatalf("expected trimmed error text, got %q", item.TranscriptLastError)
+	}
+
+	firstAttemptAt := *item.TranscriptNextAttempt
+	scheduleTranscriptRetry(&item, cfg, errors.New("boom"))
+	if item.TranscriptRetryCount != 2 {
+		t.Fatalf("expected retry count 2, got %d", item.TranscriptRetryCount)
+	}
+	if item.TranscriptNextAttempt == nil {
+		t.Fatalf("expected second next attempt to be scheduled")
+	}
+	if !item.TranscriptNextAttempt.After(firstAttemptAt) {
+		t.Fatalf("expected second retry to be scheduled later than first attempt")
+	}
+}
+
+func TestScheduleTranscriptRetryDisabled(t *testing.T) {
+	cfg := WhisperXConfig{
+		RetryFailed:        false,
+		RetryDelaySeconds:  60,
+		RetryMaxDelay:      600,
+		RetryMaxErrorChars: 100,
+	}
+	item := db.PodcastItem{}
+
+	scheduleTranscriptRetry(&item, cfg, errors.New("boom"))
+	if item.TranscriptStatus != "failed" {
+		t.Fatalf("expected status failed, got %q", item.TranscriptStatus)
+	}
+	if item.TranscriptRetryCount != 1 {
+		t.Fatalf("expected retry count 1, got %d", item.TranscriptRetryCount)
+	}
+	if item.TranscriptNextAttempt != nil {
+		t.Fatalf("expected no next attempt when retry is disabled")
 	}
 }
 

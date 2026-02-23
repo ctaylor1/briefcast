@@ -19,31 +19,37 @@ import (
 )
 
 type WhisperXConfig struct {
-	Enabled          bool
-	Python           string
-	Script           string
-	Model            string
-	Language         string
-	Device           string
-	ComputeType      string
-	BatchSize        int
-	BeamSize         int
-	Patience         float64
-	ConditionOnPrev  bool
-	InitialPrompt    string
-	VADChunkSize     int
-	VADOnset         float64
-	VADOffset        float64
-	VADMethod        string
-	Align            bool
-	Diarization      bool
-	DiarizationModel string
-	MinSpeakers      int
-	MaxSpeakers      int
-	HFToken          string
-	RetryFailed      bool
-	MaxConcurrency   int
-	MaxItemsPerRun   int
+	Enabled            bool
+	Python             string
+	Script             string
+	HFHome             string
+	DisableTelemetry   bool
+	ThirdPartyLogLevel string
+	Model              string
+	Language           string
+	Device             string
+	ComputeType        string
+	BatchSize          int
+	BeamSize           int
+	Patience           float64
+	ConditionOnPrev    bool
+	InitialPrompt      string
+	VADChunkSize       int
+	VADOnset           float64
+	VADOffset          float64
+	VADMethod          string
+	Align              bool
+	Diarization        bool
+	DiarizationModel   string
+	MinSpeakers        int
+	MaxSpeakers        int
+	HFToken            string
+	RetryFailed        bool
+	MaxConcurrency     int
+	MaxItemsPerRun     int
+	RetryDelaySeconds  int
+	RetryMaxDelay      int
+	RetryMaxErrorChars int
 }
 
 type whisperxScriptConfig struct {
@@ -63,42 +69,51 @@ type whisperxScriptConfig struct {
 }
 
 const (
-	defaultWhisperXScript = "scripts/whisperx_transcribe.py"
+	defaultWhisperXScript         = "scripts/whisperx_transcribe.py"
 	defaultWhisperXTimeoutSeconds = 7200
-	whisperxPythonEnv     = "WHISPERX_PYTHON"
-	whisperxScriptEnv     = "WHISPERX_SCRIPT"
-	whisperxTimeoutEnv    = "WHISPERX_TIMEOUT_SECONDS"
-	whisperxEnabledEnv    = "WHISPERX_ENABLED"
-	whisperxHFTokenEnv    = "WHISPERX_HF_TOKEN"
+	defaultWhisperXRetryDelay     = 300
+	defaultWhisperXRetryMaxDelay  = 21600
+	defaultWhisperXMaxErrorChars  = 1000
+	whisperxPythonEnv             = "WHISPERX_PYTHON"
+	whisperxScriptEnv             = "WHISPERX_SCRIPT"
+	whisperxTimeoutEnv            = "WHISPERX_TIMEOUT_SECONDS"
+	whisperxEnabledEnv            = "WHISPERX_ENABLED"
+	whisperxHFTokenEnv            = "WHISPERX_HF_TOKEN"
 )
 
 func LoadWhisperXConfig() WhisperXConfig {
 	cfg := WhisperXConfig{
-		Enabled:          getEnvBool(whisperxEnabledEnv, false),
-		Python:           strings.TrimSpace(os.Getenv(whisperxPythonEnv)),
-		Script:           strings.TrimSpace(os.Getenv(whisperxScriptEnv)),
-		Model:            getEnvString("WHISPERX_MODEL", "medium.en"),
-		Language:         getEnvString("WHISPERX_LANGUAGE", "en"),
-		Device:           getEnvString("WHISPERX_DEVICE", "auto"),
-		ComputeType:      getEnvString("WHISPERX_COMPUTE_TYPE", "auto"),
-		BatchSize:        getEnvInt("WHISPERX_BATCH_SIZE", 0),
-		BeamSize:         getEnvInt("WHISPERX_BEAM_SIZE", 5),
-		Patience:         getEnvFloat("WHISPERX_PATIENCE", 1),
-		ConditionOnPrev:  getEnvBool("WHISPERX_CONDITION_ON_PREVIOUS_TEXT", true),
-		InitialPrompt:    getEnvString("WHISPERX_INITIAL_PROMPT", "Podcast interview. Speakers are Host and Guest. Use punctuation and capitalization."),
-		VADChunkSize:     getEnvInt("WHISPERX_VAD_CHUNK_SIZE", 45),
-		VADOnset:         getEnvFloat("WHISPERX_VAD_ONSET", 0.50),
-		VADOffset:        getEnvFloat("WHISPERX_VAD_OFFSET", 0.50),
-		VADMethod:        getEnvString("WHISPERX_VAD_METHOD", "pyannote"),
-		Align:            getEnvBool("WHISPERX_ALIGN", true),
-		Diarization:      getEnvBool("WHISPERX_DIARIZATION", true),
-		DiarizationModel: getEnvString("WHISPERX_DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1"),
-		MinSpeakers:      getEnvInt("WHISPERX_MIN_SPEAKERS", 2),
-		MaxSpeakers:      getEnvInt("WHISPERX_MAX_SPEAKERS", 2),
-		HFToken:          strings.TrimSpace(os.Getenv(whisperxHFTokenEnv)),
-		RetryFailed:      getEnvBool("WHISPERX_RETRY_FAILED", false),
-		MaxConcurrency:   getEnvInt("WHISPERX_MAX_CONCURRENCY", 1),
-		MaxItemsPerRun:   getEnvInt("WHISPERX_MAX_ITEMS", 0),
+		Enabled:            getEnvBool(whisperxEnabledEnv, false),
+		Python:             strings.TrimSpace(os.Getenv(whisperxPythonEnv)),
+		Script:             strings.TrimSpace(os.Getenv(whisperxScriptEnv)),
+		HFHome:             getEnvString("WHISPERX_HF_HOME", defaultWhisperXHFHome()),
+		DisableTelemetry:   getEnvBool("WHISPERX_DISABLE_TELEMETRY", true),
+		ThirdPartyLogLevel: getEnvString("WHISPERX_THIRD_PARTY_LOG_LEVEL", "warning"),
+		Model:              getEnvString("WHISPERX_MODEL", "medium.en"),
+		Language:           getEnvString("WHISPERX_LANGUAGE", "en"),
+		Device:             getEnvString("WHISPERX_DEVICE", "auto"),
+		ComputeType:        getEnvString("WHISPERX_COMPUTE_TYPE", "auto"),
+		BatchSize:          getEnvInt("WHISPERX_BATCH_SIZE", 0),
+		BeamSize:           getEnvInt("WHISPERX_BEAM_SIZE", 5),
+		Patience:           getEnvFloat("WHISPERX_PATIENCE", 1),
+		ConditionOnPrev:    getEnvBool("WHISPERX_CONDITION_ON_PREVIOUS_TEXT", true),
+		InitialPrompt:      getEnvString("WHISPERX_INITIAL_PROMPT", "Podcast interview. Speakers are Host and Guest. Use punctuation and capitalization."),
+		VADChunkSize:       getEnvInt("WHISPERX_VAD_CHUNK_SIZE", 45),
+		VADOnset:           getEnvFloat("WHISPERX_VAD_ONSET", 0.50),
+		VADOffset:          getEnvFloat("WHISPERX_VAD_OFFSET", 0.50),
+		VADMethod:          getEnvString("WHISPERX_VAD_METHOD", "pyannote"),
+		Align:              getEnvBool("WHISPERX_ALIGN", true),
+		Diarization:        getEnvBool("WHISPERX_DIARIZATION", true),
+		DiarizationModel:   getEnvString("WHISPERX_DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1"),
+		MinSpeakers:        getEnvInt("WHISPERX_MIN_SPEAKERS", 2),
+		MaxSpeakers:        getEnvInt("WHISPERX_MAX_SPEAKERS", 2),
+		HFToken:            strings.TrimSpace(os.Getenv(whisperxHFTokenEnv)),
+		RetryFailed:        getEnvBool("WHISPERX_RETRY_FAILED", true),
+		MaxConcurrency:     getEnvInt("WHISPERX_MAX_CONCURRENCY", 1),
+		MaxItemsPerRun:     getEnvInt("WHISPERX_MAX_ITEMS", 0),
+		RetryDelaySeconds:  getEnvInt("WHISPERX_RETRY_DELAY_SECONDS", defaultWhisperXRetryDelay),
+		RetryMaxDelay:      getEnvInt("WHISPERX_RETRY_MAX_DELAY_SECONDS", defaultWhisperXRetryMaxDelay),
+		RetryMaxErrorChars: getEnvInt("WHISPERX_RETRY_MAX_ERROR_CHARS", defaultWhisperXMaxErrorChars),
 	}
 	if cfg.Script == "" {
 		cfg.Script = defaultWhisperXScript
@@ -111,6 +126,15 @@ func LoadWhisperXConfig() WhisperXConfig {
 	}
 	if cfg.MaxConcurrency <= 0 {
 		cfg.MaxConcurrency = 1
+	}
+	if cfg.RetryDelaySeconds <= 0 {
+		cfg.RetryDelaySeconds = defaultWhisperXRetryDelay
+	}
+	if cfg.RetryMaxDelay < cfg.RetryDelaySeconds {
+		cfg.RetryMaxDelay = cfg.RetryDelaySeconds
+	}
+	if cfg.RetryMaxErrorChars <= 0 {
+		cfg.RetryMaxErrorChars = defaultWhisperXMaxErrorChars
 	}
 	return cfg
 }
@@ -163,6 +187,12 @@ func TranscribePendingEpisodes() error {
 	}
 
 	workers := boundedWorkerCount(cfg.MaxConcurrency, 1, len(*items))
+	if cfg.Diarization && workers > 1 {
+		// Diarization pipelines are heavy and frequently contend on shared HF locks;
+		// keeping this single-worker avoids lock thrash on NAS/CPU environments.
+		workers = 1
+		jobLogger.Infow("whisperx concurrency reduced for diarization stability", "workers", workers)
+	}
 	jobLogger.Infow("whisperx worker pool started", "count", len(*items), "workers", workers)
 
 	var (
@@ -183,8 +213,19 @@ func TranscribePendingEpisodes() error {
 	runWorkerPool(*items, workers, func(item db.PodcastItem) {
 		// WhisperX only runs against local downloaded audio files.
 		if item.DownloadPath == "" || !FileExists(item.DownloadPath) {
-			jobLogger.Warnw("audio file missing for transcription", "podcast_item_id", item.ID, "path", item.DownloadPath)
-			item.TranscriptStatus = "failed"
+			missingErr := fmt.Errorf("audio file missing for transcription at %s", item.DownloadPath)
+			scheduleTranscriptRetry(&item, cfg, missingErr)
+			jobLogger.Warnw(
+				"audio file missing for transcription",
+				"podcast_item_id",
+				item.ID,
+				"path",
+				item.DownloadPath,
+				"retry_count",
+				item.TranscriptRetryCount,
+				"next_attempt",
+				item.TranscriptNextAttempt,
+			)
 			if err := db.UpdatePodcastItem(&item); err != nil {
 				jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", err)
 			}
@@ -192,14 +233,25 @@ func TranscribePendingEpisodes() error {
 		}
 
 		item.TranscriptStatus = "processing"
+		item.TranscriptNextAttempt = nil
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to mark transcript processing", "podcast_item_id", item.ID, "error", err)
 		}
 
 		output, err := RunWhisperX(item.DownloadPath, cfg)
 		if err != nil {
-			jobLogger.Warnw("whisperx transcription failed", "podcast_item_id", item.ID, "error", err)
-			item.TranscriptStatus = "failed"
+			scheduleTranscriptRetry(&item, cfg, err)
+			jobLogger.Warnw(
+				"whisperx transcription failed",
+				"podcast_item_id",
+				item.ID,
+				"error",
+				err,
+				"retry_count",
+				item.TranscriptRetryCount,
+				"next_attempt",
+				item.TranscriptNextAttempt,
+			)
 			if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
 				jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", updateErr)
 			}
@@ -209,6 +261,9 @@ func TranscribePendingEpisodes() error {
 
 		item.TranscriptJSON = string(output)
 		item.TranscriptStatus = "available"
+		item.TranscriptRetryCount = 0
+		item.TranscriptNextAttempt = nil
+		item.TranscriptLastError = ""
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
 			setError(err)
@@ -271,6 +326,25 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	if cfg.HFToken != "" {
 		cmd.Env = append(cmd.Env, whisperxHFTokenEnv+"="+cfg.HFToken)
 	}
+	if cfg.HFHome != "" {
+		// Persisting HF cache under mounted config avoids repeated model downloads.
+		if err := os.MkdirAll(cfg.HFHome, 0o755); err == nil {
+			cmd.Env = append(cmd.Env,
+				"HF_HOME="+cfg.HFHome,
+				"HUGGINGFACE_HUB_CACHE="+filepath.Join(cfg.HFHome, "hub"),
+				"TRANSFORMERS_CACHE="+filepath.Join(cfg.HFHome, "transformers"),
+			)
+		}
+	}
+	if cfg.DisableTelemetry {
+		// Disable external telemetry/analytics calls to avoid long blocked retries.
+		cmd.Env = append(cmd.Env,
+			"HF_HUB_DISABLE_TELEMETRY=1",
+			"DO_NOT_TRACK=1",
+			"PYANNOTE_METRICS_ENABLED=0",
+		)
+	}
+	cmd.Env = append(cmd.Env, "WHISPERX_THIRD_PARTY_LOG_LEVEL="+cfg.ThirdPartyLogLevel)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -324,12 +398,69 @@ func resolveWhisperXScript(cfg WhisperXConfig) (string, error) {
 	return scriptPath, nil
 }
 
+func scheduleTranscriptRetry(item *db.PodcastItem, cfg WhisperXConfig, transcriptionErr error) {
+	item.TranscriptStatus = "failed"
+	item.TranscriptRetryCount++
+	item.TranscriptLastError = trimToLength(transcriptionErr.Error(), cfg.RetryMaxErrorChars)
+
+	if !cfg.RetryFailed {
+		item.TranscriptNextAttempt = nil
+		return
+	}
+
+	delay := whisperxRetryDelay(item.TranscriptRetryCount, cfg.RetryDelaySeconds, cfg.RetryMaxDelay)
+	nextAttempt := time.Now().UTC().Add(delay)
+	item.TranscriptNextAttempt = &nextAttempt
+}
+
+func whisperxRetryDelay(attempt int, baseSeconds int, maxSeconds int) time.Duration {
+	if baseSeconds <= 0 {
+		baseSeconds = defaultWhisperXRetryDelay
+	}
+	if maxSeconds < baseSeconds {
+		maxSeconds = baseSeconds
+	}
+
+	delay := time.Duration(baseSeconds) * time.Second
+	maxDelay := time.Duration(maxSeconds) * time.Second
+	if attempt <= 1 {
+		return delay
+	}
+
+	for i := 1; i < attempt; i++ {
+		if delay >= maxDelay {
+			return maxDelay
+		}
+		next := delay * 2
+		if next <= 0 || next > maxDelay {
+			return maxDelay
+		}
+		delay = next
+	}
+	return delay
+}
+
+func trimToLength(value string, maxLen int) string {
+	if maxLen <= 0 || len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen]
+}
+
 func getEnvString(name string, fallback string) string {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
 		return fallback
 	}
 	return raw
+}
+
+func defaultWhisperXHFHome() string {
+	// Prefer mounted config when available so model cache survives container restarts.
+	if stat, err := os.Stat("/config"); err == nil && stat.IsDir() {
+		return "/config/.cache/huggingface"
+	}
+	return ""
 }
 
 func getEnvInt(name string, fallback int) int {

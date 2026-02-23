@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	glebarezsqlite "github.com/glebarez/sqlite"
 	"github.com/ctaylor1/briefcast/model"
+	glebarezsqlite "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -437,12 +437,50 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 		t.Fatalf("failed to create pending transcript item: %v", err)
 	}
 
-	itemsForWhisperx, err := GetPodcastItemsForWhisperx([]string{"pending_whisperx"}, 10)
+	processing := newPodcastItem(t, podcast.ID, "s-3", "Processing transcript", Downloaded, time.Now().UTC().Add(-1*time.Minute))
+	processing.DownloadPath = filepath.Join(t.TempDir(), "audio-processing.mp3")
+	processing.TranscriptStatus = "processing"
+	processing.TranscriptJSON = ""
+	if err := UpdatePodcastItem(&processing); err != nil {
+		t.Fatalf("failed to create processing transcript item: %v", err)
+	}
+
+	failedReady := newPodcastItem(t, podcast.ID, "s-4", "Failed ready transcript", Downloaded, time.Now().UTC().Add(-2*time.Minute))
+	failedReady.DownloadPath = filepath.Join(t.TempDir(), "audio-failed-ready.mp3")
+	failedReady.TranscriptStatus = "failed"
+	failedReady.TranscriptJSON = ""
+	readyAt := time.Now().UTC().Add(-30 * time.Second)
+	failedReady.TranscriptNextAttempt = &readyAt
+	if err := UpdatePodcastItem(&failedReady); err != nil {
+		t.Fatalf("failed to create failed-ready transcript item: %v", err)
+	}
+
+	failedFuture := newPodcastItem(t, podcast.ID, "s-5", "Failed future transcript", Downloaded, time.Now().UTC().Add(-3*time.Minute))
+	failedFuture.DownloadPath = filepath.Join(t.TempDir(), "audio-failed-future.mp3")
+	failedFuture.TranscriptStatus = "failed"
+	failedFuture.TranscriptJSON = ""
+	futureAt := time.Now().UTC().Add(10 * time.Minute)
+	failedFuture.TranscriptNextAttempt = &futureAt
+	if err := UpdatePodcastItem(&failedFuture); err != nil {
+		t.Fatalf("failed to create failed-future transcript item: %v", err)
+	}
+
+	itemsForWhisperx, err := GetPodcastItemsForWhisperx([]string{"pending_whisperx", "processing", "failed"}, 10)
 	if err != nil {
 		t.Fatalf("GetPodcastItemsForWhisperx failed: %v", err)
 	}
-	if len(*itemsForWhisperx) != 1 {
-		t.Fatalf("expected one item for whisperx, got %d", len(*itemsForWhisperx))
+	if len(*itemsForWhisperx) != 3 {
+		t.Fatalf("expected three items for whisperx (excluding scheduled future retry), got %d", len(*itemsForWhisperx))
+	}
+
+	if (*itemsForWhisperx)[0].ID != pending.ID {
+		t.Fatalf("expected pending item first in whisperx queue, got %s", (*itemsForWhisperx)[0].ID)
+	}
+	if (*itemsForWhisperx)[1].ID != processing.ID {
+		t.Fatalf("expected processing item second in whisperx queue, got %s", (*itemsForWhisperx)[1].ID)
+	}
+	if (*itemsForWhisperx)[2].ID != failedReady.ID {
+		t.Fatalf("expected failed-ready item last in whisperx queue, got %s", (*itemsForWhisperx)[2].ID)
 	}
 
 	if err := DeletePodcastItemById(item.ID); err != nil {
