@@ -193,14 +193,12 @@ func GetAllPodcastItemsWithoutImage() (*[]PodcastItem, error) {
 		Where("download_status = ?", Downloaded).
 		Order("created_at desc").
 		Find(&podcastItems)
-	//fmt.Println("To be downloaded : " + string(len(podcastItems)))
 	return &podcastItems, result.Error
 }
 
 func GetAllPodcastItemsToBeDownloaded() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	result := podcastItemsWithAssociations(DB).Where("download_status=?", NotDownloaded).Find(&podcastItems)
-	//fmt.Println("To be downloaded : " + string(len(podcastItems)))
 	return &podcastItems, result.Error
 }
 func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
@@ -368,9 +366,11 @@ func GetOrCreateSetting() *Setting {
 	return &setting
 }
 
+// GetLock returns the latest persisted lock row for a job name.
+// If no row exists yet, it returns an unlocked in-memory lock value.
 func GetLock(name string) *JobLock {
 	var jobLock JobLock
-	result := DB.Where("name = ?", name).First(&jobLock)
+	result := DB.Where("name = ?", name).Order("date desc").First(&jobLock)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return &JobLock{
 			Name: name,
@@ -378,31 +378,50 @@ func GetLock(name string) *JobLock {
 	}
 	return &jobLock
 }
-func Lock(name string, duration int) {
-	jobLock := GetLock(name)
-	if jobLock == nil {
-		jobLock = &JobLock{
-			Name: name,
-		}
+
+// Lock acquires or refreshes a named job lock atomically and returns
+// the persisted canonical row so callers can safely unlock by ID.
+func Lock(name string, duration int) *JobLock {
+	now := time.Now().UTC()
+	jobLock := &JobLock{
+		Name:     name,
+		Duration: duration,
+		Date:     now,
 	}
-	jobLock.Duration = duration
-	jobLock.Date = time.Now().UTC()
-	if jobLock.ID == "" {
-		DB.Create(&jobLock)
-	} else {
-		DB.Save(&jobLock)
-	}
-}
-func Unlock(name string) {
-	jobLock := GetLock(name)
-	if jobLock == nil {
-		return
-	}
-	jobLock.Duration = 0
-	jobLock.Date = time.Time{}
-	DB.Save(&jobLock)
+	DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "name"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"duration":   duration,
+			"date":       now,
+			"deleted_at": nil,
+			"updated_at": now,
+		}),
+	}).Create(jobLock)
+
+	// Reload canonical lock row so callers can safely unlock by ID.
+	return GetLock(name)
 }
 
+// UnlockByID releases a specific lock row.
+func UnlockByID(id string) {
+	if id == "" {
+		return
+	}
+	DB.Model(&JobLock{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"duration": 0,
+		"date":     time.Time{},
+	})
+}
+
+// Unlock releases all rows for a named lock.
+func Unlock(name string) {
+	DB.Model(&JobLock{}).Where("name = ?", name).Updates(map[string]interface{}{
+		"duration": 0,
+		"date":     time.Time{},
+	})
+}
+
+// UnlockMissedJobs clears stale lock rows whose lease has expired.
 func UnlockMissedJobs() {
 	var jobLocks []JobLock
 
@@ -418,7 +437,7 @@ func UnlockMissedJobs() {
 		d := job.Date.Add(time.Minute * duration)
 		if d.Before(time.Now().UTC()) {
 			logging.Sugar().Infow("unlocking stale job lock", "job_name", job.Name)
-			Unlock(job.Name)
+			UnlockByID(job.ID)
 		}
 	}
 }

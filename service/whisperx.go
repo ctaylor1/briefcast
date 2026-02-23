@@ -70,7 +70,7 @@ type whisperxScriptConfig struct {
 
 const (
 	defaultWhisperXScript         = "scripts/whisperx_transcribe.py"
-	defaultWhisperXTimeoutSeconds = 7200
+	defaultWhisperXTimeoutSeconds = 21600
 	defaultWhisperXRetryDelay     = 300
 	defaultWhisperXRetryMaxDelay  = 21600
 	defaultWhisperXMaxErrorChars  = 1000
@@ -158,8 +158,8 @@ func TranscribePendingEpisodes() error {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	db.Lock("TranscribePendingEpisodes", 120)
-	defer db.Unlock("TranscribePendingEpisodes")
+	jobLock := db.Lock("TranscribePendingEpisodes", 120)
+	defer db.UnlockByID(jobLock.ID)
 
 	if _, err := resolveWhisperXPython(cfg); err != nil {
 		jobLogger.Errorw("whisperx python resolution failed", "error", err)

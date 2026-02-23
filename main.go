@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -30,28 +31,43 @@ func main() {
 		return
 	}
 	db.Migrate()
-	r := gin.New()
+	r := buildRouter()
+	go controllers.HandleWebsocketMessages()
 
+	go assetEnv()
+	go intiCron()
+
+	if err := r.Run(); err != nil {
+		appLogger.Fatalw("http server terminated", "error", err)
+	}
+
+}
+
+func buildRouter() *gin.Engine {
+	r := gin.New()
 	r.Use(logging.RequestLoggerMiddleware())
 	r.Use(setupSettings())
 	r.Use(gin.Recovery())
 	r.Use(location.Default())
 
 	// Legacy HTML templates removed; modern Vue app is the only UI.
-
 	pass := os.Getenv("PASSWORD")
-	var router *gin.RouterGroup
-	if pass != "" {
-		router = r.Group("/", gin.BasicAuth(gin.Accounts{
-			"briefcast": pass,
-		}))
-	} else {
-		router = &r.RouterGroup
-	}
-
 	dataPath := os.Getenv("DATA")
 	backupPath := path.Join(os.Getenv("CONFIG"), "backups")
+	registerRoutes(r, authRouterGroup(r, pass), dataPath, backupPath)
+	return r
+}
 
+func authRouterGroup(r *gin.Engine, pass string) *gin.RouterGroup {
+	if pass != "" {
+		return r.Group("/", gin.BasicAuth(gin.Accounts{
+			"briefcast": pass,
+		}))
+	}
+	return &r.RouterGroup
+}
+
+func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath string) {
 	router.Static("/webassets", "./webassets")
 	router.Static("/assets", dataPath)
 	router.Static(backupPath, backupPath)
@@ -121,17 +137,7 @@ func main() {
 	router.POST("/opml", controllers.UploadOpml)
 	router.GET("/opml", controllers.GetOmpl)
 	router.GET("/rss", controllers.GetRss)
-
 	r.GET("/ws", controllers.Wshandler)
-	go controllers.HandleWebsocketMessages()
-
-	go assetEnv()
-	go intiCron()
-
-	if err := r.Run(); err != nil {
-		appLogger.Fatalw("http server terminated", "error", err)
-	}
-
 }
 func setupSettings() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -144,62 +150,99 @@ func setupSettings() gin.HandlerFunc {
 	}
 }
 
-func intiCron() {
-	appLogger := logging.Sugar()
-	checkFrequency, err := strconv.Atoi(os.Getenv("CHECK_FREQUENCY"))
+type cronJobSet struct {
+	RefreshEpisodes          func() error
+	CheckMissingFiles        func() error
+	ApplyRetentionPolicies   func() error
+	UnlockMissedJobs         func()
+	UpdateAllFileSizes       func()
+	DownloadMissingImages    func() error
+	TranscribePendingEpisode func() error
+	CreateBackup             func() (string, error)
+}
+
+var defaultCronJobs = cronJobSet{
+	RefreshEpisodes:          service.RefreshEpisodes,
+	CheckMissingFiles:        service.CheckMissingFiles,
+	ApplyRetentionPolicies:   service.ApplyRetentionPolicies,
+	UnlockMissedJobs:         service.UnlockMissedJobs,
+	UpdateAllFileSizes:       service.UpdateAllFileSizes,
+	DownloadMissingImages:    service.DownloadMissingImages,
+	TranscribePendingEpisode: service.TranscribePendingEpisodes,
+	CreateBackup:             service.CreateBackup,
+}
+
+func resolveCheckFrequency(raw string, appLogger *zap.SugaredLogger) int {
+	checkFrequency, err := strconv.Atoi(raw)
 	if err != nil || checkFrequency <= 0 {
 		checkFrequency = 30
 		if err != nil {
 			appLogger.Warnw("invalid CHECK_FREQUENCY, using fallback", "error", err, "check_frequency_minutes", checkFrequency)
 		}
 	}
-	service.UnlockMissedJobs()
+	return checkFrequency
+}
 
-	run := func(name string, fn func() error) {
-		jobLogger, _ := logging.NewJobSugar(name)
-		start := time.Now()
-		jobLogger.Infow("job_started")
-
-		if err := fn(); err != nil {
-			jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "error", err)
-			return
-		}
-		jobLogger.Infow("job_completed", "duration_ms", time.Since(start).Milliseconds())
-	}
-
-	scheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
-	add := func(spec, name string, fn func() error) {
-		if _, err := scheduler.AddFunc(spec, func() { run(name, fn) }); err != nil {
-			appLogger.Errorw("failed to schedule cron job", "job_name", name, "spec", spec, "error", err)
-		}
-	}
-
-	minutes := fmt.Sprintf("@every %dm", checkFrequency)
-	add(minutes, "RefreshEpisodes", service.RefreshEpisodes)
-	add(minutes, "CheckMissingFiles", service.CheckMissingFiles)
-	add("@every 24h", "RetentionCleanup", service.ApplyRetentionPolicies)
-	add(fmt.Sprintf("@every %dm", checkFrequency*2), "UnlockMissedJobs", func() error {
-		service.UnlockMissedJobs()
-		return nil
-	})
-	add(fmt.Sprintf("@every %dm", checkFrequency*3), "UpdateAllFileSizes", func() error {
-		service.UpdateAllFileSizes()
-		return nil
-	})
-	add(minutes, "DownloadMissingImages", service.DownloadMissingImages)
+func resolveWhisperXFrequency(checkFrequency int, raw string, appLogger *zap.SugaredLogger) int {
 	whisperxFrequency := checkFrequency
-	if raw := strings.TrimSpace(os.Getenv("WHISPERX_CHECK_FREQUENCY")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+	if strings.TrimSpace(raw) != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err == nil && parsed > 0 {
 			whisperxFrequency = parsed
 		} else {
 			appLogger.Warnw("invalid WHISPERX_CHECK_FREQUENCY, using fallback", "value", raw, "fallback_minutes", whisperxFrequency)
 		}
 	}
-	add(fmt.Sprintf("@every %dm", whisperxFrequency), "TranscribePendingEpisodes", service.TranscribePendingEpisodes)
+	return whisperxFrequency
+}
+
+func runCronJob(name string, fn func() error) {
+	jobLogger, _ := logging.NewJobSugar(name)
+	start := time.Now()
+	jobLogger.Infow("job_started")
+
+	if err := fn(); err != nil {
+		jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		return
+	}
+	jobLogger.Infow("job_completed", "duration_ms", time.Since(start).Milliseconds())
+}
+
+func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency int, jobs cronJobSet, appLogger *zap.SugaredLogger) {
+	add := func(spec, name string, fn func() error) {
+		if _, err := scheduler.AddFunc(spec, func() { runCronJob(name, fn) }); err != nil {
+			appLogger.Errorw("failed to schedule cron job", "job_name", name, "spec", spec, "error", err)
+		}
+	}
+
+	minutes := fmt.Sprintf("@every %dm", checkFrequency)
+	add(minutes, "RefreshEpisodes", jobs.RefreshEpisodes)
+	add(minutes, "CheckMissingFiles", jobs.CheckMissingFiles)
+	add("@every 24h", "RetentionCleanup", jobs.ApplyRetentionPolicies)
+	add(fmt.Sprintf("@every %dm", checkFrequency*2), "UnlockMissedJobs", func() error {
+		jobs.UnlockMissedJobs()
+		return nil
+	})
+	add(fmt.Sprintf("@every %dm", checkFrequency*3), "UpdateAllFileSizes", func() error {
+		jobs.UpdateAllFileSizes()
+		return nil
+	})
+	add(minutes, "DownloadMissingImages", jobs.DownloadMissingImages)
+	add(fmt.Sprintf("@every %dm", whisperxFrequency), "TranscribePendingEpisodes", jobs.TranscribePendingEpisode)
 	add("@every 48h", "CreateBackup", func() error {
-		_, err := service.CreateBackup()
+		_, err := jobs.CreateBackup()
 		return err
 	})
+}
+
+func intiCron() {
+	appLogger := logging.Sugar()
+	checkFrequency := resolveCheckFrequency(os.Getenv("CHECK_FREQUENCY"), appLogger)
+	service.UnlockMissedJobs()
+
+	scheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
+	whisperxFrequency := resolveWhisperXFrequency(checkFrequency, os.Getenv("WHISPERX_CHECK_FREQUENCY"), appLogger)
+	scheduleCronJobs(scheduler, checkFrequency, whisperxFrequency, defaultCronJobs, appLogger)
 
 	scheduler.Start()
 	select {}

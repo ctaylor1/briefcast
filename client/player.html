@@ -998,15 +998,12 @@ div#large-visualization{
                     }
 
                     time= self.getSavedSongTime();
-                  //  console.log(time)
                     if(time>0){
                         Amplitude.skipTo(time,0)
                     }
                                    
                   },
-                  'ended':function(){
-                    console.log(Amplitude.getActiveSongMetadata());
-                  }
+                  'ended':function(){}
               },
             waveforms: {
               sample_rate: 50

@@ -493,3 +493,43 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 		t.Fatalf("DeletePodcastById failed: %v", err)
 	}
 }
+
+func TestJobLockUpsertAndUnlockByID(t *testing.T) {
+	setupDBForTest(t)
+
+	first := Lock("upsert-job", 1)
+	if first == nil || first.ID == "" {
+		t.Fatalf("expected first lock acquisition to return persisted lock id")
+	}
+
+	second := Lock("upsert-job", 2)
+	if second == nil || second.ID == "" {
+		t.Fatalf("expected second lock acquisition to return persisted lock id")
+	}
+
+	var count int64
+	if err := DB.Model(&JobLock{}).Where("name = ?", "upsert-job").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count lock rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one lock row after upsert, got %d", count)
+	}
+
+	current := GetLock("upsert-job")
+	if current.Duration != 2 {
+		t.Fatalf("expected upsert to update duration to 2, got %d", current.Duration)
+	}
+	if !current.IsLocked() {
+		t.Fatalf("expected lock to be active")
+	}
+
+	UnlockByID(second.ID)
+
+	reloaded := GetLock("upsert-job")
+	if reloaded.IsLocked() {
+		t.Fatalf("expected lock to be released by id")
+	}
+	if reloaded.Duration != 0 {
+		t.Fatalf("expected released lock duration 0, got %d", reloaded.Duration)
+	}
+}

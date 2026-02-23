@@ -76,6 +76,27 @@ var migrations = []localMigration{
 		Name:  "2026_02_23_01_03_BackfillTranscriptRetryCount",
 		Query: "update podcast_items set transcript_retry_count = 0 where transcript_retry_count is null",
 	},
+	{
+		Name: "2026_02_23_01_04_DedupeJobLocksByName",
+		Query: `delete from job_locks
+where id in (
+	select id
+	from (
+		select
+			id,
+			row_number() over (
+				partition by name
+				order by date desc, updated_at desc, created_at desc, id desc
+			) as rn
+		from job_locks
+	) dedupe
+	where dedupe.rn > 1
+)`,
+	},
+	{
+		Name:  "2026_02_23_01_05_AddUniqueIndexJobLocksName",
+		Query: "create unique index if not exists idx_job_locks_name on job_locks(name)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

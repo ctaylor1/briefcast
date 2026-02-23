@@ -194,7 +194,7 @@ touch .env.whisperx
 ### Run the published image
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.0.6
+docker pull ghcr.io/ctaylor1/briefcast:1.0.7
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -204,10 +204,10 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.6
+  ghcr.io/ctaylor1/briefcast:1.0.7
 ```
 
-`latest` should point to the current release tag (`1.0.6`).
+`latest` should point to the current release tag (`1.0.7`).
 
 ### Run WhisperX Image From Local Tar (NAS-friendly)
 
@@ -259,7 +259,7 @@ docker run -d \
   -v briefcast_data:/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.0.6
+  ghcr.io/ctaylor1/briefcast:1.0.7
 ```
 
 ### Storage (containers)
@@ -284,7 +284,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.6
+  ghcr.io/ctaylor1/briefcast:1.0.7
 ```
 
 ---
@@ -372,7 +372,7 @@ docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t 
 - `WHISPERX_ENABLED`: `true|false` (default `false`)
 - `WHISPERX_PYTHON`: interpreter path (falls back to `FEEDPARSER_PYTHON`)
 - `WHISPERX_SCRIPT`: default `scripts/whisperx_transcribe.py`
-- `WHISPERX_TIMEOUT_SECONDS`: default `7200` (`0` disables)
+- `WHISPERX_TIMEOUT_SECONDS`: default `21600` (`0` disables)
 - `WHISPERX_MODEL`: default `medium.en`
 - `WHISPERX_LANGUAGE`: default `en`
 - `WHISPERX_DEVICE`: `auto|cuda|cpu` (default `auto`)
@@ -571,7 +571,7 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
-- For `v1.0.6`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.6` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- For `v1.0.7`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.7` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
 ## One-command release
 
@@ -636,7 +636,7 @@ Legacy/manual image publish command:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
-  -t ghcr.io/ctaylor1/briefcast:1.0.6 \
+  -t ghcr.io/ctaylor1/briefcast:1.0.7 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -712,7 +712,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v1.0.6 -m "Briefcast v1.0.6"
+git tag -a v1.0.7 -m "Briefcast v1.0.7"
 ```
 
 6) Push:
@@ -720,7 +720,7 @@ git tag -a v1.0.6 -m "Briefcast v1.0.6"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v1.0.6
+git push origin v1.0.7
 ```
 
 PowerShell variant for step 2:

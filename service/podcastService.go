@@ -181,7 +181,6 @@ func ExportOmpl(useBriefcastLink bool, baseUrl string) ([]byte, error) {
 	}
 
 	if data, err := xml.MarshalIndent(toExport, "", "    "); err == nil {
-		//	fmt.Println(xml.Header + string(data))
 		data = []byte(xml.Header + string(data))
 		return data, err
 	} else {
@@ -265,19 +264,14 @@ func AddPodcast(url string) (db.Podcast, error) {
 }
 
 func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
-	//fmt.Println("Creating: " + podcast.ID)
 	parsed, _, err := FetchFeedWithFeedparser(podcast.URL)
 	if err != nil {
-		//log.Fatal(err)
 		return err
 	}
 	feed := parsed.Feed
 	feedImage := feedmeta.ExtractImageURL(feed)
 	setting := db.GetOrCreateSetting()
 	limit := setting.InitialDownloadCount
-	// if len(data.Channel.Item) < limit {
-	// 	limit = len(data.Channel.Item)
-	// }
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
 		entry := parsed.Entries[i]
@@ -650,8 +644,8 @@ func DownloadMissingEpisodes() error {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	db.Lock(JOB_NAME, 120)
-	defer db.Unlock(JOB_NAME)
+	jobLock := db.Lock(JOB_NAME, 120)
+	defer db.UnlockByID(jobLock.ID)
 
 	setting := db.GetOrCreateSetting()
 
@@ -735,7 +729,6 @@ func CheckMissingFiles() error {
 	data, err := db.GetAllPodcastItemsAlreadyDownloaded()
 	setting := db.GetOrCreateSetting()
 
-	//fmt.Println("Processing episodes: ", strconv.Itoa(len(*data)))
 	if err != nil {
 		return err
 	}
@@ -760,7 +753,6 @@ func DeleteEpisodeFile(podcastItemId string) error {
 	var podcastItem db.PodcastItem
 	err := db.GetPodcastItemById(podcastItemId, &podcastItem)
 
-	//fmt.Println("Processing episodes: ", strconv.Itoa(len(*data)))
 	if err != nil {
 		return err
 	}
@@ -786,7 +778,6 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	var podcastItem db.PodcastItem
 	err := db.GetPodcastItemById(podcastItemId, &podcastItem)
 
-	//fmt.Println("Processing episodes: ", strconv.Itoa(len(*data)))
 	if err != nil {
 		return err
 	}
@@ -838,8 +829,8 @@ func RefreshEpisodes() error {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	db.Lock(JOB_NAME, 120)
-	defer db.Unlock(JOB_NAME)
+	jobLock := db.Lock(JOB_NAME, 120)
+	defer db.UnlockByID(jobLock.ID)
 
 	var data []db.Podcast
 	err := db.GetAllPodcasts(&data, "")

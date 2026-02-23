@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2026-02-23
+
+### Added
+- Added database migrations to deduplicate `job_locks` rows and enforce a unique index on `job_locks.name`.
+- Added root-package tests for router wiring, cron scheduling helpers, and frontend app serving paths.
+
+### Changed
+- Increased default WhisperX process timeout to `21600` seconds to support long-form transcriptions.
+- Refactored startup router/cron wiring into testable helpers while preserving runtime behavior.
+- Updated frontend toolchain dependencies to latest non-breaking releases.
+
+### Fixed
+- Fixed lock contention by using atomic lock upsert, ID-safe unlocks, and stale-lock cleanup via row-id updates.
+- Removed leftover debug/commented blocks from legacy HTML and Go service/controller files.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency audits across Go, npm, and Python tooling with no HIGH/CRITICAL vulnerabilities.
+
 ## [1.0.6] - 2026-02-23
 
 ### Added

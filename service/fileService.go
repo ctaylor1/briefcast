@@ -249,7 +249,6 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 	}
 	defer resp.Body.Close()
 	_, erra := io.Copy(file, resp.Body)
-	//fmt.Println(size)
 	defer file.Close()
 	if erra != nil {
 		logError("error saving file", erra, "path", finalPath, "url", link)
@@ -293,7 +292,6 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 	}
 	defer resp.Body.Close()
 	_, erra := io.Copy(file, resp.Body)
-	//fmt.Println(size)
 	defer file.Close()
 	if erra != nil {
 		logError("error saving file", erra, "path", finalPath, "url", link)

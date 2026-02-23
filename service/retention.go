@@ -33,8 +33,8 @@ func ApplyRetentionPolicies() error {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	db.Lock(jobName, 120)
-	defer db.Unlock(jobName)
+	jobLock := db.Lock(jobName, 120)
+	defer db.UnlockByID(jobLock.ID)
 
 	setting := db.GetOrCreateSetting()
 	if setting.RetentionKeepAll {

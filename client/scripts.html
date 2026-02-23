@@ -127,16 +127,6 @@
     socket.addEventListener('message',onMessage);
 
     return socket;
-    // Connection opened
-    // socket.addEventListener('open', function (event) {
-    //   const message= getWebsocketMessage("register","home")
-    //     socket.send(message);
-    // });
-
-    // // Listen for messages
-    // socket.addEventListener('message', function (event) {
-    //     console.log('Message from server ', event.data);
-    // });
   }
   function downloadAllEpisodes(id) {
         var confirmed = confirm(
@@ -176,7 +166,6 @@
         if (typeof id !== 'string'){
             id= id.getAttribute('data-id')
         }
-        console.log(id)
         var confirmed = confirm(
           "Are you sure you want to delete this podcast and all files?"
         );
@@ -214,7 +203,6 @@
         if (typeof id !== 'string'){
             id= id.getAttribute('data-id')
         }
-        console.log(id);
         var confirmed = confirm(
           "Are you sure you want to delete all episodes of this podcast?"
         );
@@ -249,7 +237,6 @@
         if (typeof id !== 'string'){
             id= id.getAttribute('data-id')
         }
-        console.log(id);
         var confirmed = confirm(
           "Are you sure you want to delete this podcast (without deleting the files)?"
         );
@@ -290,7 +277,6 @@
         if (error.response && error.response.data && error.response.data.message) {
           message=error.response.data.message;
         }
-        console.log(error)
           Vue.toasted.show(message, {
             theme: "bubble",
             type: "error",

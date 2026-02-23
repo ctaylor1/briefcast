@@ -280,7 +280,6 @@ func AllTagsPage(c *gin.Context) {
 
 	var tags []db.Tag
 	var totalCount int64
-	//fmt.Printf("%+v\n", filter)
 
 	if err := db.GetPaginatedTags(page, count,
 		&tags, &totalCount); err == nil {
@@ -392,7 +391,6 @@ func AddNewPodcast(c *gin.Context) {
 
 		}
 	} else {
-		//	fmt.Println(err.Error())
 		c.JSON(http.StatusBadRequest, err)
 	}
 
