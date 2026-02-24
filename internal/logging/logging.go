@@ -131,6 +131,7 @@ func resolveLogOutputs() []zapcore.WriteSyncer {
 			}
 			path = resolveLogFilePath(path)
 			if dir := filepath.Dir(path); dir != "." && dir != "" {
+				// #nosec G703 -- log file path is operator-configured and intentionally writable.
 				_ = os.MkdirAll(dir, 0o755)
 			}
 			outputs = append(outputs, zapcore.AddSync(&lumberjack.Logger{

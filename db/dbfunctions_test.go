@@ -550,3 +550,120 @@ func TestJobLockUpsertAndUnlockByID(t *testing.T) {
 		t.Fatalf("expected released lock duration 0, got %d", reloaded.Duration)
 	}
 }
+
+func TestJobLockIsLockedHandlesUTCZeroTimestamp(t *testing.T) {
+	lock := &JobLock{
+		Date:     time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+		Duration: 120,
+	}
+	if lock.IsLocked() {
+		t.Fatalf("expected UTC zero timestamp to be treated as unlocked")
+	}
+}
+
+func TestGetLockTreatsUnlockedUTCZeroTimestampAsUnlocked(t *testing.T) {
+	setupDBForTest(t)
+
+	lock := Lock("utc-zero-unlocked", 5)
+	if lock == nil || lock.ID == "" {
+		t.Fatalf("expected lock row")
+	}
+
+	zeroUTC := time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if err := DB.Model(&JobLock{}).Where("id = ?", lock.ID).Updates(map[string]interface{}{
+		"duration": 0,
+		"date":     zeroUTC,
+	}).Error; err != nil {
+		t.Fatalf("failed to force UTC zero timestamp: %v", err)
+	}
+
+	reloaded := GetLock("utc-zero-unlocked")
+	if reloaded.IsLocked() {
+		t.Fatalf("expected lock with UTC zero timestamp to be unlocked")
+	}
+}
+
+func TestDatabaseWrapperCoveragePaths(t *testing.T) {
+	setupDBForTest(t)
+
+	podcast := newPodcast(t, "Wrapper Coverage", "https://example.com/wrapper.xml")
+	item := newPodcastItem(t, podcast.ID, "wrapper-1", "Wrapper Episode", Downloaded, time.Now().UTC())
+	item.Image = "https://example.com/wrapper.jpg"
+	item.LocalImage = ""
+	if err := UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("failed to update wrapper item image fields: %v", err)
+	}
+
+	itemsWithoutImage, err := GetAllPodcastItemsWithoutImage()
+	if err != nil {
+		t.Fatalf("GetAllPodcastItemsWithoutImage failed: %v", err)
+	}
+	if len(*itemsWithoutImage) == 0 {
+		t.Fatalf("expected at least one downloaded item without local image")
+	}
+
+	var byTitleAuthor Podcast
+	if err := GetPodcastByTitleAndAuthor(podcast.Title, podcast.Author, &byTitleAuthor); err != nil {
+		t.Fatalf("GetPodcastByTitleAndAuthor failed: %v", err)
+	}
+	if byTitleAuthor.ID != podcast.ID {
+		t.Fatalf("expected podcast lookup by title+author to return same podcast id")
+	}
+
+	podcast.Summary = "updated summary"
+	if err := UpdatePodcast(&podcast); err != nil {
+		t.Fatalf("UpdatePodcast failed: %v", err)
+	}
+
+	updatedLastEpisode := time.Now().UTC().Add(-15 * time.Minute).Truncate(time.Second)
+	if err := UpdateLastEpisodeDateForPodcast(podcast.ID, updatedLastEpisode); err != nil {
+		t.Fatalf("UpdateLastEpisodeDateForPodcast failed: %v", err)
+	}
+	var refreshedPodcast Podcast
+	if err := GetPodcastById(podcast.ID, &refreshedPodcast); err != nil {
+		t.Fatalf("GetPodcastById failed: %v", err)
+	}
+	if refreshedPodcast.LastEpisode == nil || !refreshedPodcast.LastEpisode.UTC().Equal(updatedLastEpisode) {
+		t.Fatalf("expected last episode to be updated to %s, got %v", updatedLastEpisode, refreshedPodcast.LastEpisode)
+	}
+
+	tag := Tag{Label: "wrapper-tag", Description: "wrapper coverage tag"}
+	if err := CreateTag(&tag); err != nil {
+		t.Fatalf("CreateTag failed: %v", err)
+	}
+	if err := AddTagToPodcast(podcast.ID, tag.ID); err != nil {
+		t.Fatalf("AddTagToPodcast failed: %v", err)
+	}
+	var pagedTags []Tag
+	var total int64
+	if err := GetPaginatedTags(1, 10, &pagedTags, &total); err != nil {
+		t.Fatalf("GetPaginatedTags failed: %v", err)
+	}
+	if total == 0 || len(pagedTags) == 0 {
+		t.Fatalf("expected paginated tags to include created tag")
+	}
+
+	if GetDB() == nil {
+		t.Fatalf("expected global DB handle to be initialized")
+	}
+
+	lock := Lock("wrapper-refresh-lock", 1)
+	if lock == nil || lock.ID == "" {
+		t.Fatalf("expected persisted lock from Lock")
+	}
+	oldDate := lock.Date
+	if err := RefreshLockByID(lock.ID, 5); err != nil {
+		t.Fatalf("RefreshLockByID failed: %v", err)
+	}
+	if err := RefreshLockByID("", 3); err != nil {
+		t.Fatalf("expected empty-id refresh to be a no-op, got %v", err)
+	}
+
+	reloaded := GetLock("wrapper-refresh-lock")
+	if reloaded.Duration != 5 {
+		t.Fatalf("expected refreshed lock duration 5, got %d", reloaded.Duration)
+	}
+	if reloaded.Date.Before(oldDate) {
+		t.Fatalf("expected refreshed lock date to be updated, old=%s new=%s", oldDate, reloaded.Date)
+	}
+}

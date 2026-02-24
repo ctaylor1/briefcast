@@ -419,6 +419,20 @@ func UnlockByID(id string) {
 	})
 }
 
+// RefreshLockByID renews a specific lock row lease.
+func RefreshLockByID(id string, duration int) error {
+	if id == "" {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"date": time.Now().UTC(),
+	}
+	if duration > 0 {
+		updates["duration"] = duration
+	}
+	return DB.Model(&JobLock{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // Unlock releases all rows for a named lock.
 func Unlock(name string) {
 	DB.Model(&JobLock{}).Where("name = ?", name).Updates(map[string]interface{}{
@@ -435,13 +449,14 @@ func UnlockMissedJobs() {
 	if result.Error != nil {
 		return
 	}
+	now := time.Now().UTC()
 	for _, job := range jobLocks {
-		if (job.Date == time.Time{}) {
+		if job.Date.IsZero() || job.Duration <= 0 {
 			continue
 		}
 		duration := time.Duration(job.Duration)
 		d := job.Date.Add(time.Minute * duration)
-		if d.Before(time.Now().UTC()) {
+		if d.Before(now) {
 			logging.Sugar().Infow("unlocking stale job lock", "job_name", job.Name)
 			UnlockByID(job.ID)
 		}

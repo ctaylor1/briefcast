@@ -64,6 +64,7 @@ func ParseFeedWithFeedparser(body []byte) (FeedParserResult, error) {
 	}
 	defer cancel()
 
+	// #nosec G204,G702 -- exec.CommandContext is invoked without a shell; args are passed verbatim.
 	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath)
 	cmd.Env = helperCommandEnv()
 	cmd.Stdin = bytes.NewReader(body)

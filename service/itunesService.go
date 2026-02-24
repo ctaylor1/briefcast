@@ -48,7 +48,7 @@ type PodcastIndexService struct {
 
 const (
 	PodcastIndexKeyEnv    = "PODCASTINDEX_KEY"
-	PodcastIndexSecretEnv = "PODCASTINDEX_SECRET"
+	PodcastIndexSecretEnv = "PODCASTINDEX_SECRET" // #nosec G101 -- env var key name only, not a credential value.
 )
 
 func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultModel {

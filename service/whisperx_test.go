@@ -18,6 +18,8 @@ func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	t.Setenv("WHISPERX_MAX_SPEAKERS", "0")
 	t.Setenv("WHISPERX_MAX_CONCURRENCY", "0")
 	t.Setenv(whisperxScriptEnv, "")
+	t.Setenv(whisperxLockDurationEnv, "0")
+	t.Setenv(whisperxLockRefreshEnv, "0")
 
 	cfg := LoadWhisperXConfig()
 	if !cfg.Enabled {
@@ -43,6 +45,26 @@ func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	}
 	if cfg.RetryMaxDelay != defaultWhisperXRetryMaxDelay {
 		t.Fatalf("expected default retry max delay %d, got %d", defaultWhisperXRetryMaxDelay, cfg.RetryMaxDelay)
+	}
+	if cfg.LockDurationMins != defaultWhisperXLockDuration {
+		t.Fatalf("expected lock duration default %d, got %d", defaultWhisperXLockDuration, cfg.LockDurationMins)
+	}
+	if cfg.LockRefreshSecs != defaultWhisperXLockRefresh {
+		t.Fatalf("expected lock refresh default %d, got %d", defaultWhisperXLockRefresh, cfg.LockRefreshSecs)
+	}
+}
+
+func TestLoadWhisperXConfigLockRefreshClamp(t *testing.T) {
+	t.Setenv(whisperxEnabledEnv, "true")
+	t.Setenv(whisperxLockDurationEnv, "2")
+	t.Setenv(whisperxLockRefreshEnv, "500")
+
+	cfg := LoadWhisperXConfig()
+	if cfg.LockDurationMins != 2 {
+		t.Fatalf("expected lock duration of 2 minutes, got %d", cfg.LockDurationMins)
+	}
+	if cfg.LockRefreshSecs >= cfg.LockDurationMins*60 {
+		t.Fatalf("expected lock refresh to be less than lock duration window, got %d", cfg.LockRefreshSecs)
 	}
 }
 
@@ -186,6 +208,48 @@ func TestScheduleTranscriptRetryDisabled(t *testing.T) {
 	}
 	if item.TranscriptNextAttempt != nil {
 		t.Fatalf("expected no next attempt when retry is disabled")
+	}
+}
+
+func TestStartJobLockHeartbeatRefreshesLease(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	lock := db.Lock("heartbeat-lock", 1)
+	if lock == nil || lock.ID == "" {
+		t.Fatalf("expected persisted lock id")
+	}
+
+	aged := time.Now().UTC().Add(-5 * time.Minute)
+	if err := db.DB.Model(&db.JobLock{}).Where("id = ?", lock.ID).Updates(map[string]interface{}{
+		"date":     aged,
+		"duration": 1,
+	}).Error; err != nil {
+		t.Fatalf("failed to age lock: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	stop := startJobLockHeartbeat(lock.ID, 3, 1, func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	})
+	defer stop()
+
+	time.Sleep(1200 * time.Millisecond)
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("heartbeat returned error: %v", err)
+	default:
+	}
+
+	updated := db.GetLock("heartbeat-lock")
+	if updated.Duration != 3 {
+		t.Fatalf("expected heartbeat to refresh duration to 3, got %d", updated.Duration)
+	}
+	if updated.Date.Before(time.Now().UTC().Add(-30 * time.Second)) {
+		t.Fatalf("expected heartbeat to refresh lock date, got %s", updated.Date)
 	}
 }
 

@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -161,5 +162,80 @@ func TestRequestLoggerMiddlewareSetsRequestIDHeader(t *testing.T) {
 	}
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.Code)
+	}
+}
+
+func TestSugarAndJobSugarAndSync(t *testing.T) {
+	resetBaseLogger()
+	t.Setenv("LOG_OUTPUT", "stdout")
+
+	if Sugar() == nil {
+		t.Fatalf("expected Sugar logger")
+	}
+	jobSugar, jobID := NewJobSugar("sync-test")
+	if jobSugar == nil {
+		t.Fatalf("expected non-nil job sugar logger")
+	}
+	if strings.TrimSpace(jobID) == "" {
+		t.Fatalf("expected non-empty job id")
+	}
+
+	Sync()
+}
+
+func TestBuildEncoderAndLoggerWithEmptyRequestID(t *testing.T) {
+	if buildEncoder("text") == nil {
+		t.Fatalf("expected non-nil text encoder")
+	}
+	if buildEncoder("json") == nil {
+		t.Fatalf("expected non-nil json encoder")
+	}
+
+	if LoggerWithRequestID("   ") == nil {
+		t.Fatalf("expected base logger for blank request id")
+	}
+}
+
+func TestRequestHelpersFallbackBranches(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/fallback", nil)
+	req.Header.Set(RequestIDHeader, "header-fallback")
+	c.Request = req
+
+	c.Set(RequestIDKey, 123)
+	if got := RequestIDFromGin(c); got != "header-fallback" {
+		t.Fatalf("expected header fallback request id, got %q", got)
+	}
+
+	c.Set(RequestLoggerKey, "not-a-logger")
+	if LoggerFromGin(c) == nil {
+		t.Fatalf("expected logger fallback from invalid context value")
+	}
+}
+
+func TestRequestLoggerMiddlewareErrorBranch(t *testing.T) {
+	resetBaseLogger()
+	t.Setenv("LOG_OUTPUT", "stdout")
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(RequestLoggerMiddleware())
+	router.NoRoute(func(c *gin.Context) {
+		_ = c.Error(errors.New("route miss"))
+		c.String(http.StatusNotFound, "missing")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/missing-route", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", resp.Code)
+	}
+	if strings.TrimSpace(resp.Header().Get(RequestIDHeader)) == "" {
+		t.Fatalf("expected middleware to set request id header")
 	}
 }

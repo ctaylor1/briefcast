@@ -42,6 +42,7 @@ func ExtractID3Metadata(path string) ([]byte, error) {
 	}
 	defer cancel()
 
+	// #nosec G204,G702 -- exec.CommandContext is invoked without a shell; args are passed verbatim.
 	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath, path)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

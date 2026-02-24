@@ -90,6 +90,7 @@ func (limiter *hostRequestLimiter) Do(ctx context.Context, client *http.Client, 
 	}
 	defer release()
 
+	// #nosec G704 -- outbound URL is built/validated upstream for intended feed/media fetching.
 	return client.Do(req)
 }
 

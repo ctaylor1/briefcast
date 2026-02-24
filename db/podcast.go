@@ -145,7 +145,10 @@ type Tag struct {
 }
 
 func (lock *JobLock) IsLocked() bool {
-	return lock != nil && lock.Date != time.Time{}
+	if lock == nil {
+		return false
+	}
+	return lock.Duration > 0 && !lock.Date.IsZero()
 }
 
 type PodcastItemStatsModel struct {

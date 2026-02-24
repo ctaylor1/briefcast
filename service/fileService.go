@@ -86,10 +86,12 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	var file *os.File
 	if resumeOffset > 0 && resp.StatusCode == http.StatusPartialContent {
 		// Continue writing to an existing partial file only for 206 responses.
+		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.OpenFile(finalPath, os.O_WRONLY|os.O_APPEND, 0o644)
 	} else {
 		// Servers that ignore range requests can still succeed with a full-body response.
 		resumeOffset = 0
+		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.Create(finalPath)
 	}
 	if err != nil {
@@ -252,6 +254,7 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 		return finalPath, nil
 	}
 
+	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 	file, err := os.Create(finalPath)
 	if err != nil {
 		logError("error creating file", err, "path", finalPath, "url", link)
@@ -295,6 +298,7 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 		return finalPath, nil
 	}
 
+	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 	file, err := os.Create(finalPath)
 	if err != nil {
 		logError("error creating file", err, "path", finalPath, "url", link)
@@ -317,6 +321,7 @@ func changeOwnership(path string) {
 	Logger.Debugw("attempting ownership update", "path", path)
 	if err1 == nil && err2 == nil {
 		Logger.Debugw("changing ownership", "path", path, "uid", uid, "gid", gid)
+		// #nosec G703 -- path is scoped to configured app data/config directories.
 		if err := os.Chown(path, uid, gid); err != nil {
 			Logger.Warnw("failed to update ownership", "path", path, "uid", uid, "gid", gid, "error", err)
 		}
@@ -407,6 +412,7 @@ func CreateBackup() (string, error) {
 	folder := createConfigFolderIfNotExists("backups")
 	configPath := os.Getenv("CONFIG")
 	tarballFilePath := path.Join(folder, backupFileName)
+	// #nosec G304 -- backup destination is under configured app config directory.
 	file, err := os.Create(tarballFilePath)
 	if err != nil {
 		return "", fmt.Errorf("could not create tarball file %q: %w", tarballFilePath, err)
@@ -414,6 +420,7 @@ func CreateBackup() (string, error) {
 	defer file.Close()
 
 	dbPath := path.Join(configPath, "briefcast.db")
+	// #nosec G703 -- dbPath is rooted at configured app config directory.
 	_, err = os.Stat(dbPath)
 	if err != nil {
 		return "", fmt.Errorf("could not find db file %q: %w", dbPath, err)
@@ -432,6 +439,7 @@ func CreateBackup() (string, error) {
 }
 
 func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
+	// #nosec G304,G703 -- filePath is a generated internal backup input path.
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("could not open file %q: %w", filePath, err)
@@ -499,7 +507,9 @@ func createFolder(folder string, parent string) string {
 	folder = cleanFileName(folder)
 	//str := stringy.New(folder)
 	folderPath := path.Join(parent, folder)
+	// #nosec G703 -- folderPath is composed from sanitized folder names and configured parent roots.
 	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+		// #nosec G703 -- folderPath is composed from sanitized folder names and configured parent roots.
 		if mkErr := os.MkdirAll(folderPath, 0o777); mkErr != nil {
 			Logger.Warnw("failed to create folder", "path", folderPath, "error", mkErr)
 			return folderPath

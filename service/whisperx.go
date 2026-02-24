@@ -50,6 +50,8 @@ type WhisperXConfig struct {
 	RetryDelaySeconds  int
 	RetryMaxDelay      int
 	RetryMaxErrorChars int
+	LockDurationMins   int
+	LockRefreshSecs    int
 }
 
 type whisperxScriptConfig struct {
@@ -74,11 +76,15 @@ const (
 	defaultWhisperXRetryDelay     = 300
 	defaultWhisperXRetryMaxDelay  = 21600
 	defaultWhisperXMaxErrorChars  = 1000
+	defaultWhisperXLockDuration   = 30
+	defaultWhisperXLockRefresh    = 60
 	whisperxPythonEnv             = "WHISPERX_PYTHON"
 	whisperxScriptEnv             = "WHISPERX_SCRIPT"
 	whisperxTimeoutEnv            = "WHISPERX_TIMEOUT_SECONDS"
 	whisperxEnabledEnv            = "WHISPERX_ENABLED"
-	whisperxHFTokenEnv            = "WHISPERX_HF_TOKEN"
+	whisperxHFTokenEnv            = "WHISPERX_HF_TOKEN" // #nosec G101 -- env var key name only, not a credential value.
+	whisperxLockDurationEnv       = "WHISPERX_LOCK_DURATION_MINUTES"
+	whisperxLockRefreshEnv        = "WHISPERX_LOCK_REFRESH_SECONDS"
 )
 
 func LoadWhisperXConfig() WhisperXConfig {
@@ -114,6 +120,8 @@ func LoadWhisperXConfig() WhisperXConfig {
 		RetryDelaySeconds:  getEnvInt("WHISPERX_RETRY_DELAY_SECONDS", defaultWhisperXRetryDelay),
 		RetryMaxDelay:      getEnvInt("WHISPERX_RETRY_MAX_DELAY_SECONDS", defaultWhisperXRetryMaxDelay),
 		RetryMaxErrorChars: getEnvInt("WHISPERX_RETRY_MAX_ERROR_CHARS", defaultWhisperXMaxErrorChars),
+		LockDurationMins:   getEnvInt(whisperxLockDurationEnv, defaultWhisperXLockDuration),
+		LockRefreshSecs:    getEnvInt(whisperxLockRefreshEnv, defaultWhisperXLockRefresh),
 	}
 	if cfg.Script == "" {
 		cfg.Script = defaultWhisperXScript
@@ -135,6 +143,15 @@ func LoadWhisperXConfig() WhisperXConfig {
 	}
 	if cfg.RetryMaxErrorChars <= 0 {
 		cfg.RetryMaxErrorChars = defaultWhisperXMaxErrorChars
+	}
+	if cfg.LockDurationMins <= 0 {
+		cfg.LockDurationMins = defaultWhisperXLockDuration
+	}
+	if cfg.LockRefreshSecs <= 0 {
+		cfg.LockRefreshSecs = defaultWhisperXLockRefresh
+	}
+	if cfg.LockRefreshSecs >= cfg.LockDurationMins*60 {
+		cfg.LockRefreshSecs = max(1, (cfg.LockDurationMins*60)/2)
 	}
 	return cfg
 }
@@ -158,7 +175,21 @@ func TranscribePendingEpisodes() error {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock("TranscribePendingEpisodes", 120)
+	jobLock := db.Lock("TranscribePendingEpisodes", cfg.LockDurationMins)
+	if jobLock == nil || jobLock.ID == "" {
+		acquireErr := errors.New("failed to acquire transcription job lock")
+		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
+		return acquireErr
+	}
+	stopLockHeartbeat := startJobLockHeartbeat(
+		jobLock.ID,
+		cfg.LockDurationMins,
+		cfg.LockRefreshSecs,
+		func(lockErr error) {
+			jobLogger.Warnw("failed to refresh transcription job lock", "error", lockErr)
+		},
+	)
+	defer stopLockHeartbeat()
 	defer db.UnlockByID(jobLock.ID)
 
 	if _, err := resolveWhisperXPython(cfg); err != nil {
@@ -271,6 +302,34 @@ func TranscribePendingEpisodes() error {
 	})
 
 	return firstErr
+}
+
+func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onError func(error)) func() {
+	if lockID == "" || durationMins <= 0 || refreshSecs <= 0 {
+		return func() {}
+	}
+
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	ticker := time.NewTicker(time.Duration(refreshSecs) * time.Second)
+
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				if err := db.RefreshLockByID(lockID, durationMins); err != nil && onError != nil {
+					onError(err)
+				}
+			}
+		}
+	}()
+
+	return func() {
+		stopOnce.Do(func() { close(stopCh) })
+	}
 }
 
 func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {

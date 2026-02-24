@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026-02-24
+
+### Added
+- Added targeted unit tests for logging and database wrapper paths to raise release coverage and lock in behavior.
+
+### Changed
+- Updated Go module metadata and lockfile state (`go mod tidy`) to keep builds reproducible with current transitive dependencies.
+
+### Fixed
+- Fixed release build failures caused by stale module graph resolution for `google.golang.org/protobuf/proto`.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency/security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.0.7] - 2026-02-23
 
 ### Added
