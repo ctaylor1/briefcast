@@ -224,6 +224,23 @@ func TestPodcastAndItemQueries(t *testing.T) {
 		t.Fatalf("expected 2 items by status, got %d", len(queueByStatus))
 	}
 
+	orderedStatuses, err := GetPodcastItemsByDownloadStatuses([]DownloadStatus{NotDownloaded, Paused, Downloaded}, 0)
+	if err != nil {
+		t.Fatalf("GetPodcastItemsByDownloadStatuses ordered query failed: %v", err)
+	}
+	if len(orderedStatuses) != 3 {
+		t.Fatalf("expected 3 items by ordered status query, got %d", len(orderedStatuses))
+	}
+	if orderedStatuses[0].DownloadStatus != NotDownloaded {
+		t.Fatalf("expected first item to be queued, got status %v", orderedStatuses[0].DownloadStatus)
+	}
+	if orderedStatuses[1].DownloadStatus != Paused {
+		t.Fatalf("expected second item to be paused, got status %v", orderedStatuses[1].DownloadStatus)
+	}
+	if orderedStatuses[2].DownloadStatus != Downloaded {
+		t.Fatalf("expected third item to be downloaded, got status %v", orderedStatuses[2].DownloadStatus)
+	}
+
 	stats, err := GetPodcastEpisodeStats()
 	if err != nil {
 		t.Fatalf("GetPodcastEpisodeStats failed: %v", err)

@@ -12,6 +12,7 @@ const infoMessage = ref("");
 const actionError = ref("");
 const DOWNLOAD_STATUS_QUEUED = 0;
 const DOWNLOAD_STATUS_DOWNLOADING = 1;
+const DOWNLOAD_STATUS_DOWNLOADED = 2;
 const DOWNLOAD_STATUS_PAUSED = 4;
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -42,14 +43,24 @@ function isDownloading(item: PodcastItem): boolean {
   return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADING;
 }
 
+function isDownloaded(item: PodcastItem): boolean {
+  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADED;
+}
+
 function queueStatusLabel(item: PodcastItem): string {
+  if (isDownloaded(item)) {
+    return "Download Completed";
+  }
   if (isDownloading(item)) {
     return "Downloading";
   }
   return "Queued";
 }
 
-function queueStatusTone(item: PodcastItem): "info" | "neutral" {
+function queueStatusTone(item: PodcastItem): "info" | "neutral" | "success" {
+  if (isDownloaded(item)) {
+    return "success";
+  }
   if (isDownloading(item)) {
     return "info";
   }
@@ -57,18 +68,21 @@ function queueStatusTone(item: PodcastItem): "info" | "neutral" {
 }
 
 function transcriptQueueBadge(item: PodcastItem): { visible: boolean; label: string; tone: BadgeTone } {
+  if (!isDownloaded(item)) {
+    return { visible: false, label: "", tone: "neutral" };
+  }
   const status = String(item.TranscriptStatus || "").trim().toLowerCase();
   if (status === "processing") {
-    return { visible: true, label: "Transcript in progress", tone: "info" };
+    return { visible: true, label: "Transcription in progress", tone: "info" };
   }
   if (status.startsWith("pending_")) {
-    return { visible: true, label: "Transcript queued", tone: "warning" };
+    return { visible: true, label: "Transcription Queued", tone: "warning" };
   }
   if (status === "failed") {
-    return { visible: true, label: "Transcript failed", tone: "danger" };
+    return { visible: true, label: "Transcription failed", tone: "danger" };
   }
   if (status === "available") {
-    return { visible: true, label: "Transcript ready", tone: "success" };
+    return { visible: true, label: "Transcription ready", tone: "success" };
   }
   return { visible: false, label: "", tone: "neutral" };
 }
@@ -159,6 +173,10 @@ async function resumeDownload(item: PodcastItem): Promise<void> {
   }
 }
 
+function refreshQueue(): void {
+  void fetchQueue();
+}
+
 function openPlayer(item: PodcastItem): void {
   const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}`;
   window.open(target, "briefcast_player");
@@ -222,7 +240,7 @@ onUnmounted(() => {
           >
             Stop all
           </UiButton>
-          <UiButton size="sm" variant="ghost" @click="fetchQueue">
+          <UiButton size="sm" variant="ghost" @click="refreshQueue">
             Refresh
           </UiButton>
         </div>
@@ -260,7 +278,7 @@ onUnmounted(() => {
           <div class="queue-list__main">
             <p class="queue-list__title">{{ item.Title }}</p>
             <p class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</p>
-            <div v-if="!isPaused(item)">
+            <div v-if="!isPaused(item) && !isDownloaded(item)">
               <div class="queue-list__progress-track">
                 <div
                   class="queue-list__progress-fill"
@@ -271,6 +289,7 @@ onUnmounted(() => {
               <p class="meta-text">{{ queueProgressLabel(item) }}</p>
               <p class="meta-text">{{ queueProgressRemainingLabel(item) }}</p>
             </div>
+            <p v-else-if="isDownloaded(item)" class="queue-list__completed-note">Download completed.</p>
             <p v-else class="queue-list__paused-note">Paused. Resume downloads to continue.</p>
           </div>
           <div class="queue-list__actions">
@@ -294,7 +313,7 @@ onUnmounted(() => {
             <UiButton size="sm" variant="outline" @click="openPlayer(item)">
               Play
             </UiButton>
-            <UiButton size="sm" variant="danger" @click="cancelDownload(item)">
+            <UiButton v-if="!isDownloaded(item)" size="sm" variant="danger" @click="cancelDownload(item)">
               Stop
             </UiButton>
           </div>
@@ -407,6 +426,14 @@ onUnmounted(() => {
 .queue-list__paused-note {
   margin: var(--space-2) 0 0;
   color: var(--color-warning);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  font-weight: 600;
+}
+
+.queue-list__completed-note {
+  margin: var(--space-2) 0 0;
+  color: var(--color-success);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line-height);
   font-weight: 600;

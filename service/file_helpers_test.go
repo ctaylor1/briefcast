@@ -4,9 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -66,6 +69,55 @@ func TestFileHelpers(t *testing.T) {
 func TestDownloadReturnsErrorForInvalidURL(t *testing.T) {
 	if _, err := Download("", "://bad-url", "Episode", "Podcast", ""); err == nil {
 		t.Fatalf("expected download to fail for invalid URL")
+	}
+}
+
+func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	var requests int32
+	var sawRangeRequest int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		if strings.TrimSpace(r.Header.Get("Range")) != "" {
+			atomic.StoreInt32(&sawRangeRequest, 1)
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		_, _ = w.Write([]byte("fresh-audio"))
+	}))
+	defer server.Close()
+
+	const (
+		podcastName = "Range Retry Podcast"
+		episodeName = "Range Retry Episode"
+	)
+	link := server.URL + "/audio.mp3"
+	folder := createDataFolderIfNotExists(podcastName)
+	targetPath := path.Join(folder, getFileName(link, episodeName, ".mp3"))
+	if err := os.WriteFile(targetPath, []byte("stale-partial"), 0o644); err != nil {
+		t.Fatalf("failed to seed partial file: %v", err)
+	}
+
+	downloadPath, err := Download("", link, episodeName, podcastName, "")
+	if err != nil {
+		t.Fatalf("expected retrying download to succeed, got error: %v", err)
+	}
+	if downloadPath != targetPath {
+		t.Fatalf("expected download path %q, got %q", targetPath, downloadPath)
+	}
+	if atomic.LoadInt32(&sawRangeRequest) != 1 {
+		t.Fatalf("expected initial ranged request to be attempted")
+	}
+	if atomic.LoadInt32(&requests) != 2 {
+		t.Fatalf("expected exactly two requests (range + full), got %d", atomic.LoadInt32(&requests))
+	}
+	data, err := os.ReadFile(downloadPath)
+	if err != nil {
+		t.Fatalf("failed to read downloaded file: %v", err)
+	}
+	if string(data) != "fresh-audio" {
+		t.Fatalf("expected full retry content, got %q", string(data))
 	}
 }
 

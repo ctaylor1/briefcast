@@ -68,6 +68,16 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
+		if resumeOffset > 0 && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+			resp.Body.Close()
+			// Some hosts reject stale resume offsets (416). Drop the partial file and retry once.
+			if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				Logger.Warnw("failed to reset partial file after range rejection", "path", finalPath, "error", removeErr)
+			} else {
+				Logger.Warnw("range resume rejected; retrying full download", "url", link, "path", finalPath, "resume_offset", resumeOffset)
+				return Download(downloadID, link, episodeTitle, podcastName, prefix)
+			}
+		}
 		resp.Body.Close()
 		// Keep upstream status visible in logs/UI (for example 416 resume mismatches).
 		return "", fmt.Errorf("download failed with status %s", resp.Status)

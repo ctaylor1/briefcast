@@ -16,10 +16,11 @@ export function useDownloadQueue() {
   const downloadsPaused = ref(false);
 
   async function fetchQueue(limit = 15): Promise<void> {
+    const normalizedLimit = Number.isInteger(limit) && limit > 0 ? limit : 15;
     queueLoading.value = true;
     queueError.value = "";
     try {
-      const response = await downloadsApi.getQueue(limit);
+      const response = await downloadsApi.getQueue(normalizedLimit);
       queueItems.value = response.items;
       queueCounts.queued = response.counts.queued ?? 0;
       queueCounts.downloading = response.counts.downloading ?? 0;
@@ -63,6 +64,9 @@ export function useDownloadQueue() {
   }
 
   function queueProgressLabel(item: PodcastItem): string {
+    if (item.DownloadStatus === 2) {
+      return "Download completed.";
+    }
     if (item.DownloadTotalBytes > 0) {
       return `${queueProgressPercent(item)}% complete (${formatBytes(item.DownloadedBytes)} / ${formatBytes(item.DownloadTotalBytes)})`;
     }
@@ -76,6 +80,9 @@ export function useDownloadQueue() {
   }
 
   function queueProgressRemainingLabel(item: PodcastItem): string {
+    if (item.DownloadStatus === 2) {
+      return "Ready for playback.";
+    }
     if (item.DownloadTotalBytes > 0) {
       const downloadedPercent = queueProgressPercent(item);
       const remainingPercent = Math.max(0, 100 - downloadedPercent);

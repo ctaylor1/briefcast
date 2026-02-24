@@ -35,7 +35,7 @@ func GetDownloadQueue(c *gin.Context) {
 		limit = parsed
 	}
 
-	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading, db.Paused}, limit)
+	items, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded, db.Downloading, db.Paused, db.Downloaded}, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load download queue."})
 		return

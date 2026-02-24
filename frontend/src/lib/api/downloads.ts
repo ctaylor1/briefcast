@@ -3,7 +3,9 @@ import { httpClient } from "./http";
 
 export const downloadsApi = {
   getQueue(limit?: number): Promise<DownloadQueueResponse> {
-    const params = limit ? { limit } : undefined;
+    const normalizedLimit =
+      typeof limit === "number" && Number.isInteger(limit) && limit > 0 ? limit : undefined;
+    const params = normalizedLimit ? { limit: normalizedLimit } : undefined;
     return httpClient.get<DownloadQueueResponse>("/downloads/queue", { params });
   },
   pause(): Promise<void> {

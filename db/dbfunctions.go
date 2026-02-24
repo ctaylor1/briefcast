@@ -233,9 +233,15 @@ func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, e
 
 func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]PodcastItem, error) {
 	var podcastItems []PodcastItem
+	statusPriority := clause.Expr{
+		SQL:  "CASE download_status WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 2 WHEN ? THEN 3 ELSE 4 END",
+		Vars: []interface{}{Downloading, NotDownloaded, Paused, Downloaded},
+	}
 	query := podcastItemsWithAssociations(DB).
 		Where("download_status IN ?", statuses).
-		Order("download_date desc")
+		Order(statusPriority).
+		Order("download_date desc").
+		Order("created_at desc")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
