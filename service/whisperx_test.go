@@ -37,6 +37,9 @@ func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	if cfg.MaxConcurrency != 1 {
 		t.Fatalf("expected max concurrency normalized to 1, got %d", cfg.MaxConcurrency)
 	}
+	if cfg.ChunkSeconds != 120 {
+		t.Fatalf("expected chunk seconds default 120, got %d", cfg.ChunkSeconds)
+	}
 	if !cfg.RetryFailed {
 		t.Fatalf("expected failed transcripts to be retried by default")
 	}
@@ -142,6 +145,28 @@ func TestResolveWhisperXPythonExplicitPath(t *testing.T) {
 	}
 }
 
+func TestRunWhisperXPreflightDetectsSyntaxErrors(t *testing.T) {
+	pythonPath := requireWorkingPython(t)
+	tempDir := t.TempDir()
+
+	badScript := filepath.Join(tempDir, "bad_whisperx.py")
+	if err := os.WriteFile(badScript, []byte("def broken(:\n"), 0o644); err != nil {
+		t.Fatalf("failed to write invalid script: %v", err)
+	}
+	if err := runWhisperXPreflight(pythonPath, badScript); err == nil {
+		t.Fatalf("expected preflight to fail for invalid syntax")
+	}
+
+	okScript := filepath.Join(tempDir, "ok_whisperx.py")
+	okBody := "#!/usr/bin/env python3\nprint('ok')\n"
+	if err := os.WriteFile(okScript, []byte(okBody), 0o755); err != nil {
+		t.Fatalf("failed to write valid script: %v", err)
+	}
+	if err := runWhisperXPreflight(pythonPath, okScript); err != nil {
+		t.Fatalf("expected preflight to pass for valid script, got %v", err)
+	}
+}
+
 func TestWhisperXRetryDelayBackoff(t *testing.T) {
 	if got := whisperxRetryDelay(1, 60, 600); got != 60*time.Second {
 		t.Fatalf("expected first retry delay to be 60s, got %s", got)
@@ -151,6 +176,70 @@ func TestWhisperXRetryDelayBackoff(t *testing.T) {
 	}
 	if got := whisperxRetryDelay(5, 60, 600); got != 600*time.Second {
 		t.Fatalf("expected capped retry delay to be 600s, got %s", got)
+	}
+}
+
+func TestApplyWhisperXProgressUpdate(t *testing.T) {
+	item := db.PodcastItem{}
+	progress := whisperxProgressUpdate{
+		Stage:      "transcribing",
+		Percent:    42,
+		Checkpoint: json.RawMessage(`{"segments":[{"start":1.0,"text":"hello"}],"completed_seconds":60}`),
+	}
+	if changed := applyWhisperXProgressUpdate(&item, progress); !changed {
+		t.Fatalf("expected progress update to apply")
+	}
+	if item.TranscriptProgressStage != "transcribing" {
+		t.Fatalf("expected stage transcribing, got %q", item.TranscriptProgressStage)
+	}
+	if item.TranscriptProgressPct != 42 {
+		t.Fatalf("expected progress pct 42, got %d", item.TranscriptProgressPct)
+	}
+	if !strings.Contains(item.TranscriptCheckpointJSON, "completed_seconds") {
+		t.Fatalf("expected checkpoint json to be stored, got %q", item.TranscriptCheckpointJSON)
+	}
+
+	if changed := applyWhisperXProgressUpdate(&item, progress); changed {
+		t.Fatalf("expected duplicate progress update to be ignored")
+	}
+
+	lowerPct := whisperxProgressUpdate{Stage: "transcribing", Percent: 10}
+	_ = applyWhisperXProgressUpdate(&item, lowerPct)
+	if item.TranscriptProgressPct != 42 {
+		t.Fatalf("expected progress pct to remain monotonic, got %d", item.TranscriptProgressPct)
+	}
+
+	complete := whisperxProgressUpdate{Stage: "complete", Percent: 0}
+	if changed := applyWhisperXProgressUpdate(&item, complete); !changed {
+		t.Fatalf("expected completion update to apply")
+	}
+	if item.TranscriptProgressPct != 100 {
+		t.Fatalf("expected completion to force 100 pct, got %d", item.TranscriptProgressPct)
+	}
+}
+
+func TestReadWhisperXProgressUpdate(t *testing.T) {
+	progressPath := filepath.Join(t.TempDir(), "progress.json")
+	if _, _, ok, err := readWhisperXProgressUpdate(progressPath); err != nil || ok {
+		t.Fatalf("expected missing progress file to return no update, got ok=%v err=%v", ok, err)
+	}
+
+	body := `{"stage":"transcribing","percent":55,"checkpoint":{"segments":[]}}`
+	if err := os.WriteFile(progressPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("failed to write progress file: %v", err)
+	}
+	update, raw, ok, err := readWhisperXProgressUpdate(progressPath)
+	if err != nil {
+		t.Fatalf("expected progress read success, got %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected progress update to be found")
+	}
+	if update.Stage != "transcribing" || update.Percent != 55 {
+		t.Fatalf("unexpected progress payload: %+v", update)
+	}
+	if strings.TrimSpace(raw) == "" {
+		t.Fatalf("expected raw payload text")
 	}
 }
 
@@ -322,5 +411,79 @@ func TestRunWhisperXWithStubScript(t *testing.T) {
 		t.Fatalf("expected timeout error")
 	} else if !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout error text, got %v", err)
+	}
+}
+
+func TestRunWhisperXWithProgressAndResume(t *testing.T) {
+	pythonPath := requireWorkingPython(t)
+
+	tempDir := t.TempDir()
+	audioPath := filepath.Join(tempDir, "audio.mp3")
+	if err := os.WriteFile(audioPath, []byte("audio"), 0o644); err != nil {
+		t.Fatalf("failed to create audio file: %v", err)
+	}
+
+	scriptPath := filepath.Join(tempDir, "whisper_progress.py")
+	scriptBody := `#!/usr/bin/env python3
+import json
+import os
+
+progress_path = os.environ.get("WHISPERX_PROGRESS_FILE", "")
+resume_path = os.environ.get("WHISPERX_RESUME_FILE", "")
+resume_payload = {}
+if resume_path and os.path.exists(resume_path):
+    with open(resume_path, "r", encoding="utf-8") as handle:
+        resume_payload = json.load(handle)
+if progress_path:
+    progress_payload = {
+        "stage": "transcribing",
+        "percent": 55,
+        "checkpoint": {
+            "segments": [{"start": 1.0, "text": "progress"}],
+            "completed_seconds": 12.0
+        }
+    }
+    tmp_path = progress_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(progress_payload, handle)
+    os.replace(tmp_path, progress_path)
+print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(resume_payload)}))
+`
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("failed to write progress script: %v", err)
+	}
+
+	cfg := WhisperXConfig{
+		Python:       pythonPath,
+		Script:       scriptPath,
+		ChunkSeconds: 120,
+	}
+
+	var updates []whisperxProgressUpdate
+	checkpoint := `{"segments":[{"start":0.0,"text":"seed"}],"completed_seconds":10.0}`
+	output, err := RunWhisperXWithProgress(audioPath, cfg, checkpoint, func(progress whisperxProgressUpdate) {
+		updates = append(updates, progress)
+	})
+	if err != nil {
+		t.Fatalf("RunWhisperXWithProgress failed: %v", err)
+	}
+	if len(updates) == 0 {
+		t.Fatalf("expected at least one progress callback")
+	}
+	last := updates[len(updates)-1]
+	if last.Stage != "transcribing" || last.Percent != 55 {
+		t.Fatalf("unexpected progress callback payload: %+v", last)
+	}
+	if len(last.Checkpoint) == 0 || !json.Valid(last.Checkpoint) {
+		t.Fatalf("expected checkpoint JSON in progress callback, got %q", string(last.Checkpoint))
+	}
+	var payload struct {
+		Resumed bool `json:"resumed"`
+	}
+	if err := json.Unmarshal(output, &payload); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if !payload.Resumed {
+		t.Fatalf("expected resume checkpoint to be passed to script, output=%s", string(output))
 	}
 }

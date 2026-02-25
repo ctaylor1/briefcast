@@ -349,6 +349,8 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			transcriptAssets := feedmeta.ExtractTranscripts(entry)
 			transcriptStatus := "pending_whisperx"
 			transcriptJSON := ""
+			transcriptProgressPct := 0
+			transcriptProgressStage := "queued"
 			if len(transcriptAssets) > 0 {
 				for i := range transcriptAssets {
 					if transcriptAssets[i].URL == "" {
@@ -363,29 +365,34 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				}
 				transcriptJSON = feedmeta.MarshalMetadata(transcriptAssets)
 				transcriptStatus = "available"
+				transcriptProgressPct = 100
+				transcriptProgressStage = "complete"
 			} else {
 				// Keep missing transcripts in a pending state so WhisperX workers can process them later.
 				Logger.Infow("podcast transcript missing; queued for WhisperX", "podcast_id", podcast.ID, "episode_guid", guid)
 			}
 
 			podcastItem = db.PodcastItem{
-				PodcastID:        podcast.ID,
-				Title:            feedmeta.GetString(entry, "title"),
-				Summary:          showNotesText,
-				SummaryHTML:      showNotesHTML,
-				EpisodeType:      feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_episodetype"), feedmeta.GetString(entry, "episodetype")),
-				Duration:         duration,
-				PubDate:          pubDate,
-				FileURL:          feedmeta.ExtractEnclosureURL(entry),
-				GUID:             guid,
-				Image:            feedmeta.ExtractEntryImage(entry, feedImage),
-				DownloadStatus:   downloadStatus,
-				ChaptersURL:      chaptersURL,
-				ChaptersType:     chaptersType,
-				ChaptersJSON:     chaptersJSON,
-				ItemMetadata:     feedmeta.MarshalMetadata(entry),
-				TranscriptJSON:   transcriptJSON,
-				TranscriptStatus: transcriptStatus,
+				PodcastID:                podcast.ID,
+				Title:                    feedmeta.GetString(entry, "title"),
+				Summary:                  showNotesText,
+				SummaryHTML:              showNotesHTML,
+				EpisodeType:              feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_episodetype"), feedmeta.GetString(entry, "episodetype")),
+				Duration:                 duration,
+				PubDate:                  pubDate,
+				FileURL:                  feedmeta.ExtractEnclosureURL(entry),
+				GUID:                     guid,
+				Image:                    feedmeta.ExtractEntryImage(entry, feedImage),
+				DownloadStatus:           downloadStatus,
+				ChaptersURL:              chaptersURL,
+				ChaptersType:             chaptersType,
+				ChaptersJSON:             chaptersJSON,
+				ItemMetadata:             feedmeta.MarshalMetadata(entry),
+				TranscriptJSON:           transcriptJSON,
+				TranscriptStatus:         transcriptStatus,
+				TranscriptProgressPct:    transcriptProgressPct,
+				TranscriptProgressStage:  transcriptProgressStage,
+				TranscriptCheckpointJSON: "",
 			}
 			if createErr := db.CreatePodcastItem(&podcastItem); createErr != nil {
 				Logger.Errorw("failed to persist podcast item", "podcast_id", podcast.ID, "episode_guid", guid, "error", createErr)
@@ -544,6 +551,16 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 	}
 	if podcastItem.TranscriptStatus == "" && podcastItem.TranscriptJSON == "" {
 		podcastItem.TranscriptStatus = "pending_whisperx"
+		podcastItem.TranscriptProgressPct = 0
+		podcastItem.TranscriptProgressStage = "queued"
+		podcastItem.TranscriptCheckpointJSON = ""
+		podcastItem.TranscriptRetryCount = 0
+		podcastItem.TranscriptNextAttempt = nil
+		podcastItem.TranscriptLastError = ""
+	} else if podcastItem.TranscriptStatus == "available" {
+		podcastItem.TranscriptProgressPct = 100
+		podcastItem.TranscriptProgressStage = "complete"
+		podcastItem.TranscriptCheckpointJSON = ""
 	}
 
 	if id3meta.ShouldExtract(podcastItem.ChaptersJSON, podcastItem.ID3TagsJSON, podcastItem.ID3ChaptersJSON) {

@@ -394,7 +394,11 @@ docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t 
 - `WHISPERX_HF_TOKEN`: Hugging Face token (required for pyannote diarization)
 - `WHISPERX_MAX_CONCURRENCY`: default `1`
 - `WHISPERX_MAX_ITEMS`: default `0` (no limit)
-- `WHISPERX_RETRY_FAILED`: default `false`
+- `WHISPERX_RETRY_FAILED`: default `true`
+- `WHISPERX_RETRY_DELAY_SECONDS`: default `300`
+- `WHISPERX_RETRY_MAX_DELAY_SECONDS`: default `21600`
+- `WHISPERX_CHUNK_SECONDS`: default `120` (checkpoint save frequency during transcription)
+- `WHISPERX_PROGRESS_POLL_MILLIS`: default `2000` (how often Briefcast persists script progress)
 - `WHISPERX_CHECK_FREQUENCY`: defaults to `CHECK_FREQUENCY`
 - `WHISPERX_HF_HOME`: Hugging Face cache location (default `/config/.cache/huggingface` when `/config` exists)
 - `WHISPERX_DISABLE_TELEMETRY`: default `true` (sets `HF_HUB_DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, `PYANNOTE_METRICS_ENABLED=0`)
@@ -405,6 +409,7 @@ Runtime resilience notes:
 - If `pyannote` VAD fails to initialize, transcription automatically retries with `silero` VAD.
 - If alignment or diarization fails, transcription still completes (without those enrichments) instead of marking the job failed.
 - When diarization is enabled, Briefcast forces WhisperX worker count to `1` for lock/contention stability on NAS/CPU hosts.
+- WhisperX progress checkpoints are persisted in the episode row; interrupted transcriptions resume from the last completed chunk.
 
 Recommended config split:
 
@@ -522,8 +527,10 @@ BRIEFCAST_INTEGRATION=1 go test ./service -run TestIntegrationFeedDownloadWhispe
 Real WhisperX regression:
 
 ```bash
-BRIEFCAST_WHISPERX_REAL=1 WHISPERX_TEST_AUDIO=/path/to/audio.mp3 go test ./service -run TestWhisperXRealTranscription
+BRIEFCAST_WHISPERX_REAL=1 go test ./service -run TestWhisperXRealTranscription
 ```
+
+`WHISPERX_TEST_AUDIO` is optional. If omitted, the test generates a short local WAV fixture.
 
 Windows helper:
 

@@ -25,7 +25,7 @@ if (-not $SkipFrontend) {
 
 if (-not $SkipWhisperX) {
     if ($env:BRIEFCAST_WHISPERX_REAL -ne "1") {
-        Write-Host "Skipping WhisperX regression (set BRIEFCAST_WHISPERX_REAL=1 and WHISPERX_TEST_AUDIO=path to enable)."
+        Write-Host "Skipping WhisperX regression (set BRIEFCAST_WHISPERX_REAL=1 to enable; WHISPERX_TEST_AUDIO is optional)."
     } else {
         Write-Host "Running WhisperX regression..."
         go test ./service -run TestWhisperXRealTranscription

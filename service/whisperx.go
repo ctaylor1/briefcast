@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ type WhisperXConfig struct {
 	Device             string
 	ComputeType        string
 	BatchSize          int
+	ChunkSeconds       int
 	BeamSize           int
 	Patience           float64
 	ConditionOnPrev    bool
@@ -60,6 +62,7 @@ type whisperxScriptConfig struct {
 	Device       string                 `json:"device"`
 	ComputeType  string                 `json:"compute_type"`
 	BatchSize    int                    `json:"batch_size"`
+	ChunkSeconds int                    `json:"chunk_seconds"`
 	ASROptions   map[string]interface{} `json:"asr_options"`
 	VADOptions   map[string]interface{} `json:"vad_options"`
 	VADMethod    string                 `json:"vad_method"`
@@ -73,19 +76,44 @@ type whisperxScriptConfig struct {
 const (
 	defaultWhisperXScript         = "scripts/whisperx_transcribe.py"
 	defaultWhisperXTimeoutSeconds = 21600
+	defaultWhisperXPreflightSec   = 30
 	defaultWhisperXRetryDelay     = 300
 	defaultWhisperXRetryMaxDelay  = 21600
 	defaultWhisperXMaxErrorChars  = 1000
 	defaultWhisperXLockDuration   = 30
 	defaultWhisperXLockRefresh    = 60
+	defaultWhisperXLogTrimChars   = 2000
+	defaultWhisperXProgressPollMS = 2000
 	whisperxPythonEnv             = "WHISPERX_PYTHON"
 	whisperxScriptEnv             = "WHISPERX_SCRIPT"
 	whisperxTimeoutEnv            = "WHISPERX_TIMEOUT_SECONDS"
+	whisperxPreflightEnv          = "WHISPERX_PREFLIGHT_TIMEOUT_SECONDS"
+	whisperxProgressPollEnv       = "WHISPERX_PROGRESS_POLL_MILLIS"
+	whisperxProgressFileEnv       = "WHISPERX_PROGRESS_FILE"
+	whisperxResumeFileEnv         = "WHISPERX_RESUME_FILE"
 	whisperxEnabledEnv            = "WHISPERX_ENABLED"
 	whisperxHFTokenEnv            = "WHISPERX_HF_TOKEN" // #nosec G101 -- env var key name only, not a credential value.
 	whisperxLockDurationEnv       = "WHISPERX_LOCK_DURATION_MINUTES"
 	whisperxLockRefreshEnv        = "WHISPERX_LOCK_REFRESH_SECONDS"
 )
+
+type whisperxQueueSnapshot struct {
+	TotalEligible int64
+	DueNow        int64
+	Pending       int64
+	Processing    int64
+	Failed        int64
+	NextRetryAt   *time.Time
+}
+
+type whisperxProgressUpdate struct {
+	Stage            string          `json:"stage"`
+	Percent          int             `json:"percent"`
+	CompletedSeconds float64         `json:"completed_seconds,omitempty"`
+	TotalSeconds     float64         `json:"total_seconds,omitempty"`
+	Checkpoint       json.RawMessage `json:"checkpoint,omitempty"`
+	Error            string          `json:"error,omitempty"`
+}
 
 func LoadWhisperXConfig() WhisperXConfig {
 	cfg := WhisperXConfig{
@@ -100,6 +128,7 @@ func LoadWhisperXConfig() WhisperXConfig {
 		Device:             getEnvString("WHISPERX_DEVICE", "auto"),
 		ComputeType:        getEnvString("WHISPERX_COMPUTE_TYPE", "auto"),
 		BatchSize:          getEnvInt("WHISPERX_BATCH_SIZE", 0),
+		ChunkSeconds:       getEnvInt("WHISPERX_CHUNK_SECONDS", 120),
 		BeamSize:           getEnvInt("WHISPERX_BEAM_SIZE", 5),
 		Patience:           getEnvFloat("WHISPERX_PATIENCE", 1),
 		ConditionOnPrev:    getEnvBool("WHISPERX_CONDITION_ON_PREVIOUS_TEXT", true),
@@ -134,6 +163,9 @@ func LoadWhisperXConfig() WhisperXConfig {
 	}
 	if cfg.MaxConcurrency <= 0 {
 		cfg.MaxConcurrency = 1
+	}
+	if cfg.ChunkSeconds <= 0 {
+		cfg.ChunkSeconds = 120
 	}
 	if cfg.RetryDelaySeconds <= 0 {
 		cfg.RetryDelaySeconds = defaultWhisperXRetryDelay
@@ -192,12 +224,18 @@ func TranscribePendingEpisodes() error {
 	defer stopLockHeartbeat()
 	defer db.UnlockByID(jobLock.ID)
 
-	if _, err := resolveWhisperXPython(cfg); err != nil {
+	scriptPath, err := resolveWhisperXScript(cfg)
+	if err != nil {
+		jobLogger.Errorw("whisperx script resolution failed", "error", err)
+		return err
+	}
+	pythonPath, err := resolveWhisperXPython(cfg)
+	if err != nil {
 		jobLogger.Errorw("whisperx python resolution failed", "error", err)
 		return err
 	}
-	if _, err := resolveWhisperXScript(cfg); err != nil {
-		jobLogger.Errorw("whisperx script resolution failed", "error", err)
+	if err := runWhisperXPreflight(pythonPath, scriptPath); err != nil {
+		jobLogger.Errorw("whisperx script preflight failed", "error", err)
 		return err
 	}
 
@@ -213,7 +251,26 @@ func TranscribePendingEpisodes() error {
 	}
 
 	if len(*items) == 0 {
-		jobLogger.Infow("no pending transcripts")
+		snapshot, snapshotErr := collectWhisperXQueueSnapshot(statuses, time.Now().UTC())
+		if snapshotErr != nil {
+			jobLogger.Warnw("no pending transcripts (queue snapshot failed)", "error", snapshotErr)
+		} else {
+			jobLogger.Infow(
+				"no pending transcripts",
+				"eligible_total",
+				snapshot.TotalEligible,
+				"due_now",
+				snapshot.DueNow,
+				"pending",
+				snapshot.Pending,
+				"processing",
+				snapshot.Processing,
+				"failed",
+				snapshot.Failed,
+				"next_retry_at",
+				snapshot.NextRetryAt,
+			)
+		}
 		return nil
 	}
 
@@ -246,6 +303,7 @@ func TranscribePendingEpisodes() error {
 		if item.DownloadPath == "" || !FileExists(item.DownloadPath) {
 			missingErr := fmt.Errorf("audio file missing for transcription at %s", item.DownloadPath)
 			scheduleTranscriptRetry(&item, cfg, missingErr)
+			item.TranscriptProgressStage = "waiting_for_audio"
 			jobLogger.Warnw(
 				"audio file missing for transcription",
 				"podcast_item_id",
@@ -263,15 +321,64 @@ func TranscribePendingEpisodes() error {
 			return
 		}
 
+		jobLogger.Infow(
+			"starting transcription item",
+			"podcast_item_id",
+			item.ID,
+			"status",
+			item.TranscriptStatus,
+			"retry_count",
+			item.TranscriptRetryCount,
+			"next_attempt",
+			item.TranscriptNextAttempt,
+			"download_path",
+			item.DownloadPath,
+		)
+
 		item.TranscriptStatus = "processing"
 		item.TranscriptNextAttempt = nil
+		if strings.TrimSpace(item.TranscriptCheckpointJSON) != "" {
+			if item.TranscriptProgressPct <= 0 {
+				item.TranscriptProgressPct = 1
+			}
+			item.TranscriptProgressStage = "resuming"
+		} else {
+			item.TranscriptProgressPct = 1
+			item.TranscriptProgressStage = "starting"
+		}
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to mark transcript processing", "podcast_item_id", item.ID, "error", err)
 		}
 
-		output, err := RunWhisperX(item.DownloadPath, cfg)
+		output, err := RunWhisperXWithProgress(
+			item.DownloadPath,
+			cfg,
+			item.TranscriptCheckpointJSON,
+			func(progress whisperxProgressUpdate) {
+				if !applyWhisperXProgressUpdate(&item, progress) {
+					return
+				}
+				if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
+					jobLogger.Warnw(
+						"failed to persist transcript progress",
+						"podcast_item_id",
+						item.ID,
+						"stage",
+						progress.Stage,
+						"percent",
+						progress.Percent,
+						"error",
+						updateErr,
+					)
+				}
+			},
+		)
 		if err != nil {
 			scheduleTranscriptRetry(&item, cfg, err)
+			item.TranscriptProgressStage = "failed"
+			if item.TranscriptProgressPct >= 100 {
+				item.TranscriptProgressPct = 99
+			}
 			jobLogger.Warnw(
 				"whisperx transcription failed",
 				"podcast_item_id",
@@ -295,6 +402,9 @@ func TranscribePendingEpisodes() error {
 		item.TranscriptRetryCount = 0
 		item.TranscriptNextAttempt = nil
 		item.TranscriptLastError = ""
+		item.TranscriptProgressPct = 100
+		item.TranscriptProgressStage = "complete"
+		item.TranscriptCheckpointJSON = ""
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
 			setError(err)
@@ -333,6 +443,10 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 }
 
 func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
+	return RunWhisperXWithProgress(audioPath, cfg, "", nil)
+}
+
+func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpoint string, onProgress func(whisperxProgressUpdate)) ([]byte, error) {
 	pythonPath, err := resolveWhisperXPython(cfg)
 	if err != nil {
 		return nil, err
@@ -343,11 +457,12 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	}
 
 	scriptCfg := whisperxScriptConfig{
-		Model:       cfg.Model,
-		Language:    cfg.Language,
-		Device:      cfg.Device,
-		ComputeType: cfg.ComputeType,
-		BatchSize:   cfg.BatchSize,
+		Model:        cfg.Model,
+		Language:     cfg.Language,
+		Device:       cfg.Device,
+		ComputeType:  cfg.ComputeType,
+		BatchSize:    cfg.BatchSize,
+		ChunkSeconds: cfg.ChunkSeconds,
 		ASROptions: map[string]interface{}{
 			"beam_size":                  cfg.BeamSize,
 			"patience":                   cfg.Patience,
@@ -380,8 +495,47 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	}
 	defer cancel()
 
+	progressFile, err := os.CreateTemp("", "briefcast-whisperx-progress-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create whisperx progress file: %w", err)
+	}
+	progressPath := progressFile.Name()
+	_ = progressFile.Close()
+	_ = os.Remove(progressPath)
+	defer os.Remove(progressPath)
+
+	resumePath := ""
+	resumeRaw := strings.TrimSpace(resumeCheckpoint)
+	if resumeRaw != "" {
+		if !json.Valid([]byte(resumeRaw)) {
+			resumeRaw = ""
+		}
+	}
+	if resumeRaw != "" {
+		resumeFile, createErr := os.CreateTemp("", "briefcast-whisperx-resume-*.json")
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create whisperx resume file: %w", createErr)
+		}
+		resumePath = resumeFile.Name()
+		if _, writeErr := resumeFile.WriteString(resumeRaw); writeErr != nil {
+			_ = resumeFile.Close()
+			return nil, fmt.Errorf("failed to write whisperx resume file: %w", writeErr)
+		}
+		if closeErr := resumeFile.Close(); closeErr != nil {
+			return nil, fmt.Errorf("failed to close whisperx resume file: %w", closeErr)
+		}
+		defer os.Remove(resumePath)
+	}
+
 	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath, audioPath)
-	cmd.Env = append(os.Environ(), "WHISPERX_CONFIG_JSON="+string(payload))
+	cmd.Env = append(
+		os.Environ(),
+		"WHISPERX_CONFIG_JSON="+string(payload),
+		whisperxProgressFileEnv+"="+progressPath,
+	)
+	if resumePath != "" {
+		cmd.Env = append(cmd.Env, whisperxResumeFileEnv+"="+resumePath)
+	}
 	if cfg.HFToken != "" {
 		cmd.Env = append(cmd.Env, whisperxHFTokenEnv+"="+cfg.HFToken)
 	}
@@ -410,22 +564,148 @@ func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		stderrText := strings.TrimSpace(stderr.String())
+	pollMillis := getEnvInt(whisperxProgressPollEnv, defaultWhisperXProgressPollMS)
+	if pollMillis < 250 {
+		pollMillis = 250
+	}
+	ticker := time.NewTicker(time.Duration(pollMillis) * time.Millisecond)
+	defer ticker.Stop()
+
+	lastProgressRaw := ""
+	readProgress := func(force bool) {
+		if onProgress == nil {
+			return
+		}
+		update, raw, found, readErr := readWhisperXProgressUpdate(progressPath)
+		if readErr != nil || !found {
+			return
+		}
+		if !force && raw == lastProgressRaw {
+			return
+		}
+		lastProgressRaw = raw
+		onProgress(update)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start whisperx process: %w", err)
+	}
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	var runErr error
+waitLoop:
+	for {
+		select {
+		case runErr = <-waitCh:
+			break waitLoop
+		case <-ticker.C:
+			readProgress(false)
+		}
+	}
+	readProgress(true)
+
+	if runErr != nil {
+		stderrText := truncateForLog(stderr.String(), defaultWhisperXLogTrimChars)
+		stdoutText := truncateForLog(stdout.String(), defaultWhisperXLogTrimChars)
+		details := make([]string, 0, 2)
+		if stderrText != "" {
+			details = append(details, "stderr="+stderrText)
+		}
+		if stdoutText != "" {
+			details = append(details, "stdout="+stdoutText)
+		}
+		detailText := strings.TrimSpace(strings.Join(details, " | "))
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			if detailText == "" {
+				detailText = "no process output"
+			}
 			return nil, fmt.Errorf(
 				"whisperx timed out after %d seconds: %s",
 				timeoutSeconds,
-				stderrText,
+				detailText,
 			)
 		}
-		return nil, fmt.Errorf("whisperx failed: %w: %s", err, stderrText)
+		if detailText == "" {
+			detailText = "no process output"
+		}
+		return nil, fmt.Errorf("whisperx failed: %w: %s", runErr, detailText)
 	}
 
 	if !json.Valid(stdout.Bytes()) {
-		return nil, fmt.Errorf("whisperx output is not valid JSON: %s", strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf(
+			"whisperx output is not valid JSON: stdout=%s stderr=%s",
+			truncateForLog(stdout.String(), defaultWhisperXLogTrimChars),
+			truncateForLog(stderr.String(), defaultWhisperXLogTrimChars),
+		)
 	}
 	return stdout.Bytes(), nil
+}
+
+func readWhisperXProgressUpdate(path string) (whisperxProgressUpdate, string, bool, error) {
+	var update whisperxProgressUpdate
+	trimmedPath := strings.TrimSpace(path)
+	if trimmedPath == "" {
+		return update, "", false, nil
+	}
+	rawBytes, err := os.ReadFile(trimmedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return update, "", false, nil
+		}
+		return update, "", false, err
+	}
+	raw := strings.TrimSpace(string(rawBytes))
+	if raw == "" {
+		return update, "", false, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &update); err != nil {
+		return update, raw, false, err
+	}
+	return update, raw, true, nil
+}
+
+func applyWhisperXProgressUpdate(item *db.PodcastItem, progress whisperxProgressUpdate) bool {
+	if item == nil {
+		return false
+	}
+
+	changed := false
+	stage := strings.TrimSpace(progress.Stage)
+	if stage != "" && stage != item.TranscriptProgressStage {
+		item.TranscriptProgressStage = stage
+		changed = true
+	}
+
+	pct := progress.Percent
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if stage == "complete" {
+		pct = 100
+	}
+	if pct > item.TranscriptProgressPct || stage == "complete" {
+		if item.TranscriptProgressPct != pct {
+			item.TranscriptProgressPct = pct
+			changed = true
+		}
+	}
+
+	if len(progress.Checkpoint) > 0 && json.Valid(progress.Checkpoint) {
+		checkpoint := strings.TrimSpace(string(progress.Checkpoint))
+		if checkpoint != "" && checkpoint != item.TranscriptCheckpointJSON {
+			item.TranscriptCheckpointJSON = checkpoint
+			changed = true
+		}
+	}
+
+	return changed
 }
 
 func resolveWhisperXPython(cfg WhisperXConfig) (string, error) {
@@ -455,6 +735,101 @@ func resolveWhisperXScript(cfg WhisperXConfig) (string, error) {
 		return "", fmt.Errorf("whisperx script not found at %s", scriptPath)
 	}
 	return scriptPath, nil
+}
+
+func runWhisperXPreflight(pythonPath string, scriptPath string) error {
+	if strings.TrimSpace(pythonPath) == "" {
+		return errors.New("python interpreter path is empty")
+	}
+	if strings.TrimSpace(scriptPath) == "" {
+		return errors.New("whisperx script path is empty")
+	}
+
+	timeoutSeconds := getEnvInt(whisperxPreflightEnv, defaultWhisperXPreflightSec)
+	cmdCtx := context.Background()
+	cancel := func() {}
+	if timeoutSeconds > 0 {
+		cmdCtx, cancel = context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	}
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, pythonPath, "-m", "py_compile", scriptPath)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(
+			strings.Join(
+				[]string{
+					"stdout=" + truncateForLog(stdout.String(), defaultWhisperXLogTrimChars),
+					"stderr=" + truncateForLog(stderr.String(), defaultWhisperXLogTrimChars),
+				},
+				" | ",
+			),
+		)
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("whisperx script preflight timed out after %d seconds: %s", timeoutSeconds, detail)
+		}
+		return fmt.Errorf("whisperx script preflight failed: %w: %s", err, detail)
+	}
+	return nil
+}
+
+func collectWhisperXQueueSnapshot(statuses []string, now time.Time) (whisperxQueueSnapshot, error) {
+	snapshot := whisperxQueueSnapshot{}
+	baseQuery := db.DB.Model(&db.PodcastItem{}).
+		Where("download_status = ?", db.Downloaded).
+		Where("transcript_status IN ?", statuses).
+		Where("download_path <> ''").
+		Where("(transcript_json IS NULL OR transcript_json = '')")
+
+	if err := baseQuery.Count(&snapshot.TotalEligible).Error; err != nil {
+		return snapshot, err
+	}
+	if err := baseQuery.
+		Where("(transcript_next_attempt IS NULL OR transcript_next_attempt <= ?)", now).
+		Count(&snapshot.DueNow).
+		Error; err != nil {
+		return snapshot, err
+	}
+
+	type transcriptStatusCount struct {
+		TranscriptStatus string
+		Count            int64
+	}
+	var counts []transcriptStatusCount
+	if err := baseQuery.
+		Select("transcript_status, COUNT(*) AS count").
+		Group("transcript_status").
+		Scan(&counts).
+		Error; err != nil {
+		return snapshot, err
+	}
+	for _, row := range counts {
+		switch row.TranscriptStatus {
+		case "pending_whisperx":
+			snapshot.Pending = row.Count
+		case "processing":
+			snapshot.Processing = row.Count
+		case "failed":
+			snapshot.Failed = row.Count
+		}
+	}
+
+	var nextRetry sql.NullTime
+	if err := baseQuery.
+		Where("transcript_next_attempt > ?", now).
+		Select("MIN(transcript_next_attempt)").
+		Scan(&nextRetry).
+		Error; err != nil {
+		return snapshot, err
+	}
+	if nextRetry.Valid {
+		next := nextRetry.Time.UTC()
+		snapshot.NextRetryAt = &next
+	}
+	return snapshot, nil
 }
 
 func scheduleTranscriptRetry(item *db.PodcastItem, cfg WhisperXConfig, transcriptionErr error) {
@@ -504,6 +879,17 @@ func trimToLength(value string, maxLen int) string {
 		return value
 	}
 	return value[:maxLen]
+}
+
+func truncateForLog(value string, maxLen int) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if maxLen <= 0 || len(trimmed) <= maxLen {
+		return trimmed
+	}
+	return trimmed[:maxLen] + "...(truncated)"
 }
 
 func getEnvString(name string, fallback string) string {

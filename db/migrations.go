@@ -97,6 +97,22 @@ where id in (
 		Name:  "2026_02_23_01_05_AddUniqueIndexJobLocksName",
 		Query: "create unique index if not exists idx_job_locks_name on job_locks(name)",
 	},
+	{
+		Name:  "2026_02_25_01_00_AddTranscriptProgressPct",
+		Query: "alter table podcast_items add column if not exists transcript_progress_pct integer default 0",
+	},
+	{
+		Name:  "2026_02_25_01_01_AddTranscriptProgressStage",
+		Query: "alter table podcast_items add column if not exists transcript_progress_stage text",
+	},
+	{
+		Name:  "2026_02_25_01_02_AddTranscriptCheckpointJSON",
+		Query: "alter table podcast_items add column if not exists transcript_checkpoint_json text",
+	},
+	{
+		Name:  "2026_02_25_01_03_BackfillTranscriptProgressPct",
+		Query: "update podcast_items set transcript_progress_pct = 0 where transcript_progress_pct is null",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

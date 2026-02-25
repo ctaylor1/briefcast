@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import PodcastCard from "../components/dashboard/PodcastCard.vue";
 import PodcastsTable from "../components/dashboard/PodcastsTable.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
+import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
 import { getErrorMessage, podcastsApi } from "../lib/api";
@@ -60,6 +61,10 @@ function openPlayerScreen(podcastId: string): void {
 
 function requestDelete(podcast: Podcast): void {
   podcastToDelete.value = podcast;
+}
+
+function openAddPodcast(): void {
+  void router.push("/add");
 }
 
 async function loadPodcasts(): Promise<void> {
@@ -143,9 +148,7 @@ onMounted(loadPodcasts);
             Browse your shows, queue fresh episodes, and open the player with one tap.
           </p>
         </div>
-        <RouterLink to="/add" class="ui-button ui-button--primary">
-          Add podcast
-        </RouterLink>
+        <UiButton type="button" variant="primary" @click="openAddPodcast">+ Add Podcast</UiButton>
       </div>
     </header>
 

@@ -290,6 +290,16 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	if refreshedPending.TranscriptStatus != "pending_whisperx" {
 		t.Fatalf("expected pending whisperx default transcript status, got %q", refreshedPending.TranscriptStatus)
 	}
+	if refreshedPending.TranscriptProgressPct != 0 || refreshedPending.TranscriptProgressStage != "queued" {
+		t.Fatalf(
+			"expected pending transcript progress to reset to queued/0, got stage=%q pct=%d",
+			refreshedPending.TranscriptProgressStage,
+			refreshedPending.TranscriptProgressPct,
+		)
+	}
+	if refreshedPending.TranscriptCheckpointJSON != "" {
+		t.Fatalf("expected pending transcript checkpoint to be cleared")
+	}
 	if refreshedPending.DownloadedBytes == 0 || refreshedPending.DownloadTotalBytes == 0 {
 		t.Fatalf("expected downloaded byte counters to be populated, got downloaded=%d total=%d", refreshedPending.DownloadedBytes, refreshedPending.DownloadTotalBytes)
 	}
@@ -310,6 +320,13 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	}
 	if refreshedAvailable.TranscriptStatus != "available" {
 		t.Fatalf("expected existing transcript status to remain available, got %q", refreshedAvailable.TranscriptStatus)
+	}
+	if refreshedAvailable.TranscriptProgressPct != 100 || refreshedAvailable.TranscriptProgressStage != "complete" {
+		t.Fatalf(
+			"expected available transcript progress to be complete/100, got stage=%q pct=%d",
+			refreshedAvailable.TranscriptProgressStage,
+			refreshedAvailable.TranscriptProgressPct,
+		)
 	}
 }
 

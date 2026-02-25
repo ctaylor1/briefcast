@@ -240,8 +240,15 @@ onUnmounted(() => {
           >
             Stop all
           </UiButton>
-          <UiButton size="sm" variant="ghost" @click="refreshQueue">
-            Refresh
+          <UiButton
+            size="sm"
+            variant="ghost"
+            class="queue-toolbar__refresh"
+            aria-label="Refresh queue"
+            title="Refresh queue"
+            @click="refreshQueue"
+          >
+            ↻
           </UiButton>
         </div>
       </div>
@@ -328,6 +335,13 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.queue-toolbar__refresh {
+  min-width: 40px;
+  padding-inline: var(--space-2);
+  font-size: 18px;
+  line-height: 1;
 }
 
 .queue-skeleton {

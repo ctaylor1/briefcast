@@ -88,6 +88,10 @@ type PodcastItem struct {
 	ItemMetadata     string `gorm:"type:text" json:"-"`
 	TranscriptJSON   string `gorm:"type:text" json:"-"`
 	TranscriptStatus string `gorm:"type:text"`
+	// Progress fields are persisted so long-running transcriptions can resume after restarts.
+	TranscriptProgressPct    int    `gorm:"default:0"`
+	TranscriptProgressStage  string `gorm:"type:text"`
+	TranscriptCheckpointJSON string `gorm:"type:text" json:"-"`
 	// WhisperX retry bookkeeping to avoid tight failure loops and enable delayed retries.
 	TranscriptRetryCount  int `gorm:"default:0"`
 	TranscriptNextAttempt *time.Time
