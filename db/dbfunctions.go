@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -58,7 +57,7 @@ func getSortOrder(sorting model.EpisodeSort) string {
 func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastItem, int64, error) {
 	var podcasts []PodcastItem
 	var total int64
-	query := podcastItemsWithPodcast(DB.Debug())
+	query := podcastItemsWithPodcast(DB)
 	if queryModel.IsDownloaded != nil {
 		isDownloaded, err := strconv.ParseBool(*queryModel.IsDownloaded)
 		if err == nil {
@@ -156,18 +155,28 @@ func GetAllPodcastItemsByPodcastIds(podcastIds []string, podcastItems *[]Podcast
 }
 func GetAllPodcastItemsByIds(podcastItemIds []string) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
-
-	var sb strings.Builder
-
-	sb.WriteString("\n CASE ID \n")
-
-	for i, v := range podcastItemIds {
-		sb.WriteString(fmt.Sprintf("WHEN '%v' THEN %v \n", v, i+1))
+	if len(podcastItemIds) == 0 {
+		return &podcastItems, nil
 	}
 
-	sb.WriteString(fmt.Sprintln("END"))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString("CASE id ")
+	for i, id := range podcastItemIds {
+		escapedID := strings.ReplaceAll(id, "'", "''")
+		sqlBuilder.WriteString("WHEN '")
+		sqlBuilder.WriteString(escapedID)
+		sqlBuilder.WriteString("' THEN ")
+		sqlBuilder.WriteString(strconv.Itoa(i + 1))
+		sqlBuilder.WriteString(" ")
+	}
+	sqlBuilder.WriteString("ELSE ")
+	sqlBuilder.WriteString(strconv.Itoa(len(podcastItemIds) + 1))
+	sqlBuilder.WriteString(" END")
 
-	result := podcastItemsWithAssociations(DB.Debug()).Where("id in ?", podcastItemIds).Order(sb.String()).Find(&podcastItems)
+	result := podcastItemsWithAssociations(DB).
+		Where("id in ?", podcastItemIds).
+		Order(sqlBuilder.String()).
+		Find(&podcastItems)
 	return &podcastItems, result.Error
 }
 
@@ -310,7 +319,7 @@ func ForceSetLastEpisodeDate(podcastId string) {
 
 func TogglePodcastPauseStatus(podcastId string, isPaused bool) error {
 
-	tx := DB.Debug().Exec("update podcasts set is_paused = @isPaused where id = @id", sql.Named("id", podcastId), sql.Named("isPaused", isPaused))
+	tx := DB.Exec("update podcasts set is_paused = @isPaused where id = @id", sql.Named("id", podcastId), sql.Named("isPaused", isPaused))
 	return tx.Error
 }
 
@@ -406,6 +415,72 @@ func Lock(name string, duration int) *JobLock {
 
 	// Reload canonical lock row so callers can safely unlock by ID.
 	return GetLock(name)
+}
+
+// TryLock atomically acquires a named job lock when no active lease exists.
+// It returns (lock, true, nil) when acquired, (currentLock, false, nil) when busy.
+func TryLock(name string, duration int) (*JobLock, bool, error) {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return nil, false, errors.New("lock name is required")
+	}
+	if duration <= 0 {
+		return nil, false, errors.New("lock duration must be positive")
+	}
+
+	// Small retry window handles insert/update races between competing workers.
+	for attempt := 0; attempt < 5; attempt++ {
+		now := time.Now().UTC()
+
+		var existing JobLock
+		err := DB.Where("name = ?", trimmedName).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			candidate := &JobLock{
+				Name:     trimmedName,
+				Duration: duration,
+				Date:     now,
+			}
+			createTx := DB.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				DoNothing: true,
+			}).Create(candidate)
+			if createTx.Error != nil {
+				return nil, false, createTx.Error
+			}
+			if createTx.RowsAffected == 1 {
+				return candidate, true, nil
+			}
+			continue
+		}
+		if err != nil {
+			return nil, false, err
+		}
+
+		if existing.IsLockedAt(now) {
+			return &existing, false, nil
+		}
+
+		result := DB.Model(&JobLock{}).
+			Where("id = ? AND duration = ? AND date = ?", existing.ID, existing.Duration, existing.Date).
+			Updates(map[string]interface{}{
+				"duration":   duration,
+				"date":       now,
+				"deleted_at": nil,
+				"updated_at": now,
+			})
+		if result.Error != nil {
+			return nil, false, result.Error
+		}
+		if result.RowsAffected == 1 {
+			existing.Duration = duration
+			existing.Date = now
+			existing.DeletedAt = nil
+			return &existing, true, nil
+		}
+	}
+
+	current := GetLock(trimmedName)
+	return current, current != nil && current.IsLocked(), nil
 }
 
 // UnlockByID releases a specific lock row.

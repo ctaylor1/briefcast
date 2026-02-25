@@ -194,7 +194,7 @@ touch .env.whisperx
 ### Run the published image
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.0.8
+docker pull ghcr.io/ctaylor1/briefcast:1.0.9
 docker pull ghcr.io/ctaylor1/briefcast:latest
 
 docker run -d \
@@ -204,10 +204,10 @@ docker run -d \
   -v briefcast_config:/config \
   -v briefcast_data:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.8
+  ghcr.io/ctaylor1/briefcast:1.0.9
 ```
 
-`latest` should point to the current release tag (`1.0.8`).
+`latest` should point to the current release tag (`1.0.9`).
 
 ### Run WhisperX Image From Local Tar (NAS-friendly)
 
@@ -259,7 +259,7 @@ docker run -d \
   -v briefcast_data:/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.0.8
+  ghcr.io/ctaylor1/briefcast:1.0.9
 ```
 
 ### Storage (containers)
@@ -284,7 +284,7 @@ docker run -d \
   -v /srv/briefcast/config:/config \
   -v /srv/briefcast/assets:/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.0.8
+  ghcr.io/ctaylor1/briefcast:1.0.9
 ```
 
 ---
@@ -578,7 +578,7 @@ Secret hygiene:
 - Package version is defined in `pyproject.toml`.
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
-- For `v1.0.8`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.8` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- For `v1.0.9`, publish container tags `ghcr.io/ctaylor1/briefcast:1.0.9` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
 
 ## One-command release
 
@@ -643,7 +643,7 @@ Legacy/manual image publish command:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
-  -t ghcr.io/ctaylor1/briefcast:1.0.8 \
+  -t ghcr.io/ctaylor1/briefcast:1.0.9 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -719,7 +719,7 @@ git commit -m "release: ship-ready"
 5) Tag (recommended):
 
 ```bash
-git tag -a v1.0.8 -m "Briefcast v1.0.8"
+git tag -a v1.0.9 -m "Briefcast v1.0.9"
 ```
 
 6) Push:
@@ -727,7 +727,7 @@ git tag -a v1.0.8 -m "Briefcast v1.0.8"
 ```bash
 git remote add origin https://github.com/<your-org-or-user>/briefcast.git
 git push -u origin <branch-name>
-git push origin v1.0.8
+git push origin v1.0.9
 ```
 
 PowerShell variant for step 2:

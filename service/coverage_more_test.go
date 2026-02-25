@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/model"
@@ -177,6 +178,23 @@ json.dump({"segments":[]}, sys.stdout)
 	}
 	if refreshed.TranscriptStatus != "pending_whisperx" {
 		t.Fatalf("expected lock-held run to leave transcript status unchanged, got %q", refreshed.TranscriptStatus)
+	}
+
+	// Expire the existing lock row and confirm the next run can acquire atomically and process work.
+	expiredAt := time.Now().UTC().Add(-4 * time.Hour)
+	if err := db.DB.Model(&db.JobLock{}).Where("name = ?", "TranscribePendingEpisodes").Updates(map[string]interface{}{
+		"date": expiredAt,
+	}).Error; err != nil {
+		t.Fatalf("failed to age transcription lock row: %v", err)
+	}
+	if err := TranscribePendingEpisodes(); err != nil {
+		t.Fatalf("expected expired lock to be reacquired and processed, got %v", err)
+	}
+	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+		t.Fatalf("failed to reload lock test item after expired lock run: %v", err)
+	}
+	if refreshed.TranscriptStatus != "available" {
+		t.Fatalf("expected expired lock run to process item, got %q", refreshed.TranscriptStatus)
 	}
 }
 

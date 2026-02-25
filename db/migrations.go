@@ -151,7 +151,7 @@ func executeMigrationQuery(name string, query string) error {
 			query = strings.Replace(query, "add column if not exists", "add column", 1)
 		}
 	}
-	result := DB.Debug().Exec(query)
+	result := DB.Exec(query)
 	return result.Error
 }
 

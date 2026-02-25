@@ -91,6 +91,7 @@ const (
 	whisperxProgressPollEnv       = "WHISPERX_PROGRESS_POLL_MILLIS"
 	whisperxProgressFileEnv       = "WHISPERX_PROGRESS_FILE"
 	whisperxResumeFileEnv         = "WHISPERX_RESUME_FILE"
+	whisperxSegmentsFileEnv       = "WHISPERX_SEGMENTS_FILE"
 	whisperxEnabledEnv            = "WHISPERX_ENABLED"
 	whisperxHFTokenEnv            = "WHISPERX_HF_TOKEN" // #nosec G101 -- env var key name only, not a credential value.
 	whisperxLockDurationEnv       = "WHISPERX_LOCK_DURATION_MINUTES"
@@ -113,6 +114,13 @@ type whisperxProgressUpdate struct {
 	TotalSeconds     float64         `json:"total_seconds,omitempty"`
 	Checkpoint       json.RawMessage `json:"checkpoint,omitempty"`
 	Error            string          `json:"error,omitempty"`
+}
+
+type whisperxResumeCheckpoint struct {
+	CompletedSeconds float64 `json:"completed_seconds,omitempty"`
+	TotalSeconds     float64 `json:"total_seconds,omitempty"`
+	Language         string  `json:"language,omitempty"`
+	SegmentsFile     string  `json:"segments_file,omitempty"`
 }
 
 func LoadWhisperXConfig() WhisperXConfig {
@@ -201,13 +209,16 @@ func TranscribePendingEpisodes() error {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	lock := db.GetLock("TranscribePendingEpisodes")
-	if lock.IsLocked() {
+	jobLock, acquired, lockErr := db.TryLock("TranscribePendingEpisodes", cfg.LockDurationMins)
+	if lockErr != nil {
+		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
+		return lockErr
+	}
+	if !acquired {
 		// Another run is already processing; skip this cron tick.
-		jobLogger.Infow("job_skipped_lock_exists")
+		jobLogger.Infow("job_skipped_lock_exists", "lock_id", jobLock.ID, "lock_date", jobLock.Date, "lock_duration_mins", jobLock.Duration)
 		return nil
 	}
-	jobLock := db.Lock("TranscribePendingEpisodes", cfg.LockDurationMins)
 	if jobLock == nil || jobLock.ID == "" {
 		acquireErr := errors.New("failed to acquire transcription job lock")
 		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
@@ -511,6 +522,15 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 			resumeRaw = ""
 		}
 	}
+	segmentsPath := resolveWhisperXSegmentsFilePath(audioPath, resumeRaw)
+	if segmentsPath != "" {
+		if abs, absErr := filepath.Abs(segmentsPath); absErr == nil {
+			segmentsPath = abs
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(segmentsPath), 0o755); mkErr != nil {
+			return nil, fmt.Errorf("failed to create whisperx resume directory: %w", mkErr)
+		}
+	}
 	if resumeRaw != "" {
 		resumeFile, createErr := os.CreateTemp("", "briefcast-whisperx-resume-*.json")
 		if createErr != nil {
@@ -533,6 +553,9 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 		"WHISPERX_CONFIG_JSON="+string(payload),
 		whisperxProgressFileEnv+"="+progressPath,
 	)
+	if segmentsPath != "" {
+		cmd.Env = append(cmd.Env, whisperxSegmentsFileEnv+"="+segmentsPath)
+	}
 	if resumePath != "" {
 		cmd.Env = append(cmd.Env, whisperxResumeFileEnv+"="+resumePath)
 	}
@@ -642,6 +665,11 @@ waitLoop:
 			truncateForLog(stderr.String(), defaultWhisperXLogTrimChars),
 		)
 	}
+	if segmentsPath != "" {
+		if err := os.Remove(segmentsPath); err != nil && !os.IsNotExist(err) {
+			logging.Sugar().Warnw("failed to remove whisperx resume segments file", "path", segmentsPath, "error", err)
+		}
+	}
 	return stdout.Bytes(), nil
 }
 
@@ -706,6 +734,34 @@ func applyWhisperXProgressUpdate(item *db.PodcastItem, progress whisperxProgress
 	}
 
 	return changed
+}
+
+func resolveWhisperXSegmentsFilePath(audioPath string, resumeCheckpoint string) string {
+	if checkpoint, ok := parseWhisperXResumeCheckpoint(resumeCheckpoint); ok {
+		if existing := strings.TrimSpace(checkpoint.SegmentsFile); existing != "" {
+			return existing
+		}
+	}
+	trimmedAudio := strings.TrimSpace(audioPath)
+	if trimmedAudio == "" {
+		return ""
+	}
+	return trimmedAudio + ".briefcast.whisperx.resume.json"
+}
+
+func parseWhisperXResumeCheckpoint(raw string) (whisperxResumeCheckpoint, bool) {
+	var checkpoint whisperxResumeCheckpoint
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return checkpoint, false
+	}
+	if !json.Valid([]byte(trimmed)) {
+		return checkpoint, false
+	}
+	if err := json.Unmarshal([]byte(trimmed), &checkpoint); err != nil {
+		return checkpoint, false
+	}
+	return checkpoint, true
 }
 
 func resolveWhisperXPython(cfg WhisperXConfig) (string, error) {

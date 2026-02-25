@@ -3,6 +3,7 @@ package db
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -551,6 +552,102 @@ func TestJobLockUpsertAndUnlockByID(t *testing.T) {
 	}
 }
 
+func TestTryLockReturnsBusyWhenLeaseIsActive(t *testing.T) {
+	setupDBForTest(t)
+
+	first, acquired, err := TryLock("try-lock-active", 2)
+	if err != nil {
+		t.Fatalf("TryLock first acquire failed: %v", err)
+	}
+	if !acquired || first == nil || first.ID == "" {
+		t.Fatalf("expected first TryLock to acquire lock")
+	}
+
+	second, acquired, err := TryLock("try-lock-active", 2)
+	if err != nil {
+		t.Fatalf("TryLock second acquire failed: %v", err)
+	}
+	if acquired {
+		t.Fatalf("expected second TryLock to report busy lock")
+	}
+	if second == nil || second.ID == "" {
+		t.Fatalf("expected current lock row when busy")
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected busy lock to reference same lock row, first=%s second=%s", first.ID, second.ID)
+	}
+}
+
+func TestTryLockReacquiresExpiredLease(t *testing.T) {
+	setupDBForTest(t)
+
+	first, acquired, err := TryLock("try-lock-expired", 1)
+	if err != nil {
+		t.Fatalf("TryLock first acquire failed: %v", err)
+	}
+	if !acquired || first == nil || first.ID == "" {
+		t.Fatalf("expected first TryLock to acquire lock")
+	}
+
+	staleDate := time.Now().UTC().Add(-10 * time.Minute)
+	if err := DB.Model(&JobLock{}).Where("id = ?", first.ID).Updates(map[string]interface{}{
+		"date": staleDate,
+	}).Error; err != nil {
+		t.Fatalf("failed to age lock row: %v", err)
+	}
+
+	second, acquired, err := TryLock("try-lock-expired", 2)
+	if err != nil {
+		t.Fatalf("TryLock reacquire failed: %v", err)
+	}
+	if !acquired {
+		t.Fatalf("expected TryLock to reacquire expired lease")
+	}
+	if second == nil || second.ID != first.ID {
+		t.Fatalf("expected reacquire to reuse same lock row id")
+	}
+	if second.Duration != 2 {
+		t.Fatalf("expected new duration 2, got %d", second.Duration)
+	}
+}
+
+func TestTryLockIsAtomicUnderConcurrentContenders(t *testing.T) {
+	setupDBForTest(t)
+
+	const contenders = 12
+	var wg sync.WaitGroup
+	results := make(chan bool, contenders)
+	start := make(chan struct{})
+
+	for i := 0; i < contenders; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, acquired, err := TryLock("try-lock-race", 5)
+			if err != nil {
+				t.Errorf("TryLock contender failed: %v", err)
+				return
+			}
+			results <- acquired
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(results)
+
+	acquiredCount := 0
+	for acquired := range results {
+		if acquired {
+			acquiredCount++
+		}
+	}
+	if acquiredCount != 1 {
+		t.Fatalf("expected exactly one contender to acquire lock, got %d", acquiredCount)
+	}
+}
+
 func TestJobLockIsLockedHandlesUTCZeroTimestamp(t *testing.T) {
 	lock := &JobLock{
 		Date:     time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
@@ -558,6 +655,21 @@ func TestJobLockIsLockedHandlesUTCZeroTimestamp(t *testing.T) {
 	}
 	if lock.IsLocked() {
 		t.Fatalf("expected UTC zero timestamp to be treated as unlocked")
+	}
+}
+
+func TestJobLockIsLockedUsesLeaseExpiry(t *testing.T) {
+	lock := &JobLock{
+		Date:     time.Now().UTC().Add(-3 * time.Minute),
+		Duration: 1,
+	}
+	if lock.IsLocked() {
+		t.Fatalf("expected expired lock lease to be treated as unlocked")
+	}
+
+	lock.Date = time.Now().UTC()
+	if !lock.IsLocked() {
+		t.Fatalf("expected fresh lock lease to be treated as locked")
 	}
 }
 

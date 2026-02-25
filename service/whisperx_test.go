@@ -243,6 +243,20 @@ func TestReadWhisperXProgressUpdate(t *testing.T) {
 	}
 }
 
+func TestResolveWhisperXSegmentsFilePath(t *testing.T) {
+	audioPath := filepath.Join(t.TempDir(), "episode.mp3")
+	expectedDefault := audioPath + ".briefcast.whisperx.resume.json"
+	if got := resolveWhisperXSegmentsFilePath(audioPath, ""); got != expectedDefault {
+		t.Fatalf("expected default segments path %q, got %q", expectedDefault, got)
+	}
+
+	override := `{"segments_file":"` + filepath.Join(t.TempDir(), "custom-segments.json") + `"}`
+	override = strings.ReplaceAll(override, `\`, `\\`)
+	if got := resolveWhisperXSegmentsFilePath(audioPath, override); !strings.Contains(got, "custom-segments.json") {
+		t.Fatalf("expected checkpoint override segments file path, got %q", got)
+	}
+}
+
 func TestScheduleTranscriptRetry(t *testing.T) {
 	cfg := WhisperXConfig{
 		RetryFailed:        true,
@@ -430,24 +444,28 @@ import os
 
 progress_path = os.environ.get("WHISPERX_PROGRESS_FILE", "")
 resume_path = os.environ.get("WHISPERX_RESUME_FILE", "")
+segments_path = os.environ.get("WHISPERX_SEGMENTS_FILE", "")
 resume_payload = {}
 if resume_path and os.path.exists(resume_path):
     with open(resume_path, "r", encoding="utf-8") as handle:
         resume_payload = json.load(handle)
+if segments_path:
+    with open(segments_path, "w", encoding="utf-8") as handle:
+        json.dump({"segments":[{"start":0.0,"text":"sidecar"}],"completed_seconds":10.0}, handle)
 if progress_path:
     progress_payload = {
         "stage": "transcribing",
         "percent": 55,
         "checkpoint": {
-            "segments": [{"start": 1.0, "text": "progress"}],
-            "completed_seconds": 12.0
+            "completed_seconds": 12.0,
+            "segments_file": segments_path
         }
     }
     tmp_path = progress_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(progress_payload, handle)
     os.replace(tmp_path, progress_path)
-print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(resume_payload)}))
+print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(resume_payload), "segments_path": segments_path}))
 `
 	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
 		t.Fatalf("failed to write progress script: %v", err)
@@ -478,12 +496,19 @@ print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(r
 		t.Fatalf("expected checkpoint JSON in progress callback, got %q", string(last.Checkpoint))
 	}
 	var payload struct {
-		Resumed bool `json:"resumed"`
+		Resumed      bool   `json:"resumed"`
+		SegmentsPath string `json:"segments_path"`
 	}
 	if err := json.Unmarshal(output, &payload); err != nil {
 		t.Fatalf("failed to parse output: %v", err)
 	}
 	if !payload.Resumed {
 		t.Fatalf("expected resume checkpoint to be passed to script, output=%s", string(output))
+	}
+	if strings.TrimSpace(payload.SegmentsPath) == "" {
+		t.Fatalf("expected segments path to be passed to script, output=%s", string(output))
+	}
+	if _, err := os.Stat(payload.SegmentsPath); !os.IsNotExist(err) {
+		t.Fatalf("expected segments sidecar file to be removed after success, stat err=%v", err)
 	}
 }

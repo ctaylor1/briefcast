@@ -2,10 +2,14 @@
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
+
+import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"
@@ -15,6 +19,8 @@ if str(SRC_DIR) not in sys.path:
 from briefcast_tools import log_extra, setup_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+AUDIO_SAMPLE_RATE = 16000
 
 
 def default_config():
@@ -84,8 +90,69 @@ def parse_chunk_seconds(value):
     return parsed
 
 
+def probe_audio_duration_seconds(audio_file):
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        raise RuntimeError("ffprobe not found in PATH")
+    command = [
+        ffprobe_path,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        audio_file,
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    value = result.stdout.strip()
+    if not value:
+        raise RuntimeError("ffprobe returned empty duration")
+    duration = parse_float(value, 0.0)
+    if duration <= 0:
+        raise RuntimeError(f"invalid probed duration: {value}")
+    return duration
+
+
+def load_audio_chunk(audio_file, start_seconds, duration_seconds):
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise RuntimeError("ffmpeg not found in PATH")
+    if duration_seconds <= 0:
+        return np.array([], dtype=np.float32)
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{max(start_seconds, 0.0):.3f}",
+        "-t",
+        f"{duration_seconds:.3f}",
+        "-i",
+        audio_file,
+        "-f",
+        "s16le",
+        "-acodec",
+        "pcm_s16le",
+        "-ac",
+        "1",
+        "-ar",
+        str(AUDIO_SAMPLE_RATE),
+        "-",
+    ]
+    result = subprocess.run(command, capture_output=True, check=True)
+    if not result.stdout:
+        return np.array([], dtype=np.float32)
+    return np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def progress_file_path():
     return os.environ.get("WHISPERX_PROGRESS_FILE", "").strip()
+
+
+def segments_file_path():
+    return os.environ.get("WHISPERX_SEGMENTS_FILE", "").strip()
 
 
 def transcription_progress_percent(completed_seconds, total_seconds):
@@ -99,13 +166,62 @@ def transcription_progress_percent(completed_seconds, total_seconds):
     return int(round(20 + ratio * 60))
 
 
-def make_checkpoint(segments, completed_seconds, total_seconds, language):
-    return {
+def make_checkpoint(completed_seconds, total_seconds, language, segments_file=""):
+    payload = {
+        "completed_seconds": float(max(completed_seconds, 0.0)),
+        "total_seconds": float(max(total_seconds, 0.0)),
+        "language": language or "",
+    }
+    if segments_file:
+        payload["segments_file"] = segments_file
+    return payload
+
+
+def write_json_file(path, payload):
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
+
+def read_json_file(path):
+    try:
+        raw = Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def persist_segments_checkpoint(
+    segments_file,
+    segments,
+    completed_seconds,
+    total_seconds,
+    language,
+):
+    if not segments_file:
+        return
+    payload = {
         "segments": segments,
         "completed_seconds": float(max(completed_seconds, 0.0)),
         "total_seconds": float(max(total_seconds, 0.0)),
         "language": language or "",
     }
+    try:
+        write_json_file(segments_file, payload)
+    except OSError as exc:
+        logger.warning(
+            "failed to persist whisperx resume segments",
+            extra=log_extra({"path": segments_file, "error": compact_error(exc)}),
+        )
 
 
 def emit_progress(
@@ -131,11 +247,8 @@ def emit_progress(
     if error:
         payload["error"] = error
 
-    tmp_path = f"{path}.tmp"
     try:
-        with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False)
-        os.replace(tmp_path, path)
+        write_json_file(path, payload)
     except OSError as exc:
         logger.warning(
             "failed to persist whisperx progress update",
@@ -186,28 +299,49 @@ def load_resume_checkpoint():
     if not raw:
         raw = os.environ.get("WHISPERX_RESUME_JSON", "").strip()
     if not raw:
-        return [], 0.0, ""
+        return [], 0.0, "", ""
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("invalid whisperx resume payload; starting from beginning")
-        return [], 0.0, ""
+        return [], 0.0, "", ""
 
     if not isinstance(payload, dict):
-        return [], 0.0, ""
+        return [], 0.0, "", ""
 
     segments = payload.get("segments", [])
     if not isinstance(segments, list):
         segments = []
     safe_segments = [segment for segment in segments if isinstance(segment, dict)]
 
+    segments_file = str(payload.get("segments_file", "")).strip()
+    if not safe_segments and segments_file:
+        file_payload = read_json_file(segments_file)
+        file_segments = file_payload.get("segments", [])
+        if isinstance(file_segments, list):
+            safe_segments = [segment for segment in file_segments if isinstance(segment, dict)]
+        if safe_segments:
+            logger.info(
+                "loaded whisperx resume segments from sidecar file",
+                extra=log_extra(
+                    {
+                        "path": segments_file,
+                        "segment_count": len(safe_segments),
+                    }
+                ),
+            )
+        if "completed_seconds" not in payload:
+            payload["completed_seconds"] = file_payload.get("completed_seconds", 0.0)
+        if "language" not in payload:
+            payload["language"] = file_payload.get("language", "")
+
     completed_seconds = parse_float(payload.get("completed_seconds", 0.0), 0.0)
     if completed_seconds < 0:
         completed_seconds = 0.0
     language = str(payload.get("language", "")).strip()
 
-    return safe_segments, completed_seconds, language
+    return safe_segments, completed_seconds, language, segments_file
 
 
 def load_runtime_modules():
@@ -370,7 +504,10 @@ def main():
     completed_seconds = 0.0
     total_seconds = 0.0
     checkpoint_language = language
+    resume_segments_file = ""
+    checkpoint_file = ""
     merged_segments = []
+    full_audio = None
 
     try:
         emit_progress("starting", 1)
@@ -407,14 +544,28 @@ def main():
             active_vad_method = "silero"
         emit_progress("model_loaded", 10)
 
-        with redirect_stdout(sys.stderr):
-            audio = whisperx.load_audio(audio_file)
-        if hasattr(audio, "__len__"):
-            total_seconds = float(len(audio)) / 16000.0
+        try:
+            total_seconds = probe_audio_duration_seconds(audio_file)
+            logger.info(
+                "probed audio duration for chunked transcription",
+                extra=log_extra({"audio_file": audio_file, "total_seconds": total_seconds}),
+            )
+        except Exception as exc:
+            logger.warning(
+                "failed to probe audio duration; falling back to loading full audio",
+                extra=log_extra({"audio_file": audio_file, "error": compact_error(exc)}),
+            )
+            with redirect_stdout(sys.stderr):
+                full_audio = whisperx.load_audio(audio_file)
+            if hasattr(full_audio, "__len__"):
+                total_seconds = float(len(full_audio)) / AUDIO_SAMPLE_RATE
 
-        resume_segments, resume_completed_seconds, resume_language = load_resume_checkpoint()
+        resume_segments, resume_completed_seconds, resume_language, resume_segments_file = (
+            load_resume_checkpoint()
+        )
         merged_segments = list(resume_segments)
         checkpoint_language = resume_language or language
+        checkpoint_file = segments_file_path() or resume_segments_file
         completed_seconds = max(resume_completed_seconds, 0.0)
         if total_seconds > 0 and completed_seconds > total_seconds:
             completed_seconds = total_seconds
@@ -437,7 +588,10 @@ def main():
                 completed_seconds=completed_seconds,
                 total_seconds=total_seconds,
                 checkpoint=make_checkpoint(
-                    merged_segments, completed_seconds, total_seconds, checkpoint_language
+                    completed_seconds,
+                    total_seconds,
+                    checkpoint_language,
+                    checkpoint_file,
                 ),
             )
         else:
@@ -450,11 +604,35 @@ def main():
                 end_seconds = start_seconds + chunk_seconds
                 if total_seconds > 0:
                     end_seconds = min(total_seconds, end_seconds)
-                start_index = int(start_seconds * 16000.0)
-                end_index = int(end_seconds * 16000.0)
+                start_index = int(start_seconds * AUDIO_SAMPLE_RATE)
+                end_index = int(end_seconds * AUDIO_SAMPLE_RATE)
                 if end_index <= start_index:
                     break
-                chunk_audio = audio[start_index:end_index]
+
+                if full_audio is None:
+                    chunk_duration = end_seconds - start_seconds
+                    try:
+                        chunk_audio = load_audio_chunk(audio_file, start_seconds, chunk_duration)
+                    except Exception as exc:
+                        logger.warning(
+                            "failed to load chunk via ffmpeg; loading full audio for fallback",
+                            extra=log_extra(
+                                {
+                                    "audio_file": audio_file,
+                                    "start_seconds": start_seconds,
+                                    "end_seconds": end_seconds,
+                                    "error": compact_error(exc),
+                                }
+                            ),
+                        )
+                        with redirect_stdout(sys.stderr):
+                            full_audio = whisperx.load_audio(audio_file)
+                        if hasattr(full_audio, "__len__") and total_seconds <= 0:
+                            total_seconds = float(len(full_audio)) / AUDIO_SAMPLE_RATE
+                        chunk_audio = full_audio[start_index:end_index]
+                else:
+                    chunk_audio = full_audio[start_index:end_index]
+
                 if hasattr(chunk_audio, "__len__") and len(chunk_audio) == 0:
                     break
 
@@ -470,16 +648,23 @@ def main():
                     checkpoint_language = chunk_language
 
                 completed_seconds = end_seconds
+                persist_segments_checkpoint(
+                    checkpoint_file,
+                    merged_segments,
+                    completed_seconds,
+                    total_seconds,
+                    checkpoint_language,
+                )
                 emit_progress(
                     "transcribing",
                     transcription_progress_percent(completed_seconds, total_seconds),
                     completed_seconds=completed_seconds,
                     total_seconds=total_seconds,
                     checkpoint=make_checkpoint(
-                        merged_segments,
                         completed_seconds,
                         total_seconds,
                         checkpoint_language,
+                        checkpoint_file,
                     ),
                 )
 
@@ -500,13 +685,16 @@ def main():
                 completed_seconds=completed_seconds,
                 total_seconds=total_seconds,
                 checkpoint=make_checkpoint(
-                    result.get("segments", []),
                     completed_seconds,
                     total_seconds,
                     result.get("language", language),
+                    checkpoint_file,
                 ),
             )
             try:
+                if full_audio is None:
+                    with redirect_stdout(sys.stderr):
+                        full_audio = whisperx.load_audio(audio_file)
                 with redirect_stdout(sys.stderr):
                     model_a, metadata = whisperx.load_align_model(
                         language_code=result.get("language", language),
@@ -516,7 +704,7 @@ def main():
                         result.get("segments", []),
                         model_a,
                         metadata,
-                        audio,
+                        full_audio,
                         device,
                         return_char_alignments=False,
                     )
@@ -537,10 +725,10 @@ def main():
                 completed_seconds=completed_seconds,
                 total_seconds=total_seconds,
                 checkpoint=make_checkpoint(
-                    result.get("segments", []),
                     completed_seconds,
                     total_seconds,
                     result.get("language", language),
+                    checkpoint_file,
                 ),
             )
             if not hf_token:
@@ -576,12 +764,22 @@ def main():
             completed_seconds=completed_seconds,
             total_seconds=total_seconds,
             checkpoint=make_checkpoint(
-                result.get("segments", []),
                 completed_seconds,
                 total_seconds,
                 result.get("language", language),
+                checkpoint_file,
             ),
         )
+        if checkpoint_file:
+            try:
+                os.remove(checkpoint_file)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                logger.warning(
+                    "failed to remove whisperx resume sidecar after completion",
+                    extra=log_extra({"path": checkpoint_file, "error": compact_error(exc)}),
+                )
 
         payload = {
             "provider": "whisperx",
@@ -642,7 +840,10 @@ def main():
             completed_seconds=completed_seconds,
             total_seconds=total_seconds,
             checkpoint=make_checkpoint(
-                merged_segments, completed_seconds, total_seconds, checkpoint_language
+                completed_seconds,
+                total_seconds,
+                checkpoint_language,
+                checkpoint_file,
             ),
             error=f"{exc.__class__.__name__}:{compact_error(exc)}",
         )

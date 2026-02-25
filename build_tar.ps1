@@ -14,14 +14,24 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 if (-not $Version) {
-    $latestTag = git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | Select-Object -First 1
-    if (-not $latestTag) {
-        throw "No semantic version tags found. Pass -Version X.Y.Z."
+    $pyprojectPath = Join-Path $scriptDir "pyproject.toml"
+    if (Test-Path -LiteralPath $pyprojectPath) {
+        $pyprojectContent = Get-Content -LiteralPath $pyprojectPath -Raw
+        if ($pyprojectContent -match '(?m)^\s*version\s*=\s*"(?<version>\d+\.\d+\.\d+)"\s*$') {
+            $Version = $Matches["version"]
+        }
     }
 
-    $Version = $latestTag.Trim()
-    if ($Version.StartsWith("v")) {
-        $Version = $Version.Substring(1)
+    if (-not $Version) {
+        $latestTag = git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | Select-Object -First 1
+        if (-not $latestTag) {
+            throw "No semantic version found in pyproject.toml or git tags. Pass -Version X.Y.Z."
+        }
+
+        $Version = $latestTag.Trim()
+        if ($Version.StartsWith("v")) {
+            $Version = $Version.Substring(1)
+        }
     }
 }
 

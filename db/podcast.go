@@ -149,10 +149,17 @@ type Tag struct {
 }
 
 func (lock *JobLock) IsLocked() bool {
+	return lock.IsLockedAt(time.Now().UTC())
+}
+
+func (lock *JobLock) IsLockedAt(now time.Time) bool {
 	if lock == nil {
 		return false
 	}
-	return lock.Duration > 0 && !lock.Date.IsZero()
+	if lock.Duration <= 0 || lock.Date.IsZero() {
+		return false
+	}
+	return lock.Date.UTC().Add(time.Duration(lock.Duration) * time.Minute).After(now.UTC())
 }
 
 type PodcastItemStatsModel struct {

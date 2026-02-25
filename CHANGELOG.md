@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2026-02-25
+
+### Added
+- Added resumable WhisperX progress/checkpoint persistence and expanded lock/transcription regression coverage.
+
+### Changed
+- Changed WhisperX chunk transcription to stream audio chunks via `ffprobe`/`ffmpeg` to reduce peak memory on long episodes.
+- Changed lock acquisition/refresh flow to use atomic lock attempts and active lock heartbeat updates.
+
+### Fixed
+- Fixed stale lock handling to evaluate lock expiration at read time, reducing false `job_skipped_lock_exists` skips.
+- Fixed transcription checkpoint write amplification by persisting segment payloads to a sidecar file instead of repeating full payloads in progress checkpoints.
+- Fixed remaining production `DB.Debug()` query logging and hardened ordered ID query construction in `GetAllPodcastItemsByIds`.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency/security audits (`npm audit`, `pip-audit`, `govulncheck`) with no vulnerabilities found.
+
 ## [1.0.8] - 2026-02-24
 
 ### Added
