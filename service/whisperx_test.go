@@ -512,3 +512,89 @@ print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(r
 		t.Fatalf("expected segments sidecar file to be removed after success, stat err=%v", err)
 	}
 }
+
+func TestCollectWhisperXQueueSnapshot(t *testing.T) {
+	setupRetentionTestDB(t)
+	now := time.Now().UTC()
+
+	podcast := createPodcast(t, "whisperx-snapshot", false)
+
+	duePending := createServicePodcastItem(t, podcast, "due-pending", db.Downloaded)
+	duePending.DownloadPath = filepath.Join(t.TempDir(), "due-pending.mp3")
+	duePending.TranscriptStatus = "pending_whisperx"
+	duePending.TranscriptJSON = ""
+	duePending.TranscriptNextAttempt = nil
+	if err := db.UpdatePodcastItem(&duePending); err != nil {
+		t.Fatalf("failed to update due pending item: %v", err)
+	}
+
+	dueFailed := createServicePodcastItem(t, podcast, "due-failed", db.Downloaded)
+	dueFailed.DownloadPath = filepath.Join(t.TempDir(), "due-failed.mp3")
+	dueFailed.TranscriptStatus = "failed"
+	dueFailed.TranscriptJSON = ""
+	dueAt := now.Add(-1 * time.Minute)
+	dueFailed.TranscriptNextAttempt = &dueAt
+	if err := db.UpdatePodcastItem(&dueFailed); err != nil {
+		t.Fatalf("failed to update due failed item: %v", err)
+	}
+
+	futureFailed := createServicePodcastItem(t, podcast, "future-failed", db.Downloaded)
+	futureFailed.DownloadPath = filepath.Join(t.TempDir(), "future-failed.mp3")
+	futureFailed.TranscriptStatus = "failed"
+	futureFailed.TranscriptJSON = ""
+	futureAt := now.Add(15 * time.Minute).UTC().Truncate(time.Second)
+	futureFailed.TranscriptNextAttempt = &futureAt
+	if err := db.UpdatePodcastItem(&futureFailed); err != nil {
+		t.Fatalf("failed to update future failed item: %v", err)
+	}
+
+	dueProcessing := createServicePodcastItem(t, podcast, "due-processing", db.Downloaded)
+	dueProcessing.DownloadPath = filepath.Join(t.TempDir(), "due-processing.mp3")
+	dueProcessing.TranscriptStatus = "processing"
+	dueProcessing.TranscriptJSON = ""
+	dueProcessing.TranscriptNextAttempt = nil
+	if err := db.UpdatePodcastItem(&dueProcessing); err != nil {
+		t.Fatalf("failed to update due processing item: %v", err)
+	}
+
+	ineligibleNoPath := createServicePodcastItem(t, podcast, "ineligible-no-path", db.Downloaded)
+	ineligibleNoPath.DownloadPath = ""
+	ineligibleNoPath.TranscriptStatus = "pending_whisperx"
+	ineligibleNoPath.TranscriptJSON = ""
+	if err := db.UpdatePodcastItem(&ineligibleNoPath); err != nil {
+		t.Fatalf("failed to update ineligible no-path item: %v", err)
+	}
+
+	ineligibleHasTranscript := createServicePodcastItem(t, podcast, "ineligible-has-transcript", db.Downloaded)
+	ineligibleHasTranscript.DownloadPath = filepath.Join(t.TempDir(), "ineligible-transcript.mp3")
+	ineligibleHasTranscript.TranscriptStatus = "failed"
+	ineligibleHasTranscript.TranscriptJSON = `{"segments":[]}`
+	if err := db.UpdatePodcastItem(&ineligibleHasTranscript); err != nil {
+		t.Fatalf("failed to update ineligible transcript item: %v", err)
+	}
+
+	snapshot, err := collectWhisperXQueueSnapshot([]string{"pending_whisperx", "processing", "failed"}, now)
+	if err != nil {
+		t.Fatalf("collectWhisperXQueueSnapshot failed: %v", err)
+	}
+	if snapshot.TotalEligible != 4 {
+		t.Fatalf("expected 4 eligible items, got %d", snapshot.TotalEligible)
+	}
+	if snapshot.DueNow != 3 {
+		t.Fatalf("expected 3 due-now items, got %d", snapshot.DueNow)
+	}
+	if snapshot.Pending != 1 || snapshot.Processing != 1 || snapshot.Failed != 2 {
+		t.Fatalf(
+			"unexpected status counts pending=%d processing=%d failed=%d",
+			snapshot.Pending,
+			snapshot.Processing,
+			snapshot.Failed,
+		)
+	}
+	if snapshot.NextRetryAt == nil {
+		t.Fatalf("expected next retry timestamp to be populated")
+	}
+	if !snapshot.NextRetryAt.Equal(futureAt) {
+		t.Fatalf("expected next retry at %s, got %s", futureAt, snapshot.NextRetryAt)
+	}
+}

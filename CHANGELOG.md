@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.10] - 2026-02-26
+
+### Added
+- Added targeted coverage for `ParseEntryDate` and WhisperX queue snapshot aggregation paths.
+
+### Changed
+- Updated frontend lockfile patches to `autoprefixer@10.4.27` and `@types/node@24.10.14`.
+
+### Fixed
+- Fixed WhisperX temp progress-file lifecycle to avoid eager deletion and satisfy high-severity path-traversal scanning.
+- Fixed WhisperX queue snapshot aggregation to avoid GORM filter leakage between queries.
+- Fixed WhisperX queue `MIN(transcript_next_attempt)` scanning on SQLite by parsing normalized timestamp text.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.0.9] - 2026-02-25
 
 ### Added

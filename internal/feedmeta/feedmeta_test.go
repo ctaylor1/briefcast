@@ -193,6 +193,37 @@ func TestParseFeedTime(t *testing.T) {
 	}
 }
 
+func TestParseEntryDate(t *testing.T) {
+	entry := map[string]interface{}{
+		"published": "2026-01-31T13:30:00Z",
+	}
+	parsed := ParseEntryDate(entry)
+	if parsed.IsZero() {
+		t.Fatalf("expected published date to parse")
+	}
+	if got := parsed.UTC().Format(time.RFC3339); got != "2026-01-31T13:30:00Z" {
+		t.Fatalf("unexpected published parse result %q", got)
+	}
+
+	entry = map[string]interface{}{
+		"updated_parsed": "2026-02-01",
+	}
+	parsed = ParseEntryDate(entry)
+	if parsed.IsZero() {
+		t.Fatalf("expected updated_parsed fallback date to parse")
+	}
+	if got := parsed.UTC().Format("2006-01-02"); got != "2026-02-01" {
+		t.Fatalf("unexpected updated_parsed parse result %q", got)
+	}
+
+	entry = map[string]interface{}{
+		"published": "not-a-date",
+	}
+	if parsed = ParseEntryDate(entry); !parsed.IsZero() {
+		t.Fatalf("expected invalid entry date to return zero time")
+	}
+}
+
 func TestExtractEntryGUID(t *testing.T) {
 	entry := map[string]interface{}{
 		"id": "entry-id",

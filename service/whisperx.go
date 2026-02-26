@@ -17,6 +17,7 @@ import (
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"gorm.io/gorm"
 )
 
 type WhisperXConfig struct {
@@ -512,7 +513,6 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 	}
 	progressPath := progressFile.Name()
 	_ = progressFile.Close()
-	_ = os.Remove(progressPath)
 	defer os.Remove(progressPath)
 
 	resumePath := ""
@@ -568,7 +568,6 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 			cmd.Env = append(cmd.Env,
 				"HF_HOME="+cfg.HFHome,
 				"HUGGINGFACE_HUB_CACHE="+filepath.Join(cfg.HFHome, "hub"),
-				"TRANSFORMERS_CACHE="+filepath.Join(cfg.HFHome, "transformers"),
 			)
 		}
 	}
@@ -581,6 +580,10 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 		)
 	}
 	cmd.Env = append(cmd.Env, "WHISPERX_THIRD_PARTY_LOG_LEVEL="+cfg.ThirdPartyLogLevel)
+	// Force Python logging to stderr so stdout contains only the JSON transcript.
+	// The parent process LOG_OUTPUT may include "stdout" (e.g. LOG_OUTPUT=stdout,file:...)
+	// which would contaminate stdout and break JSON parsing of the transcript output.
+	cmd.Env = append(cmd.Env, "LOG_OUTPUT=stderr")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -834,16 +837,18 @@ func runWhisperXPreflight(pythonPath string, scriptPath string) error {
 
 func collectWhisperXQueueSnapshot(statuses []string, now time.Time) (whisperxQueueSnapshot, error) {
 	snapshot := whisperxQueueSnapshot{}
-	baseQuery := db.DB.Model(&db.PodcastItem{}).
-		Where("download_status = ?", db.Downloaded).
-		Where("transcript_status IN ?", statuses).
-		Where("download_path <> ''").
-		Where("(transcript_json IS NULL OR transcript_json = '')")
+	baseQuery := func() *gorm.DB {
+		return db.DB.Model(&db.PodcastItem{}).
+			Where("download_status = ?", db.Downloaded).
+			Where("transcript_status IN ?", statuses).
+			Where("download_path <> ''").
+			Where("(transcript_json IS NULL OR transcript_json = '')")
+	}
 
-	if err := baseQuery.Count(&snapshot.TotalEligible).Error; err != nil {
+	if err := baseQuery().Count(&snapshot.TotalEligible).Error; err != nil {
 		return snapshot, err
 	}
-	if err := baseQuery.
+	if err := baseQuery().
 		Where("(transcript_next_attempt IS NULL OR transcript_next_attempt <= ?)", now).
 		Count(&snapshot.DueNow).
 		Error; err != nil {
@@ -855,7 +860,7 @@ func collectWhisperXQueueSnapshot(statuses []string, now time.Time) (whisperxQue
 		Count            int64
 	}
 	var counts []transcriptStatusCount
-	if err := baseQuery.
+	if err := baseQuery().
 		Select("transcript_status, COUNT(*) AS count").
 		Group("transcript_status").
 		Scan(&counts).
@@ -873,17 +878,30 @@ func collectWhisperXQueueSnapshot(statuses []string, now time.Time) (whisperxQue
 		}
 	}
 
-	var nextRetry sql.NullTime
-	if err := baseQuery.
+	var nextRetry sql.NullString
+	if err := baseQuery().
 		Where("transcript_next_attempt > ?", now).
 		Select("MIN(transcript_next_attempt)").
-		Scan(&nextRetry).
-		Error; err != nil {
+		Row().
+		Scan(&nextRetry); err != nil {
 		return snapshot, err
 	}
 	if nextRetry.Valid {
-		next := nextRetry.Time.UTC()
-		snapshot.NextRetryAt = &next
+		trimmed := strings.TrimSpace(nextRetry.String)
+		layouts := []string{
+			time.RFC3339Nano,
+			time.RFC3339,
+			"2006-01-02 15:04:05.999999999-07:00",
+			"2006-01-02 15:04:05.999999999",
+			"2006-01-02 15:04:05",
+		}
+		for _, layout := range layouts {
+			if parsed, parseErr := time.Parse(layout, trimmed); parseErr == nil {
+				next := parsed.UTC()
+				snapshot.NextRetryAt = &next
+				break
+			}
+		}
 	}
 	return snapshot, nil
 }
