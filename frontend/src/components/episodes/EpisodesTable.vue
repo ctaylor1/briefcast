@@ -92,6 +92,17 @@ function progressLabel(item: PodcastItem): string {
 function hasKnownTotal(item: PodcastItem): boolean {
   return item.DownloadTotalBytes > 0;
 }
+
+function progressAriaValue(item: PodcastItem): number | undefined {
+  if (!hasKnownTotal(item)) {
+    return undefined;
+  }
+  return progressPercent(item);
+}
+
+function progressAriaText(item: PodcastItem): string {
+  return `Download progress for ${item.Title}: ${progressLabel(item)}`;
+}
 </script>
 
 <template>
@@ -155,7 +166,15 @@ function hasKnownTotal(item: PodcastItem): boolean {
                 </UiBadge>
               </div>
               <div v-if="item.DownloadStatus === 1" class="episodes-table__progress">
-                <div class="episodes-table__progress-track">
+                <div
+                  class="episodes-table__progress-track"
+                  role="progressbar"
+                  :aria-label="`Download progress for ${item.Title}`"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  :aria-valuenow="progressAriaValue(item)"
+                  :aria-valuetext="progressAriaText(item)"
+                >
                   <div
                     class="episodes-table__progress-fill"
                     :class="!hasKnownTotal(item) && 'episodes-table__progress-fill--unknown'"

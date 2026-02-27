@@ -177,6 +177,17 @@ function refreshQueue(): void {
   void fetchQueue();
 }
 
+function queueProgressAriaValue(item: PodcastItem): number | undefined {
+  if (!queueHasKnownTotal(item)) {
+    return undefined;
+  }
+  return queueProgressPercent(item);
+}
+
+function queueProgressAriaText(item: PodcastItem): string {
+  return `${queueProgressLabel(item)} ${queueProgressRemainingLabel(item)}`;
+}
+
 function openPlayer(item: PodcastItem): void {
   const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}`;
   window.open(target, "briefcast_player");
@@ -286,7 +297,15 @@ onUnmounted(() => {
             <p class="queue-list__title">{{ item.Title }}</p>
             <p class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</p>
             <div v-if="!isPaused(item) && !isDownloaded(item)">
-              <div class="queue-list__progress-track">
+              <div
+                class="queue-list__progress-track"
+                role="progressbar"
+                :aria-label="`Download progress for ${item.Title}`"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="queueProgressAriaValue(item)"
+                :aria-valuetext="queueProgressAriaText(item)"
+              >
                 <div
                   class="queue-list__progress-fill"
                   :class="!queueHasKnownTotal(item) && 'queue-list__progress-fill--unknown'"
