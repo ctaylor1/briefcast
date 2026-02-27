@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-02-27
+
+### Added
+- Added an APG-compliant command palette dialog/combobox with focus trapping, keyboard navigation, and focus-return behavior.
+- Added stronger form semantics in shared `UiInput`/`UiSelect` controls (`label` wiring, `aria-invalid`, and deterministic `aria-describedby` IDs).
+- Added ARIA progress semantics for download progress indicators and modal drawer overlay/outside-click behavior on mobile.
+- Added destructive-action protections for download cancellation (bulk confirm and per-item undo affordance).
+
+### Changed
+- Standardized player launch behavior to a predictable in-app flow with explicit pop-out fallback handling.
+- Updated success messaging behavior to auto-dismiss stale success states while keeping errors persistent.
+- Increased checkbox/toggle hit areas for touch ergonomics and updated text/metadata contrast tokens to meet AA targets.
+- Honored `prefers-reduced-motion` by disabling shimmer/transition animations when reduced motion is enabled.
+
+### Fixed
+- Corrected `UiAlert` live-region roles by tone and marked announcements as atomic for better screen reader output.
+- Removed duplicate native `<audio controls>` from the player to avoid redundant tab stops and duplicate SR controls.
+- Fixed remaining command-palette focus restore edge cases after close transitions.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.1.0] - 2026-02-27
 
 ### Added
