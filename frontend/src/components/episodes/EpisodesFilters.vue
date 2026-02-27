@@ -275,17 +275,26 @@ function resetFilters(): void {
 }
 
 .episodes-filters__podcast-option {
-  min-height: 36px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
   color: var(--color-text-primary);
   cursor: pointer;
 }
 
+.episodes-filters__podcast-option:hover,
+.episodes-filters__podcast-option:focus-within {
+  background: var(--color-hover);
+}
+
 .episodes-filters__podcast-option input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 20px;
   accent-color: var(--color-accent);
 }
 

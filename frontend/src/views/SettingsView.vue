@@ -195,7 +195,8 @@ onMounted(loadSettings);
 
 .settings-checkbox-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  min-height: 44px;
   gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2);
@@ -204,9 +205,10 @@ onMounted(loadSettings);
 }
 
 .settings-checkbox {
-  margin-top: 2px;
-  width: 18px;
-  height: 18px;
+  margin: 0;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   accent-color: var(--color-accent);
 }
 
