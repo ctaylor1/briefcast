@@ -1087,6 +1087,12 @@ img {
   inset: 0;
   z-index: 40;
   background: var(--color-overlay);
+}
+
+.command-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
   display: grid;
   place-items: start center;
   padding: max(12vh, var(--space-6)) var(--space-4) var(--space-4);
@@ -1120,19 +1126,19 @@ img {
   border-radius: var(--radius-2);
 }
 
-.command-item button {
+.command-item__option {
   width: 100%;
   min-height: 44px;
-  border: 0;
-  background: transparent;
+  background: var(--color-bg-primary);
   color: var(--color-text-primary);
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
+  cursor: pointer;
 }
 
-.command-item button:hover,
-.command-item button[aria-current="true"] {
+.command-item__option:hover,
+.command-item__option--active {
   background: var(--color-hover);
 }
 

@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxOption,
+  ComboboxOptions,
+  Dialog,
+  DialogPanel,
+  DialogTitle,
+  TransitionChild,
+  TransitionRoot,
+} from "@headlessui/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
@@ -107,8 +118,9 @@ const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWid
 const sidebarExpanded = ref(false);
 const commandOpen = ref(false);
 const commandQuery = ref("");
-const commandActiveIndex = ref(0);
+const commandTriggerRef = ref<HTMLButtonElement | null>(null);
 const commandInputRef = ref<HTMLInputElement | null>(null);
+const lastCommandInvokerRef = ref<HTMLElement | null>(null);
 const {
   query: globalSearchQuery,
   results: globalSearchResults,
@@ -254,9 +266,31 @@ function toggleSidebar(): void {
   sidebarExpanded.value = !sidebarExpanded.value;
 }
 
-function openCommandPalette(): void {
+function resolveCommandInvoker(target?: EventTarget | null): HTMLElement | null {
+  if (target instanceof HTMLElement) {
+    return target;
+  }
+  if (typeof document === "undefined") {
+    return null;
+  }
+  return document.activeElement instanceof HTMLElement ? document.activeElement : null;
+}
+
+function restoreCommandFocus(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const target = lastCommandInvokerRef.value ?? commandTriggerRef.value;
+  if (target && document.contains(target)) {
+    target.focus();
+    return;
+  }
+  commandTriggerRef.value?.focus();
+}
+
+function openCommandPalette(target?: EventTarget | null): void {
+  lastCommandInvokerRef.value = resolveCommandInvoker(target);
   commandOpen.value = true;
-  commandActiveIndex.value = 0;
 }
 
 function closeCommandPalette(): void {
@@ -268,24 +302,11 @@ function closeCommandPalette(): void {
   commandQuery.value = "";
   globalSearchQuery.value = "";
   void runGlobalSearch();
-}
-
-function moveCommandSelection(direction: 1 | -1): void {
-  if (commandItems.value.length === 0) {
-    commandActiveIndex.value = 0;
-    return;
+  if (wasOpen) {
+    void nextTick(() => {
+      restoreCommandFocus();
+    });
   }
-  const maxIndex = commandItems.value.length - 1;
-  const next = commandActiveIndex.value + direction;
-  if (next > maxIndex) {
-    commandActiveIndex.value = 0;
-    return;
-  }
-  if (next < 0) {
-    commandActiveIndex.value = maxIndex;
-    return;
-  }
-  commandActiveIndex.value = next;
 }
 
 function localResultLabel(result: LocalSearchResult): string {
@@ -350,35 +371,6 @@ function selectCommand(item: CommandItem): void {
   void router.push(localResultRoute(item.result));
 }
 
-function runActiveCommand(): void {
-  const item = commandItems.value[commandActiveIndex.value];
-  if (item) {
-    selectCommand(item);
-  }
-}
-
-function handleCommandInputKeydown(event: KeyboardEvent): void {
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    moveCommandSelection(1);
-    return;
-  }
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    moveCommandSelection(-1);
-    return;
-  }
-  if (event.key === "Enter") {
-    event.preventDefault();
-    runActiveCommand();
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeCommandPalette();
-  }
-}
-
 function handleWindowKeydown(event: KeyboardEvent): void {
   const wantsPalette = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
   if (wantsPalette) {
@@ -387,7 +379,7 @@ function handleWindowKeydown(event: KeyboardEvent): void {
       closeCommandPalette();
       return;
     }
-    openCommandPalette();
+    openCommandPalette(event.target);
     return;
   }
   if (event.key === "Escape" && commandOpen.value) {
@@ -421,16 +413,6 @@ watch(commandOpen, async (open) => {
   await nextTick();
   commandInputRef.value?.focus();
   commandInputRef.value?.select();
-});
-
-watch(commandItems, (items) => {
-  if (items.length === 0) {
-    commandActiveIndex.value = 0;
-    return;
-  }
-  if (commandActiveIndex.value >= items.length) {
-    commandActiveIndex.value = 0;
-  }
 });
 
 useDebouncedWatch(
@@ -531,10 +513,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="app-topbar__actions">
           <button
+            ref="commandTriggerRef"
             type="button"
             class="command-kbd app-command-trigger"
             :aria-label="`Open command palette (${commandHint})`"
-            @click="openCommandPalette"
+            @click="openCommandPalette($event.currentTarget)"
           >
             <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -572,7 +555,11 @@ onBeforeUnmount(() => {
               <p class="app-user-menu__heading">Quick actions</p>
               <button type="button" class="app-user-menu__item" @click="goToSettings">Open settings</button>
               <button type="button" class="app-user-menu__item" @click="goToPlayer">Open player</button>
-              <button type="button" class="app-user-menu__item" @click="openCommandPalette">
+              <button
+                type="button"
+                class="app-user-menu__item"
+                @click="openCommandPalette($event.currentTarget)"
+              >
                 Open command palette
               </button>
               <p class="app-user-menu__meta">{{ topDescription }}</p>
@@ -608,60 +595,88 @@ onBeforeUnmount(() => {
     </RouterLink>
   </nav>
 
-  <div
-    v-if="commandOpen"
-    class="command-overlay"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Command palette"
-    @click.self="closeCommandPalette"
-  >
-    <div class="command-panel">
-      <label class="sr-only" for="command-palette-input">Search routes and library</label>
-      <input
-        id="command-palette-input"
-        ref="commandInputRef"
-        v-model="commandQuery"
-        type="text"
-        class="ui-input command-input"
-        placeholder="Search routes, podcasts, episodes, chapters, transcripts"
-        @keydown="handleCommandInputKeydown"
-      />
-      <ul class="command-list visually-scrollable">
-        <li
-          v-if="globalSearchLoading && commandQuery.trim().length > 0"
-          class="command-empty"
+  <TransitionRoot as="template" :show="commandOpen">
+    <Dialog
+      as="div"
+      class="ui-layer"
+      :initial-focus="commandInputRef"
+      @close="closeCommandPalette"
+    >
+      <TransitionChild
+        as="template"
+        enter="ui-transition-fade-enter"
+        enter-from="ui-transition-fade-enter-from"
+        enter-to="ui-transition-fade-enter-to"
+        leave="ui-transition-fade-leave"
+        leave-from="ui-transition-fade-leave-from"
+        leave-to="ui-transition-fade-leave-to"
+      >
+        <div class="command-overlay" />
+      </TransitionChild>
+
+      <div class="command-wrap">
+        <TransitionChild
+          as="template"
+          enter="ui-transition-scale-enter"
+          enter-from="ui-transition-scale-enter-from"
+          enter-to="ui-transition-scale-enter-to"
+          leave="ui-transition-scale-leave"
+          leave-from="ui-transition-scale-leave-from"
+          leave-to="ui-transition-scale-leave-to"
         >
-          Searching library...
-        </li>
-        <li v-if="globalSearchError" class="command-empty">
-          {{ globalSearchError }}
-        </li>
-        <li
-          v-if="commandItems.length === 0 && !globalSearchLoading && !globalSearchError"
-          class="command-empty"
-        >
-          No matches.
-        </li>
-        <li
-          v-for="(item, index) in commandItems"
-          :key="item.key"
-          class="command-item"
-        >
-          <button
-            type="button"
-            :aria-current="commandActiveIndex === index ? 'true' : undefined"
-            @mouseenter="commandActiveIndex = index"
-            @click="selectCommand(item)"
-          >
-            <span class="command-item__line">
-              <span>{{ item.label }}</span>
-              <span class="meta-text">{{ item.section }}</span>
-            </span>
-            <span class="command-item__meta">{{ item.meta }}</span>
-          </button>
-        </li>
-      </ul>
-    </div>
-  </div>
+          <DialogPanel class="command-panel">
+            <DialogTitle class="sr-only">Search routes and library</DialogTitle>
+            <Combobox :model-value="null" @update:model-value="selectCommand">
+              <label class="sr-only" for="command-palette-input">Search routes and library</label>
+              <ComboboxInput
+                id="command-palette-input"
+                ref="commandInputRef"
+                :display-value="() => commandQuery"
+                class="ui-input command-input"
+                autocomplete="off"
+                placeholder="Search routes, podcasts, episodes, chapters, transcripts"
+                @input="commandQuery = ($event.target as HTMLInputElement).value"
+              />
+              <ComboboxOptions as="ul" class="command-list visually-scrollable">
+                <li
+                  v-if="globalSearchLoading && commandQuery.trim().length > 0"
+                  class="command-empty"
+                >
+                  Searching library...
+                </li>
+                <li v-if="globalSearchError" class="command-empty">
+                  {{ globalSearchError }}
+                </li>
+                <li
+                  v-if="commandItems.length === 0 && !globalSearchLoading && !globalSearchError"
+                  class="command-empty"
+                >
+                  No matches.
+                </li>
+                <ComboboxOption
+                  v-for="item in commandItems"
+                  :key="item.key"
+                  as="li"
+                  :value="item"
+                  class="command-item"
+                  v-slot="{ active }"
+                >
+                  <div
+                    class="command-item__option"
+                    :class="active ? 'command-item__option--active' : undefined"
+                  >
+                    <span class="command-item__line">
+                      <span>{{ item.label }}</span>
+                      <span class="meta-text">{{ item.section }}</span>
+                    </span>
+                    <span class="command-item__meta">{{ item.meta }}</span>
+                  </div>
+                </ComboboxOption>
+              </ComboboxOptions>
+            </Combobox>
+          </DialogPanel>
+        </TransitionChild>
+      </div>
+    </Dialog>
+  </TransitionRoot>
 </template>
