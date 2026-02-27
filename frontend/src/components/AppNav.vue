@@ -314,6 +314,14 @@ function closeCommandPalette(): void {
   commandQuery.value = "";
   globalSearchQuery.value = "";
   void runGlobalSearch();
+  if (wasOpen && typeof window !== "undefined") {
+    window.setTimeout(() => {
+      restoreCommandFocus();
+    }, 0);
+    window.setTimeout(() => {
+      restoreCommandFocus();
+    }, 180);
+  }
 }
 
 function localResultLabel(result: LocalSearchResult): string {
