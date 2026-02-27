@@ -7,12 +7,19 @@ import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
+import { useStatusMessage } from "../composables/useStatusMessage";
 import { getErrorMessage, podcastsApi } from "../lib/api";
 import type { Podcast } from "../types/api";
 
 const isLoading = ref(true);
-const errorMessage = ref("");
-const infoMessage = ref("");
+const {
+  errorMessage,
+  successMessage: infoMessage,
+  setError,
+  setSuccess,
+  clearAll,
+  clearError,
+} = useStatusMessage(5000);
 const podcasts = ref<Podcast[]>([]);
 const activeId = ref<string | null>(null);
 const podcastToDelete = ref<Podcast | null>(null);
@@ -69,11 +76,11 @@ function openAddPodcast(): void {
 
 async function loadPodcasts(): Promise<void> {
   isLoading.value = true;
-  errorMessage.value = "";
+  clearError();
   try {
     podcasts.value = await podcastsApi.list();
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Failed to load podcasts.");
+    setError(getErrorMessage(error, "Failed to load podcasts."));
   } finally {
     isLoading.value = false;
   }
@@ -81,14 +88,13 @@ async function loadPodcasts(): Promise<void> {
 
 async function runAction(id: string, action: () => Promise<void>, success: string): Promise<void> {
   activeId.value = id;
-  infoMessage.value = "";
-  errorMessage.value = "";
+  clearAll();
   try {
     await action();
-    infoMessage.value = success;
+    setSuccess(success);
     await loadPodcasts();
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "The action failed.");
+    setError(getErrorMessage(error, "The action failed."));
   } finally {
     activeId.value = null;
   }

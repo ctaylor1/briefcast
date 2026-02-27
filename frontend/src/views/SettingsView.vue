@@ -4,6 +4,7 @@ import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiInput from "../components/ui/UiInput.vue";
+import { useStatusMessage } from "../composables/useStatusMessage";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import type { RetentionSettings } from "../types/api";
 
@@ -16,8 +17,14 @@ type RetentionForm = {
 
 const isLoading = ref(true);
 const isSaving = ref(false);
-const errorMessage = ref("");
-const successMessage = ref("");
+const {
+  errorMessage,
+  successMessage,
+  clearAll,
+  clearError,
+  setError,
+  setSuccess,
+} = useStatusMessage(5000);
 
 const form = ref<RetentionForm>({
   keepAllEpisodes: true,
@@ -47,12 +54,12 @@ function sanitizeNumber(value: string): number {
 
 async function loadSettings(): Promise<void> {
   isLoading.value = true;
-  errorMessage.value = "";
+  clearError();
   try {
     const settings = await settingsApi.get();
     form.value = mapToForm(settings);
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Failed to load settings.");
+    setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
     isLoading.value = false;
   }
@@ -60,8 +67,7 @@ async function loadSettings(): Promise<void> {
 
 async function saveSettings(): Promise<void> {
   isSaving.value = true;
-  errorMessage.value = "";
-  successMessage.value = "";
+  clearAll();
   const payload: RetentionSettings = {
     keepAllEpisodes: form.value.keepAllEpisodes,
     keepLatestEpisodes: sanitizeNumber(form.value.keepLatestEpisodes),
@@ -71,9 +77,9 @@ async function saveSettings(): Promise<void> {
   try {
     const updated = await settingsApi.update(payload);
     form.value = mapToForm(updated);
-    successMessage.value = "Retention settings updated.";
+    setSuccess("Retention settings updated.");
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Failed to update settings.");
+    setError(getErrorMessage(error, "Failed to update settings."));
   } finally {
     isSaving.value = false;
   }
