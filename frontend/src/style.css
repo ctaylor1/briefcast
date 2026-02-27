@@ -1287,6 +1287,34 @@ img {
   background: color-mix(in srgb, var(--color-text-tertiary) 55%, transparent);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .skeleton,
+  .queue-list__progress-fill--unknown,
+  .episode-list-item__progress-fill--unknown,
+  .episodes-table__progress-fill--unknown,
+  .track-control__spinner {
+    animation: none !important;
+  }
+
+  .ui-transition-fade-enter,
+  .ui-transition-fade-leave,
+  .ui-transition-scale-enter,
+  .ui-transition-scale-leave,
+  .ui-transition-drawer-enter,
+  .ui-transition-drawer-leave {
+    transition: none !important;
+  }
+}
+
 @media (min-width: 768px) {
   .page {
     padding: var(--space-6);
