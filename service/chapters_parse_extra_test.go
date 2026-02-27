@@ -2,6 +2,7 @@ package service
 
 import "testing"
 
+// TestParseChaptersInvalidAndObjectForms handles the corresponding operation.
 func TestParseChaptersInvalidAndObjectForms(t *testing.T) {
 	if got := parseChapters("not-json"); got != nil {
 		t.Fatalf("expected nil for invalid json")
@@ -20,6 +21,7 @@ func TestParseChaptersInvalidAndObjectForms(t *testing.T) {
 	}
 }
 
+// TestParseChapterListSortsByStart handles the corresponding operation.
 func TestParseChapterListSortsByStart(t *testing.T) {
 	input := []interface{}{
 		map[string]interface{}{"title": "B", "start": float64(20)},
@@ -35,6 +37,7 @@ func TestParseChapterListSortsByStart(t *testing.T) {
 	}
 }
 
+// TestParseTimeHelpers handles the corresponding operation.
 func TestParseTimeHelpers(t *testing.T) {
 	if got := parseTimeString("01:02:03", false); got != 3723 {
 		t.Fatalf("expected 3723, got %v", got)

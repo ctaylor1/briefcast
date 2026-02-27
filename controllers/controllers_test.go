@@ -94,6 +94,7 @@ func createControllerPodcastAndItem(t *testing.T) (db.Podcast, db.PodcastItem) {
 	return podcast, item
 }
 
+// TestSettingsEndpoints handles the corresponding operation.
 func TestSettingsEndpoints(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -132,6 +133,7 @@ func TestSettingsEndpoints(t *testing.T) {
 	}
 }
 
+// TestEpisodeMediaEndpoints handles the corresponding operation.
 func TestEpisodeMediaEndpoints(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -176,6 +178,7 @@ func TestEpisodeMediaEndpoints(t *testing.T) {
 	}
 }
 
+// TestDownloadEndpoints handles the corresponding operation.
 func TestDownloadEndpoints(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -249,6 +252,7 @@ func TestDownloadEndpoints(t *testing.T) {
 	}
 }
 
+// TestCancelPodcastItemDownloadAndLocalSearch handles the corresponding operation.
 func TestCancelPodcastItemDownloadAndLocalSearch(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -276,6 +280,7 @@ func TestCancelPodcastItemDownloadAndLocalSearch(t *testing.T) {
 	}
 }
 
+// TestDownloadQueueLimitValidation handles the corresponding operation.
 func TestDownloadQueueLimitValidation(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -302,6 +307,7 @@ func TestDownloadQueueLimitValidation(t *testing.T) {
 	}
 }
 
+// TestSearchLocalLimitValidation handles the corresponding operation.
 func TestSearchLocalLimitValidation(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()

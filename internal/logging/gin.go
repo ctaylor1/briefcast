@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// RequestLoggerMiddleware handles the corresponding operation.
 func RequestLoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -49,6 +50,7 @@ func RequestLoggerMiddleware() gin.HandlerFunc {
 	}
 }
 
+// RequestIDFromGin handles the corresponding operation.
 func RequestIDFromGin(c *gin.Context) string {
 	if c == nil {
 		return ""
@@ -64,6 +66,7 @@ func RequestIDFromGin(c *gin.Context) string {
 	return strings.TrimSpace(c.GetHeader(RequestIDHeader))
 }
 
+// LoggerFromGin handles the corresponding operation.
 func LoggerFromGin(c *gin.Context) *zap.Logger {
 	if c == nil {
 		return Base()

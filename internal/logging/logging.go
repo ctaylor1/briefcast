@@ -15,10 +15,14 @@ import (
 )
 
 const (
-	RequestIDKey     = "request_id"
-	RequestIDHeader  = "X-Request-ID"
+	// RequestIDKey is a public constant.
+	RequestIDKey = "request_id"
+	// RequestIDHeader is a public constant.
+	RequestIDHeader = "X-Request-ID"
+	// RequestLoggerKey is a public constant.
 	RequestLoggerKey = "request_logger"
-	LogRunTimestamp  = "LOG_RUN_TIMESTAMP"
+	// LogRunTimestamp is a public constant.
+	LogRunTimestamp = "LOG_RUN_TIMESTAMP"
 )
 
 var (
@@ -28,6 +32,7 @@ var (
 	logRunTimestampOnce sync.Once
 )
 
+// Base handles the corresponding operation.
 func Base() *zap.Logger {
 	baseLoggerOnce.Do(func() {
 		baseLogger = newLogger()
@@ -35,10 +40,12 @@ func Base() *zap.Logger {
 	return baseLogger
 }
 
+// Sugar handles the corresponding operation.
 func Sugar() *zap.SugaredLogger {
 	return Base().Sugar()
 }
 
+// LoggerWithRequestID handles the corresponding operation.
 func LoggerWithRequestID(requestID string) *zap.Logger {
 	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {
@@ -47,6 +54,7 @@ func LoggerWithRequestID(requestID string) *zap.Logger {
 	return Base().With(zap.String("request_id", requestID))
 }
 
+// NewJobLogger handles the corresponding operation.
 func NewJobLogger(jobName string) (*zap.Logger, string) {
 	jobID := uuid.NewString()
 	return Base().With(
@@ -55,15 +63,18 @@ func NewJobLogger(jobName string) (*zap.Logger, string) {
 	), jobID
 }
 
+// NewJobSugar handles the corresponding operation.
 func NewJobSugar(jobName string) (*zap.SugaredLogger, string) {
 	logger, jobID := NewJobLogger(jobName)
 	return logger.Sugar(), jobID
 }
 
+// NewRequestID handles the corresponding operation.
 func NewRequestID() string {
 	return uuid.NewString()
 }
 
+// Sync handles the corresponding operation.
 func Sync() {
 	if baseLogger != nil {
 		_ = baseLogger.Sync()

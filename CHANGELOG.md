@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.11] - 2026-02-27
+
+### Added
+- None.
+
+### Changed
+- Updated frontend dev dependency `@types/node` to `24.10.15` (non-breaking patch update).
+- Documented that legacy `golint` exported-comment/naming findings remain deferred due to broad API-churn risk.
+
+### Fixed
+- Upgraded `golang.org/x/net` to `v0.51.0` to remediate `GO-2026-4559`.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.0.10] - 2026-02-26
 
 ### Added

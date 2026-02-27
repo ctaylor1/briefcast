@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// TestNatualTimeFutureCases handles the corresponding operation.
 func TestNatualTimeFutureCases(t *testing.T) {
 	base := time.Date(2026, time.February, 17, 12, 0, 0, 0, time.UTC)
 
@@ -29,6 +30,7 @@ func TestNatualTimeFutureCases(t *testing.T) {
 	}
 }
 
+// TestNatualTimePastCases handles the corresponding operation.
 func TestNatualTimePastCases(t *testing.T) {
 	base := time.Date(2026, time.February, 17, 12, 0, 0, 0, time.UTC)
 

@@ -79,6 +79,7 @@ func createDownloadedItem(t *testing.T, podcast db.Podcast, title string, pubDat
 	return item
 }
 
+// TestRetentionKeepAllSkipsDeletion handles the corresponding operation.
 func TestRetentionKeepAllSkipsDeletion(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -100,7 +101,7 @@ func TestRetentionKeepAllSkipsDeletion(t *testing.T) {
 	}
 
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshed.DownloadStatus != db.Downloaded {
@@ -111,6 +112,7 @@ func TestRetentionKeepAllSkipsDeletion(t *testing.T) {
 	}
 }
 
+// TestRetentionKeepLatestDeletesOldest handles the corresponding operation.
 func TestRetentionKeepLatestDeletesOldest(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -137,7 +139,7 @@ func TestRetentionKeepLatestDeletesOldest(t *testing.T) {
 	assertStatus := func(item db.PodcastItem, expected db.DownloadStatus) {
 		t.Helper()
 		var refreshed db.PodcastItem
-		if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+		if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 			t.Fatalf("reload item failed: %v", err)
 		}
 		if refreshed.DownloadStatus != expected {
@@ -154,6 +156,7 @@ func TestRetentionKeepLatestDeletesOldest(t *testing.T) {
 	}
 }
 
+// TestRetentionDeleteAfterDaysPlayedOnly handles the corresponding operation.
 func TestRetentionDeleteAfterDaysPlayedOnly(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -176,7 +179,7 @@ func TestRetentionDeleteAfterDaysPlayedOnly(t *testing.T) {
 	}
 
 	var refreshedPlayed db.PodcastItem
-	if err := db.GetPodcastItemById(oldPlayed.ID, &refreshedPlayed); err != nil {
+	if err := db.GetPodcastItemByID(oldPlayed.ID, &refreshedPlayed); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedPlayed.DownloadStatus != db.Deleted {
@@ -184,7 +187,7 @@ func TestRetentionDeleteAfterDaysPlayedOnly(t *testing.T) {
 	}
 
 	var refreshedUnplayed db.PodcastItem
-	if err := db.GetPodcastItemById(oldUnplayed.ID, &refreshedUnplayed); err != nil {
+	if err := db.GetPodcastItemByID(oldUnplayed.ID, &refreshedUnplayed); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedUnplayed.DownloadStatus != db.Downloaded {
@@ -192,6 +195,7 @@ func TestRetentionDeleteAfterDaysPlayedOnly(t *testing.T) {
 	}
 }
 
+// TestRetentionPerPodcastOverride handles the corresponding operation.
 func TestRetentionPerPodcastOverride(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -220,7 +224,7 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 	}
 
 	var refreshedKeepOld db.PodcastItem
-	if err := db.GetPodcastItemById(keepAllItemOld.ID, &refreshedKeepOld); err != nil {
+	if err := db.GetPodcastItemByID(keepAllItemOld.ID, &refreshedKeepOld); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedKeepOld.DownloadStatus != db.Downloaded {
@@ -228,7 +232,7 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 	}
 
 	var refreshedNormalOld db.PodcastItem
-	if err := db.GetPodcastItemById(normalItemOld.ID, &refreshedNormalOld); err != nil {
+	if err := db.GetPodcastItemByID(normalItemOld.ID, &refreshedNormalOld); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedNormalOld.DownloadStatus != db.Deleted {
@@ -236,7 +240,7 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 	}
 
 	var refreshedKeepNew db.PodcastItem
-	if err := db.GetPodcastItemById(keepAllItemNew.ID, &refreshedKeepNew); err != nil {
+	if err := db.GetPodcastItemByID(keepAllItemNew.ID, &refreshedKeepNew); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedKeepNew.DownloadStatus != db.Downloaded {
@@ -244,7 +248,7 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 	}
 
 	var refreshedNormalNew db.PodcastItem
-	if err := db.GetPodcastItemById(normalItemNew.ID, &refreshedNormalNew); err != nil {
+	if err := db.GetPodcastItemByID(normalItemNew.ID, &refreshedNormalNew); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if refreshedNormalNew.DownloadStatus != db.Downloaded {
@@ -252,6 +256,7 @@ func TestRetentionPerPodcastOverride(t *testing.T) {
 	}
 }
 
+// TestRetentionDeleteAfterDaysUsesInjectedClock handles the corresponding operation.
 func TestRetentionDeleteAfterDaysUsesInjectedClock(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -282,7 +287,7 @@ func TestRetentionDeleteAfterDaysUsesInjectedClock(t *testing.T) {
 	}
 
 	var refreshedBoundary db.PodcastItem
-	if err := db.GetPodcastItemById(exactlyAtCutoff.ID, &refreshedBoundary); err != nil {
+	if err := db.GetPodcastItemByID(exactlyAtCutoff.ID, &refreshedBoundary); err != nil {
 		t.Fatalf("reload boundary item failed: %v", err)
 	}
 	if refreshedBoundary.DownloadStatus != db.Downloaded {
@@ -290,7 +295,7 @@ func TestRetentionDeleteAfterDaysUsesInjectedClock(t *testing.T) {
 	}
 
 	var refreshedOld db.PodcastItem
-	if err := db.GetPodcastItemById(olderThanCutoff.ID, &refreshedOld); err != nil {
+	if err := db.GetPodcastItemByID(olderThanCutoff.ID, &refreshedOld); err != nil {
 		t.Fatalf("reload old item failed: %v", err)
 	}
 	if refreshedOld.DownloadStatus != db.Deleted {

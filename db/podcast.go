@@ -98,16 +98,23 @@ type PodcastItem struct {
 	TranscriptLastError   string `gorm:"type:text" json:"-"`
 }
 
+// DownloadStatus represents a public type.
 type DownloadStatus int
 
 const (
+	// NotDownloaded is a public constant.
 	NotDownloaded DownloadStatus = iota
+	// Downloading is a public constant.
 	Downloading
+	// Downloaded is a public constant.
 	Downloaded
+	// Deleted is a public constant.
 	Deleted
+	// Paused is a public constant.
 	Paused
 )
 
+// Setting represents a public type.
 type Setting struct {
 	Base
 	DownloadOnAdd                 bool `gorm:"default:true"`
@@ -119,7 +126,7 @@ type Setting struct {
 	DownloadEpisodeImages         bool `gorm:"default:false"`
 	GenerateNFOFile               bool `gorm:"default:false"`
 	DontDownloadDeletedFromDisk   bool `gorm:"default:false"`
-	BaseUrl                       string
+	BaseURL                       string
 	MaxDownloadConcurrency        int `gorm:"default:5"`
 	UserAgent                     string
 
@@ -128,12 +135,15 @@ type Setting struct {
 	RetentionDeleteAfterDays  int  `gorm:"default:0"`
 	RetentionDeleteOnlyPlayed bool `gorm:"default:true"`
 }
+
+// Migration represents a public type.
 type Migration struct {
 	Base
 	Date time.Time
 	Name string
 }
 
+// JobLock represents a public type.
 type JobLock struct {
 	Base
 	Date     time.Time
@@ -141,6 +151,7 @@ type JobLock struct {
 	Duration int
 }
 
+// Tag represents a public type.
 type Tag struct {
 	Base
 	Label       string
@@ -148,10 +159,12 @@ type Tag struct {
 	Podcasts    []*Podcast `gorm:"many2many:podcast_tags;"`
 }
 
+// IsLocked handles the corresponding operation.
 func (lock *JobLock) IsLocked() bool {
 	return lock.IsLockedAt(time.Now().UTC())
 }
 
+// IsLockedAt handles the corresponding operation.
 func (lock *JobLock) IsLockedAt(now time.Time) bool {
 	if lock == nil {
 		return false
@@ -162,6 +175,7 @@ func (lock *JobLock) IsLockedAt(now time.Time) bool {
 	return lock.Date.UTC().Add(time.Duration(lock.Duration) * time.Minute).After(now.UTC())
 }
 
+// PodcastItemStatsModel represents a public type.
 type PodcastItemStatsModel struct {
 	PodcastID      string
 	DownloadStatus DownloadStatus
@@ -169,12 +183,14 @@ type PodcastItemStatsModel struct {
 	Size           int64
 }
 
+// PodcastItemDiskStatsModel represents a public type.
 type PodcastItemDiskStatsModel struct {
 	DownloadStatus DownloadStatus
 	Count          int
 	Size           int64
 }
 
+// PodcastItemConsolidateDiskStatsModel represents a public type.
 type PodcastItemConsolidateDiskStatsModel struct {
 	Downloaded      int64
 	Downloading     int64

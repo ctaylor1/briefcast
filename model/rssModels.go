@@ -2,6 +2,7 @@ package model
 
 import "encoding/xml"
 
+// RssPodcastData represents a public type.
 // PodcastData is
 type RssPodcastData struct {
 	XMLName    xml.Name   `xml:"rss"`
@@ -17,6 +18,8 @@ type RssPodcastData struct {
 	Version    string     `xml:"version,attr"`
 	Channel    RssChannel `xml:"channel"`
 }
+
+// RssChannel represents a public type.
 type RssChannel struct {
 	Text        string       `xml:",chardata"`
 	Language    string       `xml:"language"`
@@ -29,6 +32,8 @@ type RssChannel struct {
 	Item        []RssItem    `xml:"item"`
 	Author      string       `xml:"author"`
 }
+
+// RssItem represents a public type.
 type RssItem struct {
 	Text        string           `xml:",chardata"`
 	Title       string           `xml:"title"`
@@ -38,8 +43,8 @@ type RssItem struct {
 	EpisodeType string           `xml:"episodeType"`
 	Author      string           `xml:"author"`
 	Image       RssItemImage     `xml:"image"`
-	Guid        RssItemGuid      `xml:"guid"`
-	ClipId      string           `xml:"clipId"`
+	GUID        RssItemGUID      `xml:"guid"`
+	ClipID      string           `xml:"clipID"`
 	PubDate     string           `xml:"pubDate"`
 	Duration    string           `xml:"duration"`
 	Enclosure   RssItemEnclosure `xml:"enclosure"`
@@ -47,19 +52,23 @@ type RssItem struct {
 	Episode     string           `xml:"episode"`
 }
 
+// RssItemEnclosure represents a public type.
 type RssItemEnclosure struct {
 	Text   string `xml:",chardata"`
 	URL    string `xml:"url,attr"`
 	Length string `xml:"length,attr"`
 	Type   string `xml:"type,attr"`
 }
+
+// RssItemImage represents a public type.
 type RssItemImage struct {
 	Text string `xml:",chardata"`
 	Href string `xml:"href,attr"`
 	URL  string `xml:"url"`
 }
 
-type RssItemGuid struct {
+// RssItemGUID represents a public type.
+type RssItemGUID struct {
 	Text        string `xml:",chardata"`
 	IsPermaLink string `xml:"isPermaLink,attr"`
 }

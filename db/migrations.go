@@ -117,6 +117,7 @@ where id in (
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
 
+// RunMigrations handles the corresponding operation.
 func RunMigrations() {
 	for _, mig := range migrations {
 		if err := ExecuteAndSaveMigration(mig.Name, mig.Query); err != nil {
@@ -124,6 +125,8 @@ func RunMigrations() {
 		}
 	}
 }
+
+// ExecuteAndSaveMigration handles the corresponding operation.
 func ExecuteAndSaveMigration(name string, query string) error {
 	var migration Migration
 	result := DB.Where("name=?", name).First(&migration)

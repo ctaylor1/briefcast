@@ -72,11 +72,11 @@ type PodcastData struct {
 					URL  string `xml:"url,attr"`
 				} `xml:"player"`
 			} `xml:"content"`
-			Guid struct {
+			GUID struct {
 				Text        string `xml:",chardata"`
 				IsPermaLink string `xml:"isPermaLink,attr"`
 			} `xml:"guid"`
-			ClipId    string `xml:"clipId"`
+			ClipID    string `xml:"clipID"`
 			PubDate   string `xml:"pubDate"`
 			Duration  string `xml:"duration"`
 			Enclosure struct {
@@ -86,12 +86,13 @@ type PodcastData struct {
 				Type   string `xml:"type,attr"`
 			} `xml:"enclosure"`
 			Link       string `xml:"link"`
-			StitcherId string `xml:"stitcherId"`
+			StitcherID string `xml:"stitcherID"`
 			Episode    string `xml:"episode"`
 		} `xml:"item"`
 	} `xml:"channel"`
 }
 
+// CommonSearchResultModel represents a public type.
 type CommonSearchResultModel struct {
 	URL          string   `json:"url"`
 	Title        string   `json:"title"`

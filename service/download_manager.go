@@ -13,18 +13,22 @@ var (
 	downloadsPaused    atomic.Bool
 )
 
+// PauseDownloads handles the corresponding operation.
 func PauseDownloads() {
 	downloadsPaused.Store(true)
 }
 
+// ResumeDownloads handles the corresponding operation.
 func ResumeDownloads() {
 	downloadsPaused.Store(false)
 }
 
+// DownloadsPaused handles the corresponding operation.
 func DownloadsPaused() bool {
 	return downloadsPaused.Load()
 }
 
+// CancelDownload handles the corresponding operation.
 func CancelDownload(id string) {
 	if id == "" {
 		return
@@ -34,6 +38,7 @@ func CancelDownload(id string) {
 	downloadCancelMu.Unlock()
 }
 
+// ClearDownloadCancellation handles the corresponding operation.
 func ClearDownloadCancellation(id string) {
 	if id == "" {
 		return
@@ -43,6 +48,7 @@ func ClearDownloadCancellation(id string) {
 	downloadCancelMu.Unlock()
 }
 
+// IsDownloadCancelled handles the corresponding operation.
 func IsDownloadCancelled(id string) bool {
 	if id == "" {
 		return false
@@ -53,6 +59,7 @@ func IsDownloadCancelled(id string) bool {
 	return exists
 }
 
+// PauseDownload handles the corresponding operation.
 func PauseDownload(id string) {
 	if id == "" {
 		return
@@ -62,6 +69,7 @@ func PauseDownload(id string) {
 	downloadPauseMu.Unlock()
 }
 
+// ClearDownloadPause handles the corresponding operation.
 func ClearDownloadPause(id string) {
 	if id == "" {
 		return
@@ -71,6 +79,7 @@ func ClearDownloadPause(id string) {
 	downloadPauseMu.Unlock()
 }
 
+// IsDownloadPaused handles the corresponding operation.
 func IsDownloadPaused(id string) bool {
 	if id == "" {
 		return false

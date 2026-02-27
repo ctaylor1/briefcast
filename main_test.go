@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestAuthRouterGroup handles the corresponding operation.
 func TestAuthRouterGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -38,6 +39,7 @@ func TestAuthRouterGroup(t *testing.T) {
 	}
 }
 
+// TestBuildRouterRegistersRoutes handles the corresponding operation.
 func TestBuildRouterRegistersRoutes(t *testing.T) {
 	t.Setenv("DATA", t.TempDir())
 	t.Setenv("CONFIG", "config-test")
@@ -68,6 +70,7 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 	}
 }
 
+// TestBuildRouterWithPassword handles the corresponding operation.
 func TestBuildRouterWithPassword(t *testing.T) {
 	t.Setenv("DATA", t.TempDir())
 	t.Setenv("CONFIG", "config-test")
@@ -79,6 +82,7 @@ func TestBuildRouterWithPassword(t *testing.T) {
 	}
 }
 
+// TestRegisterRoutesPlayerRedirect handles the corresponding operation.
 func TestRegisterRoutesPlayerRedirect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -97,6 +101,7 @@ func TestRegisterRoutesPlayerRedirect(t *testing.T) {
 	}
 }
 
+// TestSetupSettingsMiddleware handles the corresponding operation.
 func TestSetupSettingsMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -148,6 +153,7 @@ func TestSetupSettingsMiddleware(t *testing.T) {
 	}
 }
 
+// TestServeModernApp handles the corresponding operation.
 func TestServeModernApp(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Chdir(t.TempDir())
@@ -183,6 +189,7 @@ func TestServeModernApp(t *testing.T) {
 	}
 }
 
+// TestAssetEnv handles the corresponding operation.
 func TestAssetEnv(t *testing.T) {
 	t.Setenv("CONFIG", t.TempDir())
 	t.Setenv("DATA", t.TempDir())
@@ -191,6 +198,7 @@ func TestAssetEnv(t *testing.T) {
 	assetEnv()
 }
 
+// TestResolveCheckFrequency handles the corresponding operation.
 func TestResolveCheckFrequency(t *testing.T) {
 	logger := logging.Sugar()
 	if got := resolveCheckFrequency("15", logger); got != 15 {
@@ -204,6 +212,7 @@ func TestResolveCheckFrequency(t *testing.T) {
 	}
 }
 
+// TestResolveWhisperXFrequency handles the corresponding operation.
 func TestResolveWhisperXFrequency(t *testing.T) {
 	logger := logging.Sugar()
 	if got := resolveWhisperXFrequency(20, "40", logger); got != 40 {
@@ -217,11 +226,13 @@ func TestResolveWhisperXFrequency(t *testing.T) {
 	}
 }
 
+// TestRunCronJob handles the corresponding operation.
 func TestRunCronJob(t *testing.T) {
 	runCronJob("success", func() error { return nil })
 	runCronJob("failure", func() error { return errors.New("boom") })
 }
 
+// TestScheduleCronJobs handles the corresponding operation.
 func TestScheduleCronJobs(t *testing.T) {
 	logger := logging.Sugar()
 	scheduler := cron.New()

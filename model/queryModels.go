@@ -2,6 +2,7 @@ package model
 
 import "math"
 
+// Pagination represents a public type.
 type Pagination struct {
 	Page         int `uri:"page" query:"page" json:"page" form:"page" default:"1"`
 	Count        int `uri:"count" query:"count" json:"count" form:"count" default:"20"`
@@ -11,15 +12,21 @@ type Pagination struct {
 	TotalPages   int `uri:"totalPages" query:"totalPages" json:"totalPages" form:"totalPages"`
 }
 
+// EpisodeSort represents a public type.
 type EpisodeSort string
 
 const (
-	RELEASE_ASC   EpisodeSort = "release_asc"
-	RELEASE_DESC  EpisodeSort = "release_desc"
-	DURATION_ASC  EpisodeSort = "duration_asc"
-	DURATION_DESC EpisodeSort = "duration_desc"
+	// ReleaseAsc is a public constant.
+	ReleaseAsc EpisodeSort = "ReleaseAsc"
+	// ReleaseDesc is a public constant.
+	ReleaseDesc EpisodeSort = "ReleaseDesc"
+	// DurationAsc is a public constant.
+	DurationAsc EpisodeSort = "DurationAsc"
+	// DurationDesc is a public constant.
+	DurationDesc EpisodeSort = "DurationDesc"
 )
 
+// EpisodesFilter represents a public type.
 type EpisodesFilter struct {
 	Pagination
 	IsDownloaded *string     `uri:"isDownloaded" query:"isDownloaded" json:"isDownloaded" form:"isDownloaded"`
@@ -30,6 +37,7 @@ type EpisodesFilter struct {
 	PodcastIds   []string    `uri:"podcastIds" query:"podcastIds[]" json:"podcastIds" form:"podcastIds[]"`
 }
 
+// VerifyPaginationValues handles the corresponding operation.
 func (filter *EpisodesFilter) VerifyPaginationValues() {
 	if filter.Count == 0 {
 		filter.Count = 20
@@ -38,10 +46,11 @@ func (filter *EpisodesFilter) VerifyPaginationValues() {
 		filter.Page = 1
 	}
 	if filter.Sorting == "" {
-		filter.Sorting = RELEASE_DESC
+		filter.Sorting = ReleaseDesc
 	}
 }
 
+// SetCounts handles the corresponding operation.
 func (filter *EpisodesFilter) SetCounts(totalCount int64) {
 	totalPages := int(math.Ceil(float64(totalCount) / float64(filter.Count)))
 	nextPage, previousPage := 0, 0

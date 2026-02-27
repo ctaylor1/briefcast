@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// FeedParserResult represents a public type.
 type FeedParserResult struct {
 	Feed          map[string]interface{}   `json:"feed"`
 	Entries       []map[string]interface{} `json:"entries"`
@@ -30,6 +31,7 @@ const (
 	logOutputEnv                    = "LOG_OUTPUT"
 )
 
+// FetchFeedWithFeedparser handles the corresponding operation.
 func FetchFeedWithFeedparser(url string) (FeedParserResult, []byte, error) {
 	body, err := makeQuery(url)
 	if err != nil {
@@ -42,6 +44,7 @@ func FetchFeedWithFeedparser(url string) (FeedParserResult, []byte, error) {
 	return parsed, body, nil
 }
 
+// ParseFeedWithFeedparser handles the corresponding operation.
 func ParseFeedWithFeedparser(body []byte) (FeedParserResult, error) {
 	pythonPath, err := resolvePython()
 	if err != nil {

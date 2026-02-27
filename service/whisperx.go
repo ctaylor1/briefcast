@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// WhisperXConfig represents a public type.
 type WhisperXConfig struct {
 	Enabled            bool
 	Python             string
@@ -124,6 +125,7 @@ type whisperxResumeCheckpoint struct {
 	SegmentsFile     string  `json:"segments_file,omitempty"`
 }
 
+// LoadWhisperXConfig handles the corresponding operation.
 func LoadWhisperXConfig() WhisperXConfig {
 	cfg := WhisperXConfig{
 		Enabled:            getEnvBool(whisperxEnabledEnv, false),
@@ -197,6 +199,7 @@ func LoadWhisperXConfig() WhisperXConfig {
 	return cfg
 }
 
+// TranscribePendingEpisodes handles the corresponding operation.
 func TranscribePendingEpisodes() error {
 	cfg := LoadWhisperXConfig()
 	if !cfg.Enabled {
@@ -454,10 +457,12 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 	}
 }
 
+// RunWhisperX handles the corresponding operation.
 func RunWhisperX(audioPath string, cfg WhisperXConfig) ([]byte, error) {
 	return RunWhisperXWithProgress(audioPath, cfg, "", nil)
 }
 
+// RunWhisperXWithProgress handles the corresponding operation.
 func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpoint string, onProgress func(whisperxProgressUpdate)) ([]byte, error) {
 	pythonPath, err := resolveWhisperXPython(cfg)
 	if err != nil {

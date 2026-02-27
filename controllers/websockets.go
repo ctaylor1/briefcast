@@ -8,9 +8,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// EnqueuePayload represents a public type.
 type EnqueuePayload struct {
 	ItemIds   []string `json:"itemIds"`
-	PodcastId string   `json:"podcastId"`
+	PodcastID string   `json:"podcastID"`
 	TagIds    []string `json:"tagIds"`
 }
 
@@ -24,6 +25,7 @@ var allConnections = make(map[*websocket.Conn]string)
 
 var broadcast = make(chan Message) // broadcast channel
 
+// Message represents a public type.
 type Message struct {
 	Identifier  string          `json:"identifier"`
 	MessageType string          `json:"messageType"`
@@ -31,6 +33,7 @@ type Message struct {
 	Connection  *websocket.Conn `json:"-"`
 }
 
+// Wshandler handles the corresponding operation.
 func Wshandler(c *gin.Context) {
 	logger := logging.LoggerFromGin(c).Sugar().With("component", "websocket")
 	conn, err := wsupgrader.Upgrade(c.Writer, c.Request, nil)
@@ -60,6 +63,7 @@ func Wshandler(c *gin.Context) {
 	}
 }
 
+// HandleWebsocketMessages handles the corresponding operation.
 func HandleWebsocketMessages() {
 	logger := logging.Sugar().With("component", "websocket")
 	writeMessage := func(connection *websocket.Conn, message Message) {
@@ -94,7 +98,7 @@ func HandleWebsocketMessages() {
 			var payload EnqueuePayload
 			err := json.Unmarshal([]byte(msg.Payload), &payload)
 			if err == nil {
-				items := getItemsToPlay(payload.ItemIds, payload.PodcastId, payload.TagIds)
+				items := getItemsToPlay(payload.ItemIds, payload.PodcastID, payload.TagIds)
 				var player *websocket.Conn
 				for connection, id := range activePlayers {
 

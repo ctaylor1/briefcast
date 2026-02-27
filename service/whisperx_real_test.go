@@ -10,6 +10,7 @@ import (
 	"testing"
 )
 
+// TestWhisperXRealTranscription handles the corresponding operation.
 func TestWhisperXRealTranscription(t *testing.T) {
 	if os.Getenv("BRIEFCAST_WHISPERX_REAL") == "" {
 		t.Skip("set BRIEFCAST_WHISPERX_REAL=1 to run real WhisperX regression")

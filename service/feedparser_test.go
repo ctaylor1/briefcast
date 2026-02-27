@@ -9,6 +9,7 @@ import (
 	"testing"
 )
 
+// TestResolvePythonExplicitPath handles the corresponding operation.
 func TestResolvePythonExplicitPath(t *testing.T) {
 	t.Setenv(feedparserPythonEnv, "not-a-real-python")
 	path, err := resolvePython()
@@ -20,6 +21,7 @@ func TestResolvePythonExplicitPath(t *testing.T) {
 	}
 }
 
+// TestParseFeedWithFeedparserStubScript handles the corresponding operation.
 func TestParseFeedWithFeedparserStubScript(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -44,6 +46,7 @@ func TestParseFeedWithFeedparserStubScript(t *testing.T) {
 	}
 }
 
+// TestParseFeedWithFeedparserInvalidOutput handles the corresponding operation.
 func TestParseFeedWithFeedparserInvalidOutput(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -61,6 +64,7 @@ func TestParseFeedWithFeedparserInvalidOutput(t *testing.T) {
 	}
 }
 
+// TestParseFeedWithFeedparserTimeout handles the corresponding operation.
 func TestParseFeedWithFeedparserTimeout(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -82,6 +86,7 @@ func TestParseFeedWithFeedparserTimeout(t *testing.T) {
 	}
 }
 
+// TestFetchFeedWithFeedparser handles the corresponding operation.
 func TestFetchFeedWithFeedparser(t *testing.T) {
 	setupRetentionTestDB(t)
 	pythonPath := requireWorkingPython(t)
@@ -112,6 +117,7 @@ func TestFetchFeedWithFeedparser(t *testing.T) {
 	}
 }
 
+// TestSanitizeHelperLogOutput handles the corresponding operation.
 func TestSanitizeHelperLogOutput(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -133,6 +139,7 @@ func TestSanitizeHelperLogOutput(t *testing.T) {
 	}
 }
 
+// TestParseFeedWithFeedparserSuppressesStdoutLoggingNoise handles the corresponding operation.
 func TestParseFeedWithFeedparserSuppressesStdoutLoggingNoise(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 

@@ -19,7 +19,7 @@ func waitForControllerItemStatus(t *testing.T, id string, expected db.DownloadSt
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		var item db.PodcastItem
-		if err := db.GetPodcastItemById(id, &item); err == nil && item.DownloadStatus == expected {
+		if err := db.GetPodcastItemByID(id, &item); err == nil && item.DownloadStatus == expected {
 			return
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -27,6 +27,7 @@ func waitForControllerItemStatus(t *testing.T, id string, expected db.DownloadSt
 	t.Fatalf("timed out waiting for podcast item %s status %v", id, expected)
 }
 
+// TestEpisodeMediaAndPodcastItemActionBranches handles the corresponding operation.
 func TestEpisodeMediaAndPodcastItemActionBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	service.ResumeDownloads()
@@ -84,6 +85,7 @@ func TestEpisodeMediaAndPodcastItemActionBranches(t *testing.T) {
 	_ = podcast
 }
 
+// TestDownloadControllerResumeAndCancelBranches handles the corresponding operation.
 func TestDownloadControllerResumeAndCancelBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	service.ResumeDownloads()
@@ -141,6 +143,7 @@ func TestDownloadControllerResumeAndCancelBranches(t *testing.T) {
 	}
 }
 
+// TestBackupsAndRssErrorBranches handles the corresponding operation.
 func TestBackupsAndRssErrorBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeExpandedRouter(t)
@@ -174,6 +177,7 @@ func TestBackupsAndRssErrorBranches(t *testing.T) {
 	}
 }
 
+// TestAddPodcastGenericErrorBranches handles the corresponding operation.
 func TestAddPodcastGenericErrorBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeExpandedRouter(t)

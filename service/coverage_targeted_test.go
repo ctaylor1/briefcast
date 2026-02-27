@@ -16,6 +16,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 )
 
+// TestFileServiceErrorAndExistingFileBranches handles the corresponding operation.
 func TestFileServiceErrorAndExistingFileBranches(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -93,8 +94,8 @@ func TestFileServiceErrorAndExistingFileBranches(t *testing.T) {
 	}))
 	defer statusServer.Close()
 
-	if _, err := GetFileSizeFromUrl(statusServer.URL); err == nil {
-		t.Fatalf("expected non-200 HEAD response to fail GetFileSizeFromUrl")
+	if _, err := GetFileSizeFromURL(statusServer.URL); err == nil {
+		t.Fatalf("expected non-200 HEAD response to fail GetFileSizeFromURL")
 	}
 
 	lengthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,8 +108,8 @@ func TestFileServiceErrorAndExistingFileBranches(t *testing.T) {
 	}))
 	defer lengthServer.Close()
 
-	if _, err := GetFileSizeFromUrl(lengthServer.URL); err == nil {
-		t.Fatalf("expected invalid Content-Length to fail GetFileSizeFromUrl")
+	if _, err := GetFileSizeFromURL(lengthServer.URL); err == nil {
+		t.Fatalf("expected invalid Content-Length to fail GetFileSizeFromURL")
 	}
 
 	if _, err := doRequestWithHostLimit(nil, nil); err == nil {
@@ -131,6 +132,7 @@ func TestFileServiceErrorAndExistingFileBranches(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
+// TestHostLimiterAcquireCancellationAndHelpers handles the corresponding operation.
 func TestHostLimiterAcquireCancellationAndHelpers(t *testing.T) {
 	if got := hostKey(nil); got != "unknown" {
 		t.Fatalf("expected nil host key to be unknown, got %q", got)
@@ -180,6 +182,7 @@ func TestHostLimiterAcquireCancellationAndHelpers(t *testing.T) {
 	<-blockedHostLimiter.sem
 }
 
+// TestChapterParseAdditionalBranches handles the corresponding operation.
 func TestChapterParseAdditionalBranches(t *testing.T) {
 	if got := parseChapters(`{"title":"not-a-list"}`); got != nil {
 		t.Fatalf("expected map payload without chapter list to return nil, got %+v", got)
@@ -225,6 +228,7 @@ func TestChapterParseAdditionalBranches(t *testing.T) {
 	}
 }
 
+// TestRetentionReferenceTimeFallbacks handles the corresponding operation.
 func TestRetentionReferenceTimeFallbacks(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -251,6 +255,7 @@ func TestRetentionReferenceTimeFallbacks(t *testing.T) {
 	}
 }
 
+// TestGetSearchFromPodcastIndexIncludesCategories handles the corresponding operation.
 func TestGetSearchFromPodcastIndexIncludesCategories(t *testing.T) {
 	pod := &podcastindex.Podcast{
 		URL:         "https://example.com/feed.xml",
@@ -276,6 +281,7 @@ func TestGetSearchFromPodcastIndexIncludesCategories(t *testing.T) {
 	}
 }
 
+// TestCheckMissingFilesAndDeleteEpisodeFileBranches handles the corresponding operation.
 func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -294,7 +300,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 		t.Fatalf("check missing files (delete branch) failed: %v", err)
 	}
 	var refreshedDelete db.PodcastItem
-	if err := db.GetPodcastItemById(missingDelete.ID, &refreshedDelete); err != nil {
+	if err := db.GetPodcastItemByID(missingDelete.ID, &refreshedDelete); err != nil {
 		t.Fatalf("failed to reload missing-delete item: %v", err)
 	}
 	if refreshedDelete.DownloadStatus != db.Deleted {
@@ -314,7 +320,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 		t.Fatalf("check missing files (requeue branch) failed: %v", err)
 	}
 	var refreshedRequeue db.PodcastItem
-	if err := db.GetPodcastItemById(missingRequeue.ID, &refreshedRequeue); err != nil {
+	if err := db.GetPodcastItemByID(missingRequeue.ID, &refreshedRequeue); err != nil {
 		t.Fatalf("failed to reload missing-requeue item: %v", err)
 	}
 	if refreshedRequeue.DownloadStatus != db.NotDownloaded {
@@ -337,7 +343,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 		t.Fatalf("delete episode file should succeed, got %v", err)
 	}
 	var refreshedDeletedEpisode db.PodcastItem
-	if err := db.GetPodcastItemById(toDelete.ID, &refreshedDeletedEpisode); err != nil {
+	if err := db.GetPodcastItemByID(toDelete.ID, &refreshedDeletedEpisode); err != nil {
 		t.Fatalf("failed to reload deleted episode item: %v", err)
 	}
 	if refreshedDeletedEpisode.DownloadStatus != db.Deleted {
@@ -373,6 +379,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 	}
 }
 
+// TestDownloadMissingEpisodesEarlyReturnBranches handles the corresponding operation.
 func TestDownloadMissingEpisodesEarlyReturnBranches(t *testing.T) {
 	setupRetentionTestDB(t)
 	ResumeDownloads()
@@ -395,6 +402,7 @@ func TestDownloadMissingEpisodesEarlyReturnBranches(t *testing.T) {
 	}
 }
 
+// TestAddOpmlWithFeedUrlsWorkerBranches handles the corresponding operation.
 func TestAddOpmlWithFeedUrlsWorkerBranches(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -414,9 +422,9 @@ func TestAddOpmlWithFeedUrlsWorkerBranches(t *testing.T) {
 <opml version="2.0">
   <head><title>Import</title></head>
   <body>
-    <outline text="dup" type="rss" xmlUrl="https://example.com/existing-feed.xml" />
+    <outline text="dup" type="rss" xmlURL="https://example.com/existing-feed.xml" />
     <outline text="outer">
-      <outline text="bad" type="rss" xmlUrl="://bad-url" />
+      <outline text="bad" type="rss" xmlURL="://bad-url" />
     </outline>
   </body>
 </opml>`

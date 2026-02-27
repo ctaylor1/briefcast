@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestHostKeyUsesHostnameLowercase handles the corresponding operation.
 func TestHostKeyUsesHostnameLowercase(t *testing.T) {
 	u, err := url.Parse("https://Example.COM:8443/path")
 	if err != nil {
@@ -21,6 +22,7 @@ func TestHostKeyUsesHostnameLowercase(t *testing.T) {
 	}
 }
 
+// TestHostLimiterConcurrencyBound handles the corresponding operation.
 func TestHostLimiterConcurrencyBound(t *testing.T) {
 	limiter := &hostRequestLimiter{
 		maxConcurrency: 1,
@@ -74,6 +76,7 @@ func TestHostLimiterConcurrencyBound(t *testing.T) {
 	}
 }
 
+// TestHostLimiterRatePacing handles the corresponding operation.
 func TestHostLimiterRatePacing(t *testing.T) {
 	minInterval := 60 * time.Millisecond
 	limiter := &hostRequestLimiter{
@@ -109,6 +112,7 @@ func TestHostLimiterRatePacing(t *testing.T) {
 	}
 }
 
+// TestOutboundRequestLimiterCacheReset handles the corresponding operation.
 func TestOutboundRequestLimiterCacheReset(t *testing.T) {
 	resetOutboundRequestLimiterForTests()
 	t.Cleanup(resetOutboundRequestLimiterForTests)

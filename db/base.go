@@ -15,7 +15,7 @@ type Base struct {
 	DeletedAt *time.Time `gorm:"index"`
 }
 
-// BeforeCreate
+// BeforeCreate sets a UUID for new records before insert.
 func (base *Base) BeforeCreate(tx *gorm.DB) error {
 	tx.Statement.SetColumn("ID", uuid.NewString())
 	return nil

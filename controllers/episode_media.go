@@ -10,15 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetPodcastItemChapters handles the corresponding operation.
 func GetPodcastItemChapters(c *gin.Context) {
-	var searchByIdQuery SearchByIdQuery
-	if c.ShouldBindUri(&searchByIdQuery) != nil {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	var item db.PodcastItem
-	if err := db.GetPodcastItemById(searchByIdQuery.Id, &item); err != nil {
+	if err := db.GetPodcastItemByID(searchByIDQuery.ID, &item); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Episode not found"})
 		return
 	}
@@ -28,15 +29,16 @@ func GetPodcastItemChapters(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// GetPodcastItemTranscript handles the corresponding operation.
 func GetPodcastItemTranscript(c *gin.Context) {
-	var searchByIdQuery SearchByIdQuery
-	if c.ShouldBindUri(&searchByIdQuery) != nil {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	var item db.PodcastItem
-	if err := db.GetPodcastItemById(searchByIdQuery.Id, &item); err != nil {
+	if err := db.GetPodcastItemByID(searchByIDQuery.ID, &item); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Episode not found"})
 		return
 	}

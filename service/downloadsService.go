@@ -2,9 +2,10 @@ package service
 
 import "github.com/ctaylor1/briefcast/db"
 
+// CancelEpisodeDownload handles the corresponding operation.
 func CancelEpisodeDownload(id string) error {
 	var item db.PodcastItem
-	if err := db.GetPodcastItemById(id, &item); err != nil {
+	if err := db.GetPodcastItemByID(id, &item); err != nil {
 		return err
 	}
 
@@ -21,9 +22,10 @@ func CancelEpisodeDownload(id string) error {
 	}
 }
 
+// ResumeEpisodeDownload handles the corresponding operation.
 func ResumeEpisodeDownload(id string) (bool, error) {
 	var item db.PodcastItem
-	if err := db.GetPodcastItemById(id, &item); err != nil {
+	if err := db.GetPodcastItemByID(id, &item); err != nil {
 		return false, err
 	}
 
@@ -45,10 +47,12 @@ func ResumeEpisodeDownload(id string) (bool, error) {
 	}
 }
 
+// CancelAllDownloads handles the corresponding operation.
 func CancelAllDownloads() error {
 	return PauseAllDownloads()
 }
 
+// PauseAllDownloads handles the corresponding operation.
 func PauseAllDownloads() error {
 	PauseDownloads()
 	queued, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.NotDownloaded}, 0)
@@ -69,6 +73,7 @@ func PauseAllDownloads() error {
 	return nil
 }
 
+// ResumeAllDownloads handles the corresponding operation.
 func ResumeAllDownloads() error {
 	ResumeDownloads()
 	paused, err := db.GetPodcastItemsByDownloadStatuses([]db.DownloadStatus{db.Paused}, 0)

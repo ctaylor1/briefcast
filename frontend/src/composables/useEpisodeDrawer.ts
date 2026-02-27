@@ -190,7 +190,7 @@ export function useEpisodeDrawer() {
       return "Transcript is ready.";
     }
     if (drawerTranscriptStatus.value === "processing") {
-      return "Briefcast transcription in progres.";
+      return "Briefcast transcription in progress.";
     }
     if (drawerTranscriptStatus.value.startsWith("pending_")) {
       return "Briefcast transcription queued.";

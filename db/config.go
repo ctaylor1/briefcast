@@ -10,19 +10,24 @@ import (
 	"time"
 )
 
+// DatabaseDriver represents a public type.
 type DatabaseDriver string
 
 const (
-	DriverSQLite   DatabaseDriver = "sqlite"
+	// DriverSQLite is a public constant.
+	DriverSQLite DatabaseDriver = "sqlite"
+	// DriverPostgres is a public constant.
 	DriverPostgres DatabaseDriver = "postgres"
 )
 
+// DatabaseConfig represents a public type.
 type DatabaseConfig struct {
 	Driver        DatabaseDriver
 	DataSource    string
 	DisplaySource string
 }
 
+// ResolveDatabaseConfig handles the corresponding operation.
 func ResolveDatabaseConfig() (DatabaseConfig, error) {
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	explicitDriver := firstNonEmpty(
@@ -191,6 +196,7 @@ func applyConnectionPool(db ConnPoolConfigurable) {
 	}
 }
 
+// ConnPoolConfigurable represents a public type.
 type ConnPoolConfigurable interface {
 	SetMaxIdleConns(n int)
 	SetMaxOpenConns(n int)

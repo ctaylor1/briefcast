@@ -12,6 +12,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 )
 
+// TestLoadWhisperXConfigDefaultsAndNormalization handles the corresponding operation.
 func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	t.Setenv(whisperxEnabledEnv, "true")
 	t.Setenv("WHISPERX_MIN_SPEAKERS", "0")
@@ -57,6 +58,7 @@ func TestLoadWhisperXConfigDefaultsAndNormalization(t *testing.T) {
 	}
 }
 
+// TestLoadWhisperXConfigLockRefreshClamp handles the corresponding operation.
 func TestLoadWhisperXConfigLockRefreshClamp(t *testing.T) {
 	t.Setenv(whisperxEnabledEnv, "true")
 	t.Setenv(whisperxLockDurationEnv, "2")
@@ -71,6 +73,7 @@ func TestLoadWhisperXConfigLockRefreshClamp(t *testing.T) {
 	}
 }
 
+// TestWhisperXEnvHelpers handles the corresponding operation.
 func TestWhisperXEnvHelpers(t *testing.T) {
 	t.Setenv("WX_STR", " value ")
 	if got := getEnvString("WX_STR", "fallback"); got != "value" {
@@ -113,6 +116,7 @@ func TestWhisperXEnvHelpers(t *testing.T) {
 	}
 }
 
+// TestResolveWhisperXScript handles the corresponding operation.
 func TestResolveWhisperXScript(t *testing.T) {
 	cfg := WhisperXConfig{Script: filepath.Join(t.TempDir(), "missing.py")}
 	if _, err := resolveWhisperXScript(cfg); err == nil {
@@ -134,6 +138,7 @@ func TestResolveWhisperXScript(t *testing.T) {
 	}
 }
 
+// TestResolveWhisperXPythonExplicitPath handles the corresponding operation.
 func TestResolveWhisperXPythonExplicitPath(t *testing.T) {
 	cfg := WhisperXConfig{Python: "definitely-not-real-python"}
 	path, err := resolveWhisperXPython(cfg)
@@ -145,6 +150,7 @@ func TestResolveWhisperXPythonExplicitPath(t *testing.T) {
 	}
 }
 
+// TestRunWhisperXPreflightDetectsSyntaxErrors handles the corresponding operation.
 func TestRunWhisperXPreflightDetectsSyntaxErrors(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 	tempDir := t.TempDir()
@@ -167,6 +173,7 @@ func TestRunWhisperXPreflightDetectsSyntaxErrors(t *testing.T) {
 	}
 }
 
+// TestWhisperXRetryDelayBackoff handles the corresponding operation.
 func TestWhisperXRetryDelayBackoff(t *testing.T) {
 	if got := whisperxRetryDelay(1, 60, 600); got != 60*time.Second {
 		t.Fatalf("expected first retry delay to be 60s, got %s", got)
@@ -179,6 +186,7 @@ func TestWhisperXRetryDelayBackoff(t *testing.T) {
 	}
 }
 
+// TestApplyWhisperXProgressUpdate handles the corresponding operation.
 func TestApplyWhisperXProgressUpdate(t *testing.T) {
 	item := db.PodcastItem{}
 	progress := whisperxProgressUpdate{
@@ -218,6 +226,7 @@ func TestApplyWhisperXProgressUpdate(t *testing.T) {
 	}
 }
 
+// TestReadWhisperXProgressUpdate handles the corresponding operation.
 func TestReadWhisperXProgressUpdate(t *testing.T) {
 	progressPath := filepath.Join(t.TempDir(), "progress.json")
 	if _, _, ok, err := readWhisperXProgressUpdate(progressPath); err != nil || ok {
@@ -243,6 +252,7 @@ func TestReadWhisperXProgressUpdate(t *testing.T) {
 	}
 }
 
+// TestResolveWhisperXSegmentsFilePath handles the corresponding operation.
 func TestResolveWhisperXSegmentsFilePath(t *testing.T) {
 	audioPath := filepath.Join(t.TempDir(), "episode.mp3")
 	expectedDefault := audioPath + ".briefcast.whisperx.resume.json"
@@ -257,6 +267,7 @@ func TestResolveWhisperXSegmentsFilePath(t *testing.T) {
 	}
 }
 
+// TestScheduleTranscriptRetry handles the corresponding operation.
 func TestScheduleTranscriptRetry(t *testing.T) {
 	cfg := WhisperXConfig{
 		RetryFailed:        true,
@@ -293,6 +304,7 @@ func TestScheduleTranscriptRetry(t *testing.T) {
 	}
 }
 
+// TestScheduleTranscriptRetryDisabled handles the corresponding operation.
 func TestScheduleTranscriptRetryDisabled(t *testing.T) {
 	cfg := WhisperXConfig{
 		RetryFailed:        false,
@@ -314,6 +326,7 @@ func TestScheduleTranscriptRetryDisabled(t *testing.T) {
 	}
 }
 
+// TestStartJobLockHeartbeatRefreshesLease handles the corresponding operation.
 func TestStartJobLockHeartbeatRefreshesLease(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -356,6 +369,7 @@ func TestStartJobLockHeartbeatRefreshesLease(t *testing.T) {
 	}
 }
 
+// TestRunWhisperXWithStubScript handles the corresponding operation.
 func TestRunWhisperXWithStubScript(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -428,6 +442,7 @@ func TestRunWhisperXWithStubScript(t *testing.T) {
 	}
 }
 
+// TestRunWhisperXWithProgressAndResume handles the corresponding operation.
 func TestRunWhisperXWithProgressAndResume(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -513,6 +528,7 @@ print(json.dumps({"segments":[{"start":0,"end":1,"text":"ok"}],"resumed": bool(r
 	}
 }
 
+// TestCollectWhisperXQueueSnapshot handles the corresponding operation.
 func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	setupRetentionTestDB(t)
 	now := time.Now().UTC()

@@ -1,5 +1,6 @@
 package model
 
+// GPodcast represents a public type.
 type GPodcast struct {
 	URL                 string `json:"url"`
 	Title               string `json:"title"`
@@ -14,6 +15,7 @@ type GPodcast struct {
 	AlreadySaved        bool   `json:"already_saved"`
 }
 
+// GPodcastTag represents a public type.
 type GPodcastTag struct {
 	Tag   string `json:"tag"`
 	Title string `json:"title"`

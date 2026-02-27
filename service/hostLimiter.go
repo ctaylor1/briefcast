@@ -83,6 +83,7 @@ func resetOutboundRequestLimiterForTests() {
 	outboundRequestLimiterOnce = sync.Once{}
 }
 
+// Do handles the corresponding operation.
 func (limiter *hostRequestLimiter) Do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 	release, err := limiter.acquire(ctx, req.URL)
 	if err != nil {

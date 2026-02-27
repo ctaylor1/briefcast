@@ -21,6 +21,7 @@ func resetBaseLogger() {
 	logRunTimestampOnce = sync.Once{}
 }
 
+// TestParseLogLevel handles the corresponding operation.
 func TestParseLogLevel(t *testing.T) {
 	if level, ok := parseLogLevel("debug"); !ok || level != zapcore.DebugLevel {
 		t.Fatalf("expected debug level with ok=true, got %v, %v", level, ok)
@@ -30,6 +31,7 @@ func TestParseLogLevel(t *testing.T) {
 	}
 }
 
+// TestParseLogFormat handles the corresponding operation.
 func TestParseLogFormat(t *testing.T) {
 	if format := parseLogFormat("text"); format != "text" {
 		t.Fatalf("expected text format, got %q", format)
@@ -45,6 +47,7 @@ func TestParseLogFormat(t *testing.T) {
 	}
 }
 
+// TestEnvParsers handles the corresponding operation.
 func TestEnvParsers(t *testing.T) {
 	t.Setenv("LOG_TEST_INT", "42")
 	if value := getEnvInt("LOG_TEST_INT", 7); value != 42 {
@@ -65,6 +68,7 @@ func TestEnvParsers(t *testing.T) {
 	}
 }
 
+// TestResolveLogOutputsDefaultAndFile handles the corresponding operation.
 func TestResolveLogOutputsDefaultAndFile(t *testing.T) {
 	t.Setenv("LOG_OUTPUT", "")
 	defaultOutputs := resolveLogOutputs()
@@ -84,6 +88,7 @@ func TestResolveLogOutputsDefaultAndFile(t *testing.T) {
 	}
 }
 
+// TestResolveLogFilePathExpandsTimestampTokens handles the corresponding operation.
 func TestResolveLogFilePathExpandsTimestampTokens(t *testing.T) {
 	resetBaseLogger()
 	t.Setenv(LogRunTimestamp, "20260221-014500")
@@ -97,6 +102,7 @@ func TestResolveLogFilePathExpandsTimestampTokens(t *testing.T) {
 	}
 }
 
+// TestLoggerWithRequestIDAndJobLogger handles the corresponding operation.
 func TestLoggerWithRequestIDAndJobLogger(t *testing.T) {
 	resetBaseLogger()
 	t.Setenv("LOG_OUTPUT", "stdout")
@@ -114,6 +120,7 @@ func TestLoggerWithRequestIDAndJobLogger(t *testing.T) {
 	}
 }
 
+// TestRequestHelpers handles the corresponding operation.
 func TestRequestHelpers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -141,6 +148,7 @@ func TestRequestHelpers(t *testing.T) {
 	}
 }
 
+// TestRequestLoggerMiddlewareSetsRequestIDHeader handles the corresponding operation.
 func TestRequestLoggerMiddlewareSetsRequestIDHeader(t *testing.T) {
 	resetBaseLogger()
 	t.Setenv("LOG_OUTPUT", "stdout")
@@ -165,6 +173,7 @@ func TestRequestLoggerMiddlewareSetsRequestIDHeader(t *testing.T) {
 	}
 }
 
+// TestSugarAndJobSugarAndSync handles the corresponding operation.
 func TestSugarAndJobSugarAndSync(t *testing.T) {
 	resetBaseLogger()
 	t.Setenv("LOG_OUTPUT", "stdout")
@@ -183,6 +192,7 @@ func TestSugarAndJobSugarAndSync(t *testing.T) {
 	Sync()
 }
 
+// TestBuildEncoderAndLoggerWithEmptyRequestID handles the corresponding operation.
 func TestBuildEncoderAndLoggerWithEmptyRequestID(t *testing.T) {
 	if buildEncoder("text") == nil {
 		t.Fatalf("expected non-nil text encoder")
@@ -196,6 +206,7 @@ func TestBuildEncoderAndLoggerWithEmptyRequestID(t *testing.T) {
 	}
 }
 
+// TestRequestHelpersFallbackBranches handles the corresponding operation.
 func TestRequestHelpersFallbackBranches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -216,6 +227,7 @@ func TestRequestHelpersFallbackBranches(t *testing.T) {
 	}
 }
 
+// TestRequestLoggerMiddlewareErrorBranch handles the corresponding operation.
 func TestRequestLoggerMiddlewareErrorBranch(t *testing.T) {
 	resetBaseLogger()
 	t.Setenv("LOG_OUTPUT", "stdout")

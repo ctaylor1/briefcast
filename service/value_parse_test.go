@@ -9,10 +9,12 @@ type testStringer struct {
 	value string
 }
 
+// String handles the corresponding operation.
 func (t testStringer) String() string {
 	return t.value
 }
 
+// TestParseFloat handles the corresponding operation.
 func TestParseFloat(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -36,6 +38,7 @@ func TestParseFloat(t *testing.T) {
 	}
 }
 
+// TestStringValue handles the corresponding operation.
 func TestStringValue(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -61,6 +64,7 @@ func TestStringValue(t *testing.T) {
 	}
 }
 
+// TestStringValueWithNestedStringerInMap handles the corresponding operation.
 func TestStringValueWithNestedStringerInMap(t *testing.T) {
 	input := map[string]interface{}{
 		"value": fmt.Stringer(testStringer{value: "nested"}),

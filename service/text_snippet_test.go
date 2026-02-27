@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestContainsTerm handles the corresponding operation.
 func TestContainsTerm(t *testing.T) {
 	if !containsTerm("Hello World", "world") {
 		t.Fatalf("expected case-insensitive match")
@@ -17,6 +18,7 @@ func TestContainsTerm(t *testing.T) {
 	}
 }
 
+// TestPickSnippet handles the corresponding operation.
 func TestPickSnippet(t *testing.T) {
 	if got := pickSnippet("", "Fallback body", "body"); got == "" {
 		t.Fatalf("expected fallback snippet")
@@ -29,6 +31,7 @@ func TestPickSnippet(t *testing.T) {
 	}
 }
 
+// TestMakeSnippet handles the corresponding operation.
 func TestMakeSnippet(t *testing.T) {
 	text := "0123456789abcdefghijklmnopqrstuvwxyz"
 

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RetentionSettingsResponse represents a public type.
 type RetentionSettingsResponse struct {
 	KeepAllEpisodes    bool `json:"keepAllEpisodes"`
 	KeepLatestEpisodes int  `json:"keepLatestEpisodes"`
@@ -14,6 +15,7 @@ type RetentionSettingsResponse struct {
 	DeleteOnlyPlayed   bool `json:"deleteOnlyPlayed"`
 }
 
+// RetentionSettingsPatch represents a public type.
 type RetentionSettingsPatch struct {
 	KeepAllEpisodes    *bool `json:"keepAllEpisodes"`
 	KeepLatestEpisodes *int  `json:"keepLatestEpisodes"`
@@ -21,11 +23,13 @@ type RetentionSettingsPatch struct {
 	DeleteOnlyPlayed   *bool `json:"deleteOnlyPlayed"`
 }
 
+// GetSettings handles the corresponding operation.
 func GetSettings(c *gin.Context) {
 	setting := db.GetOrCreateSetting()
 	c.JSON(http.StatusOK, retentionSettingsFromSetting(setting))
 }
 
+// PatchSettings handles the corresponding operation.
 func PatchSettings(c *gin.Context) {
 	var patch RetentionSettingsPatch
 	if err := c.ShouldBindJSON(&patch); err != nil {

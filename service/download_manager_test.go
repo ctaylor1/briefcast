@@ -14,6 +14,7 @@ func resetDownloadManagerState() {
 	downloadsPaused.Store(false)
 }
 
+// TestDownloadsPauseState handles the corresponding operation.
 func TestDownloadsPauseState(t *testing.T) {
 	resetDownloadManagerState()
 
@@ -32,6 +33,7 @@ func TestDownloadsPauseState(t *testing.T) {
 	}
 }
 
+// TestDownloadCancellationAndPausePerID handles the corresponding operation.
 func TestDownloadCancellationAndPausePerID(t *testing.T) {
 	resetDownloadManagerState()
 

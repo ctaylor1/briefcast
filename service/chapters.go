@@ -7,17 +7,20 @@ import (
 	"github.com/ctaylor1/briefcast/internal/id3meta"
 )
 
+// Chapter represents a public type.
 type Chapter struct {
 	Title        string  `json:"title"`
 	StartSeconds float64 `json:"startSeconds"`
 	EndSeconds   float64 `json:"endSeconds,omitempty"`
 }
 
+// ChapterResponse represents a public type.
 type ChapterResponse struct {
 	Source   string    `json:"source"`
 	Chapters []Chapter `json:"chapters"`
 }
 
+// BuildChapterResponse handles the corresponding operation.
 func BuildChapterResponse(item db.PodcastItem) ChapterResponse {
 	raw := strings.TrimSpace(item.ChaptersJSON)
 	source := strings.TrimSpace(item.ChaptersType)
@@ -37,6 +40,7 @@ func BuildChapterResponse(item db.PodcastItem) ChapterResponse {
 	return ChapterResponse{Source: source, Chapters: chapters}
 }
 
+// RefreshChaptersFromID3 handles the corresponding operation.
 func RefreshChaptersFromID3(item *db.PodcastItem) bool {
 	if item == nil {
 		return false

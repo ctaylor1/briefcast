@@ -12,18 +12,22 @@ type fakeConnPool struct {
 	maxLifetime time.Duration
 }
 
+// SetMaxIdleConns handles the corresponding operation.
 func (f *fakeConnPool) SetMaxIdleConns(n int) {
 	f.maxIdle = n
 }
 
+// SetMaxOpenConns handles the corresponding operation.
 func (f *fakeConnPool) SetMaxOpenConns(n int) {
 	f.maxOpen = n
 }
 
+// SetConnMaxLifetime handles the corresponding operation.
 func (f *fakeConnPool) SetConnMaxLifetime(d time.Duration) {
 	f.maxLifetime = d
 }
 
+// TestResolveDatabaseConfigDefaultsToSQLite handles the corresponding operation.
 func TestResolveDatabaseConfigDefaultsToSQLite(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("DATABASE_URL", "")
@@ -44,6 +48,7 @@ func TestResolveDatabaseConfigDefaultsToSQLite(t *testing.T) {
 	}
 }
 
+// TestResolveDatabaseConfigRejectsMissingURLForPostgres handles the corresponding operation.
 func TestResolveDatabaseConfigRejectsMissingURLForPostgres(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("DB_DRIVER", "postgres")
@@ -54,6 +59,7 @@ func TestResolveDatabaseConfigRejectsMissingURLForPostgres(t *testing.T) {
 	}
 }
 
+// TestResolveDatabaseConfigPostgres handles the corresponding operation.
 func TestResolveDatabaseConfigPostgres(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:secret@localhost:5432/briefcast?sslmode=disable")
 	t.Setenv("DB_DRIVER", "")
@@ -74,6 +80,7 @@ func TestResolveDatabaseConfigPostgres(t *testing.T) {
 	}
 }
 
+// TestNormalizeDriverAndInferDriver handles the corresponding operation.
 func TestNormalizeDriverAndInferDriver(t *testing.T) {
 	if driver, err := normalizeDriver("sqlite3"); err != nil || driver != DriverSQLite {
 		t.Fatalf("expected sqlite driver, got %q, %v", driver, err)
@@ -96,6 +103,7 @@ func TestNormalizeDriverAndInferDriver(t *testing.T) {
 	}
 }
 
+// TestNormalizeSQLiteDSN handles the corresponding operation.
 func TestNormalizeSQLiteDSN(t *testing.T) {
 	if dsn, err := normalizeSQLiteDSN("sqlite:///tmp/briefcast.db"); err != nil || dsn != "/tmp/briefcast.db" {
 		t.Fatalf("expected /tmp/briefcast.db, got %q, %v", dsn, err)
@@ -108,6 +116,7 @@ func TestNormalizeSQLiteDSN(t *testing.T) {
 	}
 }
 
+// TestSanitizeDataSource handles the corresponding operation.
 func TestSanitizeDataSource(t *testing.T) {
 	source := "postgres://user:secret@localhost:5432/briefcast"
 	got := sanitizeDataSource(source)
@@ -121,6 +130,7 @@ func TestSanitizeDataSource(t *testing.T) {
 	}
 }
 
+// TestApplyConnectionPool handles the corresponding operation.
 func TestApplyConnectionPool(t *testing.T) {
 	t.Setenv("DB_MAX_IDLE_CONNS", "11")
 	t.Setenv("DB_MAX_OPEN_CONNS", "22")
@@ -140,6 +150,7 @@ func TestApplyConnectionPool(t *testing.T) {
 	}
 }
 
+// TestHelpers handles the corresponding operation.
 func TestHelpers(t *testing.T) {
 	t.Setenv("DB_TEST_INT", "9")
 	if got := getEnvInt("DB_TEST_INT", 2); got != 9 {

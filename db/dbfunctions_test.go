@@ -75,6 +75,7 @@ func newPodcastItem(t *testing.T, podcastID, guid, title string, status Download
 	return item
 }
 
+// TestPodcastAndItemQueries handles the corresponding operation.
 func TestPodcastAndItemQueries(t *testing.T) {
 	setupDBForTest(t)
 	now := time.Now().UTC()
@@ -140,16 +141,16 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	}
 
 	var byID PodcastItem
-	if err := GetPodcastItemById(itemA1.ID, &byID); err != nil {
-		t.Fatalf("GetPodcastItemById failed: %v", err)
+	if err := GetPodcastItemByID(itemA1.ID, &byID); err != nil {
+		t.Fatalf("GetPodcastItemByID failed: %v", err)
 	}
 	if byID.ID != itemA1.ID {
 		t.Fatalf("expected itemA1, got %q", byID.ID)
 	}
 
 	var byPodcastID []PodcastItem
-	if err := GetAllPodcastItemsByPodcastId(podcastA.ID, &byPodcastID); err != nil {
-		t.Fatalf("GetAllPodcastItemsByPodcastId failed: %v", err)
+	if err := GetAllPodcastItemsByPodcastID(podcastA.ID, &byPodcastID); err != nil {
+		t.Fatalf("GetAllPodcastItemsByPodcastID failed: %v", err)
 	}
 	if len(byPodcastID) != 3 {
 		t.Fatalf("expected 3 items for podcast A, got %d", len(byPodcastID))
@@ -171,17 +172,17 @@ func TestPodcastAndItemQueries(t *testing.T) {
 		t.Fatalf("expected custom ordering from GetAllPodcastItemsByIds, got %+v", *ordered)
 	}
 
-	byGUIDs, err := GetPodcastItemsByPodcastIdAndGUIDs(podcastA.ID, []string{"a-1", "a-2"})
+	byGUIDs, err := GetPodcastItemsByPodcastIDAndGUIDs(podcastA.ID, []string{"a-1", "a-2"})
 	if err != nil {
-		t.Fatalf("GetPodcastItemsByPodcastIdAndGUIDs failed: %v", err)
+		t.Fatalf("GetPodcastItemsByPodcastIDAndGUIDs failed: %v", err)
 	}
 	if len(*byGUIDs) != 2 {
 		t.Fatalf("expected 2 guid matches, got %d", len(*byGUIDs))
 	}
 
 	var byGUID PodcastItem
-	if err := GetPodcastItemByPodcastIdAndGUID(podcastA.ID, "a-1", &byGUID); err != nil {
-		t.Fatalf("GetPodcastItemByPodcastIdAndGUID failed: %v", err)
+	if err := GetPodcastItemByPodcastIDAndGUID(podcastA.ID, "a-1", &byGUID); err != nil {
+		t.Fatalf("GetPodcastItemByPodcastIDAndGUID failed: %v", err)
 	}
 	if byGUID.ID != itemA1.ID {
 		t.Fatalf("expected guid a-1 to map to itemA1")
@@ -194,7 +195,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 		t.Fatalf("UpdatePodcastItemDownloadProgress failed: %v", err)
 	}
 	var refreshedA2 PodcastItem
-	if err := GetPodcastItemById(itemA2.ID, &refreshedA2); err != nil {
+	if err := GetPodcastItemByID(itemA2.ID, &refreshedA2); err != nil {
 		t.Fatalf("reload itemA2 failed: %v", err)
 	}
 	if refreshedA2.FileSize != 222 || refreshedA2.DownloadedBytes != 12 || refreshedA2.DownloadTotalBytes != 34 {
@@ -268,8 +269,8 @@ func TestPodcastAndItemQueries(t *testing.T) {
 
 	ForceSetLastEpisodeDate(podcastA.ID)
 	var refreshedPodcastA Podcast
-	if err := GetPodcastById(podcastA.ID, &refreshedPodcastA); err != nil {
-		t.Fatalf("GetPodcastById failed: %v", err)
+	if err := GetPodcastByID(podcastA.ID, &refreshedPodcastA); err != nil {
+		t.Fatalf("GetPodcastByID failed: %v", err)
 	}
 	if refreshedPodcastA.LastEpisode == nil {
 		t.Fatalf("expected last episode date to be set")
@@ -278,7 +279,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	if err := TogglePodcastPauseStatus(podcastA.ID, true); err != nil {
 		t.Fatalf("TogglePodcastPauseStatus failed: %v", err)
 	}
-	if err := GetPodcastById(podcastA.ID, &refreshedPodcastA); err != nil {
+	if err := GetPodcastByID(podcastA.ID, &refreshedPodcastA); err != nil {
 		t.Fatalf("reload podcast A failed: %v", err)
 	}
 	if !refreshedPodcastA.IsPaused {
@@ -289,7 +290,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 		t.Fatalf("SetAllEpisodesToDownload failed: %v", err)
 	}
 	var refreshedA3 PodcastItem
-	if err := GetPodcastItemById(itemA3.ID, &refreshedA3); err != nil {
+	if err := GetPodcastItemByID(itemA3.ID, &refreshedA3); err != nil {
 		t.Fatalf("reload itemA3 failed: %v", err)
 	}
 	if refreshedA3.DownloadStatus != NotDownloaded {
@@ -302,7 +303,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 			Page:  1,
 			Count: 10,
 		},
-		Sorting:      model.RELEASE_DESC,
+		Sorting:      model.ReleaseDesc,
 		IsDownloaded: &downloadedOnly,
 	}
 	filter.VerifyPaginationValues()
@@ -324,6 +325,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	}
 }
 
+// TestSettingsLocksTagsAndSearchHelpers handles the corresponding operation.
 func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	setupDBForTest(t)
 
@@ -383,9 +385,9 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	if err := AddTagToPodcast(podcast.ID, tag.ID); err != nil {
 		t.Fatalf("AddTagToPodcast failed: %v", err)
 	}
-	tagByID, err := GetTagById(tag.ID)
+	tagByID, err := GetTagByID(tag.ID)
 	if err != nil {
-		t.Fatalf("GetTagById failed: %v", err)
+		t.Fatalf("GetTagByID failed: %v", err)
 	}
 	if len(tagByID.Podcasts) != 1 {
 		t.Fatalf("expected one linked podcast, got %d", len(tagByID.Podcasts))
@@ -411,8 +413,8 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	if err := RemoveTagFromPodcast(podcast.ID, tag.ID); err != nil {
 		t.Fatalf("RemoveTagFromPodcast failed: %v", err)
 	}
-	if err := UntagAllByTagId(tag.ID); err != nil {
-		t.Fatalf("UntagAllByTagId failed: %v", err)
+	if err := UntagAllByTagID(tag.ID); err != nil {
+		t.Fatalf("UntagAllByTagID failed: %v", err)
 	}
 
 	var podcasts []Podcast
@@ -501,17 +503,18 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 		t.Fatalf("expected failed-ready item last in whisperx queue, got %s", (*itemsForWhisperx)[2].ID)
 	}
 
-	if err := DeletePodcastItemById(item.ID); err != nil {
-		t.Fatalf("DeletePodcastItemById failed: %v", err)
+	if err := DeletePodcastItemByID(item.ID); err != nil {
+		t.Fatalf("DeletePodcastItemByID failed: %v", err)
 	}
-	if err := DeleteTagById(tag.ID); err != nil {
-		t.Fatalf("DeleteTagById failed: %v", err)
+	if err := DeleteTagByID(tag.ID); err != nil {
+		t.Fatalf("DeleteTagByID failed: %v", err)
 	}
-	if err := DeletePodcastById(podcast.ID); err != nil {
-		t.Fatalf("DeletePodcastById failed: %v", err)
+	if err := DeletePodcastByID(podcast.ID); err != nil {
+		t.Fatalf("DeletePodcastByID failed: %v", err)
 	}
 }
 
+// TestJobLockUpsertAndUnlockByID handles the corresponding operation.
 func TestJobLockUpsertAndUnlockByID(t *testing.T) {
 	setupDBForTest(t)
 
@@ -552,6 +555,7 @@ func TestJobLockUpsertAndUnlockByID(t *testing.T) {
 	}
 }
 
+// TestTryLockReturnsBusyWhenLeaseIsActive handles the corresponding operation.
 func TestTryLockReturnsBusyWhenLeaseIsActive(t *testing.T) {
 	setupDBForTest(t)
 
@@ -578,6 +582,7 @@ func TestTryLockReturnsBusyWhenLeaseIsActive(t *testing.T) {
 	}
 }
 
+// TestTryLockReacquiresExpiredLease handles the corresponding operation.
 func TestTryLockReacquiresExpiredLease(t *testing.T) {
 	setupDBForTest(t)
 
@@ -611,6 +616,7 @@ func TestTryLockReacquiresExpiredLease(t *testing.T) {
 	}
 }
 
+// TestTryLockIsAtomicUnderConcurrentContenders handles the corresponding operation.
 func TestTryLockIsAtomicUnderConcurrentContenders(t *testing.T) {
 	setupDBForTest(t)
 
@@ -648,6 +654,7 @@ func TestTryLockIsAtomicUnderConcurrentContenders(t *testing.T) {
 	}
 }
 
+// TestJobLockIsLockedHandlesUTCZeroTimestamp handles the corresponding operation.
 func TestJobLockIsLockedHandlesUTCZeroTimestamp(t *testing.T) {
 	lock := &JobLock{
 		Date:     time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
@@ -658,6 +665,7 @@ func TestJobLockIsLockedHandlesUTCZeroTimestamp(t *testing.T) {
 	}
 }
 
+// TestJobLockIsLockedUsesLeaseExpiry handles the corresponding operation.
 func TestJobLockIsLockedUsesLeaseExpiry(t *testing.T) {
 	lock := &JobLock{
 		Date:     time.Now().UTC().Add(-3 * time.Minute),
@@ -673,6 +681,7 @@ func TestJobLockIsLockedUsesLeaseExpiry(t *testing.T) {
 	}
 }
 
+// TestGetLockTreatsUnlockedUTCZeroTimestampAsUnlocked handles the corresponding operation.
 func TestGetLockTreatsUnlockedUTCZeroTimestampAsUnlocked(t *testing.T) {
 	setupDBForTest(t)
 
@@ -695,6 +704,7 @@ func TestGetLockTreatsUnlockedUTCZeroTimestampAsUnlocked(t *testing.T) {
 	}
 }
 
+// TestDatabaseWrapperCoveragePaths handles the corresponding operation.
 func TestDatabaseWrapperCoveragePaths(t *testing.T) {
 	setupDBForTest(t)
 
@@ -732,8 +742,8 @@ func TestDatabaseWrapperCoveragePaths(t *testing.T) {
 		t.Fatalf("UpdateLastEpisodeDateForPodcast failed: %v", err)
 	}
 	var refreshedPodcast Podcast
-	if err := GetPodcastById(podcast.ID, &refreshedPodcast); err != nil {
-		t.Fatalf("GetPodcastById failed: %v", err)
+	if err := GetPodcastByID(podcast.ID, &refreshedPodcast); err != nil {
+		t.Fatalf("GetPodcastByID failed: %v", err)
 	}
 	if refreshedPodcast.LastEpisode == nil || !refreshedPodcast.LastEpisode.UTC().Equal(updatedLastEpisode) {
 		t.Fatalf("expected last episode to be updated to %s, got %v", updatedLastEpisode, refreshedPodcast.LastEpisode)

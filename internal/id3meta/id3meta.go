@@ -2,15 +2,18 @@ package id3meta
 
 import "encoding/json"
 
+// Parsed represents a public type.
 type Parsed struct {
 	Tags     map[string][]string      `json:"tags"`
 	Chapters []map[string]interface{} `json:"chapters"`
 }
 
+// ShouldExtract handles the corresponding operation.
 func ShouldExtract(chaptersJSON, id3TagsJSON, id3ChaptersJSON string) bool {
 	return chaptersJSON == "" && id3TagsJSON == "" && id3ChaptersJSON == ""
 }
 
+// SplitRaw handles the corresponding operation.
 func SplitRaw(raw []byte) (tagsJSON string, chaptersJSON string, hasTags bool, hasChapters bool, err error) {
 	var parsed Parsed
 	if len(raw) == 0 {

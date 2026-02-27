@@ -22,36 +22,44 @@ import (
 	"gorm.io/gorm"
 )
 
+// Logger is a public variable.
 var Logger = logging.Sugar()
 
+// ParseOpml handles the corresponding operation.
 func ParseOpml(content string) (model.OpmlModel, error) {
 	var response model.OpmlModel
 	err := xml.Unmarshal([]byte(content), &response)
 	return response, err
 }
 
-func GetPodcastById(id string) *db.Podcast {
+// GetPodcastByID handles the corresponding operation.
+func GetPodcastByID(id string) *db.Podcast {
 	var podcast db.Podcast
 
-	if err := db.GetPodcastById(id, &podcast); err != nil {
+	if err := db.GetPodcastByID(id, &podcast); err != nil {
 		Logger.Warnw("failed to load podcast by id", "podcast_id", id, "error", err)
 	}
 
 	return &podcast
 }
-func GetPodcastItemById(id string) *db.PodcastItem {
+
+// GetPodcastItemByID handles the corresponding operation.
+func GetPodcastItemByID(id string) *db.PodcastItem {
 	var podcastItem db.PodcastItem
 
-	if err := db.GetPodcastItemById(id, &podcastItem); err != nil {
+	if err := db.GetPodcastItemByID(id, &podcastItem); err != nil {
 		Logger.Warnw("failed to load podcast item by id", "podcast_item_id", id, "error", err)
 	}
 
 	return &podcastItem
 }
 
+// GetAllPodcastItemsByIds handles the corresponding operation.
 func GetAllPodcastItemsByIds(podcastItemIds []string) (*[]db.PodcastItem, error) {
 	return db.GetAllPodcastItemsByIds(podcastItemIds)
 }
+
+// GetAllPodcastItemsByPodcastIds handles the corresponding operation.
 func GetAllPodcastItemsByPodcastIds(podcastIds []string) *[]db.PodcastItem {
 	var podcastItems []db.PodcastItem
 
@@ -62,12 +70,15 @@ func GetAllPodcastItemsByPodcastIds(podcastIds []string) *[]db.PodcastItem {
 	return &podcastItems
 }
 
+// GetTagsByIds handles the corresponding operation.
 func GetTagsByIds(ids []string) *[]db.Tag {
 
 	tags, _ := db.GetTagsByIds(ids)
 
 	return tags
 }
+
+// GetAllPodcasts handles the corresponding operation.
 func GetAllPodcasts(sorting string) *[]db.Podcast {
 	var podcasts []db.Podcast
 	if err := db.GetAllPodcasts(&podcasts, sorting); err != nil {
@@ -107,6 +118,7 @@ func GetAllPodcasts(sorting string) *[]db.Podcast {
 	return &toReturn
 }
 
+// AddOpml handles the corresponding operation.
 func AddOpml(content string) error {
 	opmlModel, err := ParseOpml(content)
 	if err != nil {
@@ -115,13 +127,13 @@ func AddOpml(content string) error {
 	}
 	var podcastURLs []string
 	for _, outline := range opmlModel.Body.Outline {
-		if outline.XmlUrl != "" {
-			podcastURLs = append(podcastURLs, outline.XmlUrl)
+		if outline.XMLURL != "" {
+			podcastURLs = append(podcastURLs, outline.XMLURL)
 		}
 
 		for _, innerOutline := range outline.Outline {
-			if innerOutline.XmlUrl != "" {
-				podcastURLs = append(podcastURLs, innerOutline.XmlUrl)
+			if innerOutline.XMLURL != "" {
+				podcastURLs = append(podcastURLs, innerOutline.XMLURL)
 			}
 		}
 	}
@@ -148,22 +160,23 @@ func AddOpml(content string) error {
 
 }
 
-func ExportOmpl(useBriefcastLink bool, baseUrl string) ([]byte, error) {
+// ExportOPML handles the corresponding operation.
+func ExportOPML(useBriefcastLink bool, baseURL string) ([]byte, error) {
 
 	podcasts := GetAllPodcasts("")
 
 	var outlines []model.OpmlOutline
 	for _, podcast := range *podcasts {
 
-		xmlUrl := podcast.URL
+		xmlURL := podcast.URL
 		if useBriefcastLink {
-			xmlUrl = fmt.Sprintf("%s/podcasts/%s/rss", baseUrl, podcast.ID)
+			xmlURL = fmt.Sprintf("%s/podcasts/%s/rss", baseURL, podcast.ID)
 		}
 
 		toAdd := model.OpmlOutline{
 			AttrText: podcast.Summary,
 			Type:     "rss",
-			XmlUrl:   xmlUrl,
+			XMLURL:   xmlURL,
 			Title:    podcast.Title,
 		}
 		outlines = append(outlines, toAdd)
@@ -180,15 +193,15 @@ func ExportOmpl(useBriefcastLink bool, baseUrl string) ([]byte, error) {
 		Version: "2.0",
 	}
 
-	if data, err := xml.MarshalIndent(toExport, "", "    "); err == nil {
-		data = []byte(xml.Header + string(data))
-		return data, err
-	} else {
+	data, err := xml.MarshalIndent(toExport, "", "    ")
+	if err != nil {
 		return nil, err
 	}
+	data = []byte(xml.Header + string(data))
+	return data, nil
 }
 
-func getItunesImageUrl(body []byte) string {
+func getItunesImageURL(body []byte) string {
 	doc, err := xmlquery.Parse(strings.NewReader(string(body)))
 	if err != nil {
 		return ""
@@ -212,6 +225,7 @@ func getItunesImageUrl(body []byte) string {
 
 }
 
+// AddPodcast handles the corresponding operation.
 func AddPodcast(url string) (db.Podcast, error) {
 	var podcast db.Podcast
 	err := db.GetPodcastByURL(url, &podcast)
@@ -238,7 +252,7 @@ func AddPodcast(url string) (db.Podcast, error) {
 		}
 
 		if podcast.Image == "" {
-			podcast.Image = getItunesImageUrl(body)
+			podcast.Image = getItunesImageURL(body)
 		}
 
 		err = db.CreatePodcast(&podcast)
@@ -259,10 +273,11 @@ func AddPodcast(url string) (db.Podcast, error) {
 		return podcast, err
 	}
 
-	return podcast, &model.PodcastAlreadyExistsError{Url: url}
+	return podcast, &model.PodcastAlreadyExistsError{URL: url}
 
 }
 
+// AddPodcastItems handles the corresponding operation.
 func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	parsed, _, err := FetchFeedWithFeedparser(podcast.URL)
 	if err != nil {
@@ -280,7 +295,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 		}
 	}
 
-	existingItems, getErr := db.GetPodcastItemsByPodcastIdAndGUIDs(podcast.ID, allGuids)
+	existingItems, getErr := db.GetPodcastItemsByPodcastIDAndGUIDs(podcast.ID, allGuids)
 	if getErr != nil {
 		return getErr
 	}
@@ -414,6 +429,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	return firstItemErr
 }
 
+// UpdateAllFileSizes handles the corresponding operation.
 func UpdateAllFileSizes() {
 	items, err := db.GetAllPodcastItemsWithoutSize()
 	if err != nil {
@@ -426,7 +442,7 @@ func UpdateAllFileSizes() {
 				size = resolvedSize
 			}
 		} else {
-			if resolvedSize, sizeErr := GetFileSizeFromUrl(item.FileURL); sizeErr == nil {
+			if resolvedSize, sizeErr := GetFileSizeFromURL(item.FileURL); sizeErr == nil {
 				size = resolvedSize
 			}
 		}
@@ -436,9 +452,10 @@ func UpdateAllFileSizes() {
 	}
 }
 
+// SetPodcastItemAsQueuedForDownload handles the corresponding operation.
 func SetPodcastItemAsQueuedForDownload(id string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -449,9 +466,10 @@ func SetPodcastItemAsQueuedForDownload(id string) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemAsQueuedPreserveProgress handles the corresponding operation.
 func SetPodcastItemAsQueuedPreserveProgress(id string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -459,9 +477,10 @@ func SetPodcastItemAsQueuedPreserveProgress(id string) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemAsDownloading handles the corresponding operation.
 func SetPodcastItemAsDownloading(id string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -469,9 +488,10 @@ func SetPodcastItemAsDownloading(id string) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemAsPaused handles the corresponding operation.
 func SetPodcastItemAsPaused(id string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -479,6 +499,7 @@ func SetPodcastItemAsPaused(id string) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// DownloadMissingImages handles the corresponding operation.
 func DownloadMissingImages() error {
 	setting := db.GetOrCreateSetting()
 	if !setting.DownloadEpisodeImages {
@@ -497,9 +518,9 @@ func DownloadMissingImages() error {
 	return nil
 }
 
-func downloadImageLocally(podcastItemId string) error {
+func downloadImageLocally(podcastItemID string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(podcastItemId, &podcastItem)
+	err := db.GetPodcastItemByID(podcastItemID, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -514,9 +535,10 @@ func downloadImageLocally(podcastItemId string) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemBookmarkStatus handles the corresponding operation.
 func SetPodcastItemBookmarkStatus(id string, bookmark bool) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -528,10 +550,11 @@ func SetPodcastItemBookmarkStatus(id string, bookmark bool) error {
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemAsDownloaded handles the corresponding operation.
 func SetPodcastItemAsDownloaded(id string, location string) error {
 	var podcastItem db.PodcastItem
 
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		Logger.Errorw("failed to load podcast item for download state update", "podcast_item_id", id, "error", err)
 		return err
@@ -588,9 +611,11 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 
 	return db.UpdatePodcastItem(&podcastItem)
 }
+
+// SetPodcastItemAsNotDownloaded handles the corresponding operation.
 func SetPodcastItemAsNotDownloaded(id string, downloadStatus db.DownloadStatus) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
@@ -603,27 +628,31 @@ func SetPodcastItemAsNotDownloaded(id string, downloadStatus db.DownloadStatus) 
 	return db.UpdatePodcastItem(&podcastItem)
 }
 
+// SetPodcastItemPlayedStatus handles the corresponding operation.
 func SetPodcastItemPlayedStatus(id string, isPlayed bool) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(id, &podcastItem)
+	err := db.GetPodcastItemByID(id, &podcastItem)
 	if err != nil {
 		return err
 	}
 	podcastItem.IsPlayed = isPlayed
 	return db.UpdatePodcastItem(&podcastItem)
 }
-func SetAllEpisodesToDownload(podcastId string) error {
+
+// SetAllEpisodesToDownload handles the corresponding operation.
+func SetAllEpisodesToDownload(podcastID string) error {
 	var podcast db.Podcast
-	err := db.GetPodcastById(podcastId, &podcast)
+	err := db.GetPodcastByID(podcastID, &podcast)
 	if err != nil {
 		return err
 	}
 	if err := AddPodcastItems(&podcast, false); err != nil {
 		return err
 	}
-	return db.SetAllEpisodesToDownload(podcastId)
+	return db.SetAllEpisodesToDownload(podcastID)
 }
 
+// GetPodcastPrefix handles the corresponding operation.
 func GetPodcastPrefix(item *db.PodcastItem, setting *db.Setting) string {
 	prefix := ""
 	if setting.AppendEpisodeNumberToFileName {
@@ -642,9 +671,11 @@ func GetPodcastPrefix(item *db.PodcastItem, setting *db.Setting) string {
 	}
 	return prefix
 }
+
+// DownloadMissingEpisodes handles the corresponding operation.
 func DownloadMissingEpisodes() error {
-	const JOB_NAME = "DownloadMissingEpisodes"
-	jobLogger, _ := logging.NewJobSugar(JOB_NAME)
+	const jobName = "DownloadMissingEpisodes"
+	jobLogger, _ := logging.NewJobSugar(jobName)
 	start := time.Now()
 	jobLogger.Infow("job_started")
 	defer func() {
@@ -656,12 +687,12 @@ func DownloadMissingEpisodes() error {
 		return nil
 	}
 
-	lock := db.GetLock(JOB_NAME)
+	lock := db.GetLock(jobName)
 	if lock.IsLocked() {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock(JOB_NAME, 120)
+	jobLock := db.Lock(jobName, 120)
 	defer db.UnlockByID(jobLock.ID)
 
 	setting := db.GetOrCreateSetting()
@@ -742,6 +773,8 @@ func DownloadMissingEpisodes() error {
 	jobLogger.Infow("job_completed_successfully")
 	return firstErr
 }
+
+// CheckMissingFiles handles the corresponding operation.
 func CheckMissingFiles() error {
 	data, err := db.GetAllPodcastItemsAlreadyDownloaded()
 	setting := db.GetOrCreateSetting()
@@ -766,9 +799,10 @@ func CheckMissingFiles() error {
 	return nil
 }
 
-func DeleteEpisodeFile(podcastItemId string) error {
+// DeleteEpisodeFile handles the corresponding operation.
+func DeleteEpisodeFile(podcastItemID string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(podcastItemId, &podcastItem)
+	err := db.GetPodcastItemByID(podcastItemID, &podcastItem)
 
 	if err != nil {
 		return err
@@ -777,7 +811,7 @@ func DeleteEpisodeFile(podcastItemId string) error {
 	err = DeleteFile(podcastItem.DownloadPath)
 
 	if err != nil && !os.IsNotExist(err) {
-		Logger.Errorw("failed to delete episode file", "podcast_item_id", podcastItemId, "path", podcastItem.DownloadPath, "error", err)
+		Logger.Errorw("failed to delete episode file", "podcast_item_id", podcastItemID, "path", podcastItem.DownloadPath, "error", err)
 		return err
 	}
 
@@ -791,9 +825,11 @@ func DeleteEpisodeFile(podcastItemId string) error {
 
 	return SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
 }
-func DownloadSingleEpisode(podcastItemId string) error {
+
+// DownloadSingleEpisode handles the corresponding operation.
+func DownloadSingleEpisode(podcastItemID string) error {
 	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemById(podcastItemId, &podcastItem)
+	err := db.GetPodcastItemByID(podcastItemID, &podcastItem)
 
 	if err != nil {
 		return err
@@ -803,8 +839,8 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	if DownloadsPaused() {
 		return errors.New("downloads are paused")
 	}
-	if err := SetPodcastItemAsDownloading(podcastItemId); err != nil {
-		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemId, "error", err)
+	if err := SetPodcastItemAsDownloading(podcastItemID); err != nil {
+		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemID, "error", err)
 	}
 
 	url, err := Download(podcastItem.ID, podcastItem.FileURL, podcastItem.Title, podcastItem.Podcast.Title, GetPodcastPrefix(&podcastItem, setting))
@@ -818,7 +854,7 @@ func DownloadSingleEpisode(podcastItemId string) error {
 			_ = SetPodcastItemAsPaused(podcastItem.ID)
 			return nil
 		}
-		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemId, "error", err)
+		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemID, "error", err)
 		_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.NotDownloaded)
 		return err
 	}
@@ -832,21 +868,22 @@ func DownloadSingleEpisode(podcastItemId string) error {
 	return err
 }
 
+// RefreshEpisodes handles the corresponding operation.
 func RefreshEpisodes() error {
-	const JOB_NAME = "RefreshEpisodes"
-	jobLogger, _ := logging.NewJobSugar(JOB_NAME)
+	const jobName = "RefreshEpisodes"
+	jobLogger, _ := logging.NewJobSugar(jobName)
 	start := time.Now()
 	jobLogger.Infow("job_started")
 	defer func() {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	lock := db.GetLock(JOB_NAME)
+	lock := db.GetLock(jobName)
 	if lock.IsLocked() {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock(JOB_NAME, 120)
+	jobLock := db.Lock(jobName, 120)
 	defer db.UnlockByID(jobLock.ID)
 
 	var data []db.Podcast
@@ -907,16 +944,17 @@ func RefreshEpisodes() error {
 	return firstErr
 }
 
+// DeletePodcastEpisodes handles the corresponding operation.
 func DeletePodcastEpisodes(id string) error {
 	var podcast db.Podcast
 
-	err := db.GetPodcastById(id, &podcast)
+	err := db.GetPodcastByID(id, &podcast)
 	if err != nil {
 		return err
 	}
 	var podcastItems []db.PodcastItem
 
-	err = db.GetAllPodcastItemsByPodcastId(id, &podcastItems)
+	err = db.GetAllPodcastItemsByPodcastID(id, &podcastItems)
 	if err != nil {
 		return err
 	}
@@ -937,16 +975,18 @@ func DeletePodcastEpisodes(id string) error {
 	return nil
 
 }
+
+// DeletePodcast handles the corresponding operation.
 func DeletePodcast(id string, deleteFiles bool) error {
 	var podcast db.Podcast
 
-	err := db.GetPodcastById(id, &podcast)
+	err := db.GetPodcastByID(id, &podcast)
 	if err != nil {
 		return err
 	}
 	var podcastItems []db.PodcastItem
 
-	err = db.GetAllPodcastItemsByPodcastId(id, &podcastItems)
+	err = db.GetAllPodcastItemsByPodcastID(id, &podcastItems)
 	if err != nil {
 		return err
 	}
@@ -962,7 +1002,7 @@ func DeletePodcast(id string, deleteFiles bool) error {
 			}
 
 		}
-		if deleteErr := db.DeletePodcastItemById(item.ID); deleteErr != nil {
+		if deleteErr := db.DeletePodcastItemByID(item.ID); deleteErr != nil {
 			return deleteErr
 		}
 
@@ -973,18 +1013,20 @@ func DeletePodcast(id string, deleteFiles bool) error {
 		return err
 	}
 
-	err = db.DeletePodcastById(id)
+	err = db.DeletePodcastByID(id)
 	if err != nil {
 		return err
 	}
 	return nil
 
 }
+
+// DeleteTag handles the corresponding operation.
 func DeleteTag(id string) error {
-	if err := db.UntagAllByTagId(id); err != nil {
+	if err := db.UntagAllByTagID(id); err != nil {
 		return err
 	}
-	err := db.DeleteTagById(id)
+	err := db.DeleteTagByID(id)
 	if err != nil {
 		return err
 	}
@@ -1016,6 +1058,8 @@ func makeQuery(url string) ([]byte, error) {
 	return body, nil
 
 }
+
+// GetSearchFromGpodder handles the corresponding operation.
 func GetSearchFromGpodder(pod model.GPodcast) *model.CommonSearchResultModel {
 	p := new(model.CommonSearchResultModel)
 	p.URL = pod.URL
@@ -1024,6 +1068,8 @@ func GetSearchFromGpodder(pod model.GPodcast) *model.CommonSearchResultModel {
 	p.Description = pod.Description
 	return p
 }
+
+// GetSearchFromItunes handles the corresponding operation.
 func GetSearchFromItunes(pod model.ItunesSingleResult) *model.CommonSearchResultModel {
 	p := new(model.CommonSearchResultModel)
 	p.URL = pod.FeedURL
@@ -1032,6 +1078,8 @@ func GetSearchFromItunes(pod model.ItunesSingleResult) *model.CommonSearchResult
 
 	return p
 }
+
+// GetSearchFromPodcastIndex handles the corresponding operation.
 func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchResultModel {
 	p := new(model.CommonSearchResultModel)
 	p.URL = pod.URL
@@ -1050,9 +1098,10 @@ func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchRes
 	return p
 }
 
+// UpdateSettings handles the corresponding operation.
 func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload bool,
 	appendDateToFileName bool, appendEpisodeNumberToFileName bool, darkMode bool, downloadEpisodeImages bool,
-	generateNFOFile bool, dontDownloadDeletedFromDisk bool, baseUrl string, maxDownloadConcurrency int, userAgent string) error {
+	generateNFOFile bool, dontDownloadDeletedFromDisk bool, baseURL string, maxDownloadConcurrency int, userAgent string) error {
 	setting := db.GetOrCreateSetting()
 
 	setting.AutoDownload = autoDownload
@@ -1064,17 +1113,19 @@ func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload b
 	setting.DownloadEpisodeImages = downloadEpisodeImages
 	setting.GenerateNFOFile = generateNFOFile
 	setting.DontDownloadDeletedFromDisk = dontDownloadDeletedFromDisk
-	setting.BaseUrl = baseUrl
+	setting.BaseURL = baseURL
 	setting.MaxDownloadConcurrency = maxDownloadConcurrency
 	setting.UserAgent = userAgent
 
 	return db.UpdateSettings(setting)
 }
 
+// UnlockMissedJobs handles the corresponding operation.
 func UnlockMissedJobs() {
 	db.UnlockMissedJobs()
 }
 
+// AddTag handles the corresponding operation.
 func AddTag(label, description string) (db.Tag, error) {
 
 	tag, err := db.GetTagByLabel(label)
@@ -1094,9 +1145,10 @@ func AddTag(label, description string) (db.Tag, error) {
 
 }
 
+// TogglePodcastPause handles the corresponding operation.
 func TogglePodcastPause(id string, isPaused bool) error {
 	var podcast db.Podcast
-	err := db.GetPodcastById(id, &podcast)
+	err := db.GetPodcastByID(id, &podcast)
 	if err != nil {
 		return err
 	}

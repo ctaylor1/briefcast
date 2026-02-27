@@ -14,6 +14,7 @@ import (
 
 var gpodderBaseURL = "https://gpodder.net"
 
+// Query handles the corresponding operation.
 func Query(q string) []*model.CommonSearchResultModel {
 	url := fmt.Sprintf("%s/search.json?q=%s", gpodderBaseURL, url.QueryEscape(q))
 
@@ -36,6 +37,8 @@ func Query(q string) []*model.CommonSearchResultModel {
 
 	return toReturn
 }
+
+// ByTag handles the corresponding operation.
 func ByTag(tag string, count int) []model.GPodcast {
 	url := fmt.Sprintf("%s/api/2/tag/%s/%d.json", gpodderBaseURL, url.QueryEscape(tag), count)
 
@@ -51,6 +54,8 @@ func ByTag(tag string, count int) []model.GPodcast {
 	}
 	return response
 }
+
+// Top handles the corresponding operation.
 func Top(count int) []model.GPodcast {
 	url := fmt.Sprintf("%s/toplist/%d.json", gpodderBaseURL, count)
 
@@ -66,6 +71,8 @@ func Top(count int) []model.GPodcast {
 	}
 	return response
 }
+
+// Tags handles the corresponding operation.
 func Tags(count int) []model.GPodcastTag {
 	url := fmt.Sprintf("%s/api/2/tags/%d.json", gpodderBaseURL, count)
 

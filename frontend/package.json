@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",
-    "@types/node": "^24.10.1",
+    "@types/node": "^24.10.15",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.24",

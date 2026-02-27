@@ -2,6 +2,7 @@ package model
 
 import "testing"
 
+// TestVerifyPaginationValuesAppliesDefaults handles the corresponding operation.
 func TestVerifyPaginationValuesAppliesDefaults(t *testing.T) {
 	filter := EpisodesFilter{}
 	filter.VerifyPaginationValues()
@@ -12,18 +13,19 @@ func TestVerifyPaginationValuesAppliesDefaults(t *testing.T) {
 	if filter.Page != 1 {
 		t.Fatalf("expected default page 1, got %d", filter.Page)
 	}
-	if filter.Sorting != RELEASE_DESC {
-		t.Fatalf("expected default sorting %q, got %q", RELEASE_DESC, filter.Sorting)
+	if filter.Sorting != ReleaseDesc {
+		t.Fatalf("expected default sorting %q, got %q", ReleaseDesc, filter.Sorting)
 	}
 }
 
+// TestVerifyPaginationValuesPreservesExistingValues handles the corresponding operation.
 func TestVerifyPaginationValuesPreservesExistingValues(t *testing.T) {
 	filter := EpisodesFilter{
 		Pagination: Pagination{
 			Page:  3,
 			Count: 50,
 		},
-		Sorting: DURATION_ASC,
+		Sorting: DurationAsc,
 	}
 	filter.VerifyPaginationValues()
 
@@ -33,11 +35,12 @@ func TestVerifyPaginationValuesPreservesExistingValues(t *testing.T) {
 	if filter.Page != 3 {
 		t.Fatalf("expected page to remain 3, got %d", filter.Page)
 	}
-	if filter.Sorting != DURATION_ASC {
-		t.Fatalf("expected sorting to remain %q, got %q", DURATION_ASC, filter.Sorting)
+	if filter.Sorting != DurationAsc {
+		t.Fatalf("expected sorting to remain %q, got %q", DurationAsc, filter.Sorting)
 	}
 }
 
+// TestSetCountsFirstPage handles the corresponding operation.
 func TestSetCountsFirstPage(t *testing.T) {
 	filter := EpisodesFilter{
 		Pagination: Pagination{
@@ -62,6 +65,7 @@ func TestSetCountsFirstPage(t *testing.T) {
 	}
 }
 
+// TestSetCountsLastPage handles the corresponding operation.
 func TestSetCountsLastPage(t *testing.T) {
 	filter := EpisodesFilter{
 		Pagination: Pagination{

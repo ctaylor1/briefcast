@@ -2,6 +2,7 @@ package service
 
 import "testing"
 
+// TestSearchTranscriptMatchesSegments handles the corresponding operation.
 func TestSearchTranscriptMatchesSegments(t *testing.T) {
 	raw := `{"segments":[{"start":12.5,"end":13.2,"text":"Hello world from transcript"}]}`
 	results := searchTranscriptMatches(raw, "world", 5)
@@ -16,6 +17,7 @@ func TestSearchTranscriptMatchesSegments(t *testing.T) {
 	}
 }
 
+// TestSearchTranscriptMatchesAssetContent handles the corresponding operation.
 func TestSearchTranscriptMatchesAssetContent(t *testing.T) {
 	raw := `[{"url":"https://example.com/t1.vtt","content":"This is a transcript body"}]`
 	results := searchTranscriptMatches(raw, "body", 5)

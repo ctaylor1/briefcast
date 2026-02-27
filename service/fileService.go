@@ -23,9 +23,11 @@ import (
 )
 
 var (
+	// ErrDownloadCancelled is a public variable.
 	ErrDownloadCancelled = errors.New("download cancelled")
-	ErrDownloadPaused    = errors.New("download paused")
-	backupNow            = func() time.Time { return time.Now().UTC() }
+	// ErrDownloadPaused is a public variable.
+	ErrDownloadPaused = errors.New("download paused")
+	backupNow         = func() time.Time { return time.Now().UTC() }
 )
 
 const (
@@ -33,6 +35,7 @@ const (
 	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
 )
 
+// Download handles the corresponding operation.
 func Download(downloadID string, link string, episodeTitle string, podcastName string, prefix string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
@@ -194,6 +197,7 @@ func parseContentRangeTotal(contentRange string) int64 {
 	return total
 }
 
+// GetPodcastLocalImagePath handles the corresponding operation.
 func GetPodcastLocalImagePath(link string, podcastName string) string {
 	fileName := getFileName(link, "folder", ".jpg")
 	folder := createDataFolderIfNotExists(podcastName)
@@ -202,6 +206,7 @@ func GetPodcastLocalImagePath(link string, podcastName string) string {
 	return finalPath
 }
 
+// CreateNfoFile handles the corresponding operation.
 func CreateNfoFile(podcast *db.Podcast) error {
 	fileName := "album.nfo"
 	folder := createDataFolderIfNotExists(podcast.Title)
@@ -228,6 +233,7 @@ func CreateNfoFile(podcast *db.Podcast) error {
 	return os.WriteFile(finalPath, []byte(toPersist), 0o644)
 }
 
+// DownloadPodcastCoverImage handles the corresponding operation.
 func DownloadPodcastCoverImage(link string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
@@ -271,7 +277,8 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 	return finalPath, nil
 }
 
-func DownloadImage(link string, episodeId string, podcastName string) (string, error) {
+// DownloadImage handles the corresponding operation.
+func DownloadImage(link string, episodeID string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
@@ -288,7 +295,7 @@ func DownloadImage(link string, episodeId string, podcastName string) (string, e
 		return "", err
 	}
 
-	fileName := getFileName(link, episodeId, ".jpg")
+	fileName := getFileName(link, episodeID, ".jpg")
 	folder := createDataFolderIfNotExists(podcastName)
 	imageFolder := createFolder("images", folder)
 	finalPath := path.Join(imageFolder, fileName)
@@ -328,6 +335,8 @@ func changeOwnership(path string) {
 	}
 
 }
+
+// DeleteFile handles the corresponding operation.
 func DeleteFile(filePath string) error {
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return err
@@ -337,12 +346,15 @@ func DeleteFile(filePath string) error {
 	}
 	return nil
 }
+
+// FileExists handles the corresponding operation.
 func FileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return err == nil
 
 }
 
+// GetAllBackupFiles handles the corresponding operation.
 func GetAllBackupFiles() ([]string, error) {
 	var files []string
 	folder := createConfigFolderIfNotExists("backups")
@@ -356,6 +368,7 @@ func GetAllBackupFiles() ([]string, error) {
 	return files, err
 }
 
+// GetFileSize handles the corresponding operation.
 func GetFileSize(path string) (int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -382,7 +395,8 @@ func deleteOldBackup() {
 	}
 }
 
-func GetFileSizeFromUrl(url string) (int64, error) {
+// GetFileSizeFromURL handles the corresponding operation.
+func GetFileSizeFromURL(url string) (int64, error) {
 	req, err := getRequestWithMethod(http.MethodHead, url)
 	if err != nil {
 		return 0, err
@@ -407,6 +421,7 @@ func GetFileSizeFromUrl(url string) (int64, error) {
 	return int64(size), nil
 }
 
+// CreateBackup handles the corresponding operation.
 func CreateBackup() (string, error) {
 	backupFileName := "briefcast_backup_" + backupNow().Format("2006.01.02_150405") + ".tar.gz"
 	folder := createConfigFolderIfNotExists("backups")

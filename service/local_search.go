@@ -6,11 +6,12 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 )
 
+// LocalSearchResult represents a public type.
 type LocalSearchResult struct {
 	Type              string   `json:"type"`
-	PodcastID         string   `json:"podcastId,omitempty"`
+	PodcastID         string   `json:"podcastID,omitempty"`
 	PodcastTitle      string   `json:"podcastTitle,omitempty"`
-	EpisodeID         string   `json:"episodeId,omitempty"`
+	EpisodeID         string   `json:"episodeID,omitempty"`
 	EpisodeTitle      string   `json:"episodeTitle,omitempty"`
 	ChapterTitle      string   `json:"chapterTitle,omitempty"`
 	TranscriptSnippet string   `json:"transcriptSnippet,omitempty"`
@@ -18,6 +19,7 @@ type LocalSearchResult struct {
 	StartSeconds      *float64 `json:"startSeconds,omitempty"`
 }
 
+// SearchLocalRecords handles the corresponding operation.
 func SearchLocalRecords(query string, limit int) ([]LocalSearchResult, error) {
 	term := strings.TrimSpace(query)
 	if term == "" {

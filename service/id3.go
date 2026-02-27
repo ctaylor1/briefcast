@@ -20,6 +20,7 @@ const (
 	mutagenTimeoutEnv            = "MUTAGEN_TIMEOUT_SECONDS"
 )
 
+// ExtractID3Metadata handles the corresponding operation.
 func ExtractID3Metadata(path string) ([]byte, error) {
 	pythonPath, err := resolveMutagenPython()
 	if err != nil {

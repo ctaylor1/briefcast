@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestResolveMutagenPythonExplicitPath handles the corresponding operation.
 func TestResolveMutagenPythonExplicitPath(t *testing.T) {
 	t.Setenv(mutagenPythonEnv, "not-a-real-python")
 	path, err := resolveMutagenPython()
@@ -18,6 +19,7 @@ func TestResolveMutagenPythonExplicitPath(t *testing.T) {
 	}
 }
 
+// TestExtractID3MetadataWithStubScript handles the corresponding operation.
 func TestExtractID3MetadataWithStubScript(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -45,6 +47,7 @@ func TestExtractID3MetadataWithStubScript(t *testing.T) {
 	}
 }
 
+// TestExtractID3MetadataTimeout handles the corresponding operation.
 func TestExtractID3MetadataTimeout(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 

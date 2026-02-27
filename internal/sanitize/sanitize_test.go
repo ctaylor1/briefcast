@@ -7,6 +7,7 @@ import (
 	parser "golang.org/x/net/html"
 )
 
+// TestHTMLAllowingCleansDangerousAttributes handles the corresponding operation.
 func TestHTMLAllowingCleansDangerousAttributes(t *testing.T) {
 	input := `<div id="root" onclick="evil()"><a href="javascript:alert(1)" rel="noopener">link</a><img src="https://img.example/pic.jpg" onerror="evil()"/><script>alert(1)</script></div>`
 	output, err := HTMLAllowing(input)
@@ -31,6 +32,7 @@ func TestHTMLAllowingCleansDangerousAttributes(t *testing.T) {
 	}
 }
 
+// TestHTMLAllowingCustomAllowList handles the corresponding operation.
 func TestHTMLAllowingCustomAllowList(t *testing.T) {
 	input := `<p>paragraph</p><span>inline</span>`
 	output, err := HTMLAllowing(input, []string{"span"}, []string{})
@@ -45,6 +47,7 @@ func TestHTMLAllowingCustomAllowList(t *testing.T) {
 	}
 }
 
+// TestHTMLStripsTagsAndUnescapesCommonEntities handles the corresponding operation.
 func TestHTMLStripsTagsAndUnescapesCommonEntities(t *testing.T) {
 	input := `<p>Tom &amp; Jerry</p><br />x&#8217;y`
 	output := HTML(input)
@@ -54,6 +57,7 @@ func TestHTMLStripsTagsAndUnescapesCommonEntities(t *testing.T) {
 	}
 }
 
+// TestPathNameAndBaseName handles the corresponding operation.
 func TestPathNameAndBaseName(t *testing.T) {
 	if got := Path("Cafe&Tea"); got != "cafe-tea" {
 		t.Fatalf("expected %q, got %q", "cafe-tea", got)
@@ -68,12 +72,14 @@ func TestPathNameAndBaseName(t *testing.T) {
 	}
 }
 
+// TestAccents handles the corresponding operation.
 func TestAccents(t *testing.T) {
 	if got := Accents("Łódź ß"); got != "Lodź ss" {
 		t.Fatalf("expected %q, got %q", "Lodź ss", got)
 	}
 }
 
+// TestCleanAttributes handles the corresponding operation.
 func TestCleanAttributes(t *testing.T) {
 	attrs := []parser.Attribute{
 		{Key: "class", Val: "episode"},
@@ -95,6 +101,7 @@ func TestCleanAttributes(t *testing.T) {
 	}
 }
 
+// TestIncludes handles the corresponding operation.
 func TestIncludes(t *testing.T) {
 	values := []string{"one", "two", "three"}
 	if !includes(values, "two") {

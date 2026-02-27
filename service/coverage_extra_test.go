@@ -35,6 +35,7 @@ func createServicePodcastItem(t *testing.T, podcast db.Podcast, title string, st
 	return item
 }
 
+// TestDownloadsServiceStateFlows handles the corresponding operation.
 func TestDownloadsServiceStateFlows(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "downloads-service", false)
@@ -47,7 +48,7 @@ func TestDownloadsServiceStateFlows(t *testing.T) {
 		t.Fatalf("cancel queued episode failed: %v", err)
 	}
 	var refreshedQueued db.PodcastItem
-	if err := db.GetPodcastItemById(queued.ID, &refreshedQueued); err != nil {
+	if err := db.GetPodcastItemByID(queued.ID, &refreshedQueued); err != nil {
 		t.Fatalf("reload queued episode failed: %v", err)
 	}
 	if refreshedQueued.DownloadStatus != db.Paused {
@@ -73,7 +74,7 @@ func TestDownloadsServiceStateFlows(t *testing.T) {
 		t.Fatalf("expected paused episode to require downloader start")
 	}
 	var refreshedPaused db.PodcastItem
-	if err := db.GetPodcastItemById(paused.ID, &refreshedPaused); err != nil {
+	if err := db.GetPodcastItemByID(paused.ID, &refreshedPaused); err != nil {
 		t.Fatalf("reload paused episode failed: %v", err)
 	}
 	if refreshedPaused.DownloadStatus != db.NotDownloaded {
@@ -107,6 +108,7 @@ func TestDownloadsServiceStateFlows(t *testing.T) {
 	}
 }
 
+// TestSearchLocalRecordsReturnsPodcastEpisodeChapterAndTranscriptMatches handles the corresponding operation.
 func TestSearchLocalRecordsReturnsPodcastEpisodeChapterAndTranscriptMatches(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "search-local", false)
@@ -166,6 +168,7 @@ func TestSearchLocalRecordsReturnsPodcastEpisodeChapterAndTranscriptMatches(t *t
 	}
 }
 
+// TestSearchProviderQueriesUseInjectedBaseURLs handles the corresponding operation.
 func TestSearchProviderQueriesUseInjectedBaseURLs(t *testing.T) {
 	origGpodder := gpodderBaseURL
 	origItunes := itunesBaseURL
@@ -232,6 +235,7 @@ func TestSearchProviderQueriesUseInjectedBaseURLs(t *testing.T) {
 	}
 }
 
+// TestFileServiceBackupAndFolderHelpers handles the corresponding operation.
 func TestFileServiceBackupAndFolderHelpers(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -263,7 +267,7 @@ func TestFileServiceBackupAndFolderHelpers(t *testing.T) {
 		t.Fatalf("download cover image failed: %v", err)
 	}
 
-	size, err := GetFileSizeFromUrl(server.URL)
+	size, err := GetFileSizeFromURL(server.URL)
 	if err != nil {
 		t.Fatalf("get file size from url failed: %v", err)
 	}
@@ -313,6 +317,7 @@ func TestFileServiceBackupAndFolderHelpers(t *testing.T) {
 	}
 }
 
+// TestPodcastServiceUtilityAndStateFlows handles the corresponding operation.
 func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -334,10 +339,10 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 		t.Fatalf("update podcast item failed: %v", err)
 	}
 
-	if got := GetPodcastById(podcast.ID); got.ID != podcast.ID {
+	if got := GetPodcastByID(podcast.ID); got.ID != podcast.ID {
 		t.Fatalf("unexpected podcast by id result: %+v", got)
 	}
-	if got := GetPodcastItemById(item.ID); got.ID != item.ID {
+	if got := GetPodcastItemByID(item.ID); got.ID != item.ID {
 		t.Fatalf("unexpected podcast item by id result: %+v", got)
 	}
 	if got := GetAllPodcasts(""); len(*got) == 0 {
@@ -350,7 +355,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 		t.Fatalf("expected podcast items by ids, err=%v got=%+v", err, got)
 	}
 
-	opmlData, err := ExportOmpl(true, "http://localhost:8080")
+	opmlData, err := ExportOPML(true, "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("export opml failed: %v", err)
 	}
@@ -359,7 +364,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	}
 
 	itunesXML := []byte(`<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><itunes:image href="https://cdn.example/cover.jpg"></itunes:image></channel></rss>`)
-	if got := getItunesImageUrl(itunesXML); got != "https://cdn.example/cover.jpg" {
+	if got := getItunesImageURL(itunesXML); got != "https://cdn.example/cover.jpg" {
 		t.Fatalf("unexpected itunes image url: %q", got)
 	}
 
@@ -430,7 +435,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 		t.Fatalf("update settings for prefix failed: %v", err)
 	}
 	var updatedItem db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &updatedItem); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &updatedItem); err != nil {
 		t.Fatalf("reload item for prefix failed: %v", err)
 	}
 	if prefix := GetPodcastPrefix(&updatedItem, setting); prefix == "" {
@@ -504,7 +509,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 		t.Fatalf("delete podcast episodes failed: %v", err)
 	}
 	var refreshedDeleteEpisodes db.PodcastItem
-	if err := db.GetPodcastItemById(itemForDeleteEpisodes.ID, &refreshedDeleteEpisodes); err != nil {
+	if err := db.GetPodcastItemByID(itemForDeleteEpisodes.ID, &refreshedDeleteEpisodes); err != nil {
 		t.Fatalf("reload delete episodes item failed: %v", err)
 	}
 	if refreshedDeleteEpisodes.DownloadStatus != db.Deleted {
@@ -516,12 +521,13 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	if err := DeletePodcast(podcastToDelete.ID, false); err != nil {
 		t.Fatalf("delete podcast failed: %v", err)
 	}
-	if _, err := db.GetTagById(tag.ID); err == nil {
+	if _, err := db.GetTagByID(tag.ID); err == nil {
 		// tag was deleted above, this keeps path deterministic but avoids strict gorm error matching.
 		t.Fatalf("expected deleted tag lookup to fail")
 	}
 }
 
+// TestChapterRefreshHelpers handles the corresponding operation.
 func TestChapterRefreshHelpers(t *testing.T) {
 	if hasMeaningfulTitles([]Chapter{{Title: "chapter 1"}, {Title: "chapter 2"}}) {
 		t.Fatalf("expected autogenerated chapter labels to be treated as non-meaningful")
@@ -570,6 +576,7 @@ func TestChapterRefreshHelpers(t *testing.T) {
 	}
 }
 
+// TestUpdateAllFileSizesCoversDownloadedAndRemotePaths handles the corresponding operation.
 func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "filesize-refresh", false)
@@ -610,7 +617,7 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	UpdateAllFileSizes()
 
 	var refreshedDownloaded db.PodcastItem
-	if err := db.GetPodcastItemById(downloadedItem.ID, &refreshedDownloaded); err != nil {
+	if err := db.GetPodcastItemByID(downloadedItem.ID, &refreshedDownloaded); err != nil {
 		t.Fatalf("failed to reload downloaded item: %v", err)
 	}
 	if refreshedDownloaded.FileSize != 7 {
@@ -618,7 +625,7 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	}
 
 	var refreshedMissing db.PodcastItem
-	if err := db.GetPodcastItemById(missingFileItem.ID, &refreshedMissing); err != nil {
+	if err := db.GetPodcastItemByID(missingFileItem.ID, &refreshedMissing); err != nil {
 		t.Fatalf("failed to reload missing-file item: %v", err)
 	}
 	if refreshedMissing.FileSize != 1 {
@@ -626,7 +633,7 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	}
 
 	var refreshedRemote db.PodcastItem
-	if err := db.GetPodcastItemById(remoteItem.ID, &refreshedRemote); err != nil {
+	if err := db.GetPodcastItemByID(remoteItem.ID, &refreshedRemote); err != nil {
 		t.Fatalf("failed to reload remote item: %v", err)
 	}
 	if refreshedRemote.FileSize != 123 {
@@ -634,6 +641,7 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	}
 }
 
+// TestDownloadMissingImagesAndLocalDownloadHelper handles the corresponding operation.
 func TestDownloadMissingImagesAndLocalDownloadHelper(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "image-downloads", false)
@@ -670,7 +678,7 @@ func TestDownloadMissingImagesAndLocalDownloadHelper(t *testing.T) {
 	}
 
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload image item: %v", err)
 	}
 	if strings.TrimSpace(refreshed.LocalImage) == "" {
@@ -685,6 +693,7 @@ func TestDownloadMissingImagesAndLocalDownloadHelper(t *testing.T) {
 	}
 }
 
+// TestAddOpmlValidAndInvalidPayloads handles the corresponding operation.
 func TestAddOpmlValidAndInvalidPayloads(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -706,6 +715,7 @@ func TestAddOpmlValidAndInvalidPayloads(t *testing.T) {
 	}
 }
 
+// TestDownloadSingleEpisodeAndMissingEpisodesBranches handles the corresponding operation.
 func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "download-branches", false)
@@ -742,7 +752,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	}
 
 	var refreshedOK db.PodcastItem
-	if err := db.GetPodcastItemById(okItem.ID, &refreshedOK); err != nil {
+	if err := db.GetPodcastItemByID(okItem.ID, &refreshedOK); err != nil {
 		t.Fatalf("failed to reload ok item: %v", err)
 	}
 	if refreshedOK.DownloadStatus != db.Downloaded {
@@ -765,7 +775,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 		t.Fatalf("expected DownloadSingleEpisode failure for 500 response")
 	}
 	var refreshedFail db.PodcastItem
-	if err := db.GetPodcastItemById(failItem.ID, &refreshedFail); err != nil {
+	if err := db.GetPodcastItemByID(failItem.ID, &refreshedFail); err != nil {
 		t.Fatalf("failed to reload failed item: %v", err)
 	}
 	if refreshedFail.DownloadStatus != db.NotDownloaded {
@@ -782,7 +792,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 		t.Fatalf("expected paused download branch to return nil, got %v", err)
 	}
 	var refreshedPaused db.PodcastItem
-	if err := db.GetPodcastItemById(pausedItem.ID, &refreshedPaused); err != nil {
+	if err := db.GetPodcastItemByID(pausedItem.ID, &refreshedPaused); err != nil {
 		t.Fatalf("failed to reload paused item: %v", err)
 	}
 	if refreshedPaused.DownloadStatus != db.Paused {
@@ -802,7 +812,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 		t.Fatalf("expected cancelled download branch to return nil, got %v", err)
 	}
 	var refreshedCancelled db.PodcastItem
-	if err := db.GetPodcastItemById(cancelledItem.ID, &refreshedCancelled); err != nil {
+	if err := db.GetPodcastItemByID(cancelledItem.ID, &refreshedCancelled); err != nil {
 		t.Fatalf("failed to reload cancelled item: %v", err)
 	}
 	if refreshedCancelled.DownloadStatus != db.Deleted {
@@ -840,7 +850,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	}
 
 	var refreshedQueueOK db.PodcastItem
-	if err := db.GetPodcastItemById(queueOK.ID, &refreshedQueueOK); err != nil {
+	if err := db.GetPodcastItemByID(queueOK.ID, &refreshedQueueOK); err != nil {
 		t.Fatalf("failed to reload queue success item: %v", err)
 	}
 	if refreshedQueueOK.DownloadStatus != db.Downloaded {
@@ -848,7 +858,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	}
 
 	var refreshedQueueFail db.PodcastItem
-	if err := db.GetPodcastItemById(queueFail.ID, &refreshedQueueFail); err != nil {
+	if err := db.GetPodcastItemByID(queueFail.ID, &refreshedQueueFail); err != nil {
 		t.Fatalf("failed to reload queue fail item: %v", err)
 	}
 	if refreshedQueueFail.DownloadStatus != db.NotDownloaded {
@@ -856,7 +866,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	}
 
 	var refreshedQueueCancelled db.PodcastItem
-	if err := db.GetPodcastItemById(queueCancelled.ID, &refreshedQueueCancelled); err != nil {
+	if err := db.GetPodcastItemByID(queueCancelled.ID, &refreshedQueueCancelled); err != nil {
 		t.Fatalf("failed to reload queue cancelled item: %v", err)
 	}
 	if refreshedQueueCancelled.DownloadStatus != db.Deleted {
@@ -864,6 +874,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 	}
 }
 
+// TestSetAllEpisodesToDownloadSuccess handles the corresponding operation.
 func TestSetAllEpisodesToDownloadSuccess(t *testing.T) {
 	setupRetentionTestDB(t)
 	pythonPath := requireWorkingPython(t)
@@ -891,7 +902,7 @@ func TestSetAllEpisodesToDownloadSuccess(t *testing.T) {
 	}
 
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload set-all item: %v", err)
 	}
 	if refreshed.DownloadStatus != db.NotDownloaded {

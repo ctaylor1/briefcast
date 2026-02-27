@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestIntegrationFeedDownloadWhisperX handles the corresponding operation.
 func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 	pythonPath := requireWorkingPython(t)
 
@@ -94,7 +95,7 @@ func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 	}
 
 	var items []db.PodcastItem
-	if err := db.GetAllPodcastItemsByPodcastId(podcast.ID, &items); err != nil {
+	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &items); err != nil {
 		t.Fatalf("fetch podcast items failed: %v", err)
 	}
 	if len(items) != 1 {

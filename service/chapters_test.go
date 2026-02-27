@@ -6,6 +6,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 )
 
+// TestBuildChapterResponseFromFeed handles the corresponding operation.
 func TestBuildChapterResponseFromFeed(t *testing.T) {
 	item := db.PodcastItem{
 		ChaptersJSON: `{"chapters":[{"title":"Intro","startTime":10,"endTime":20},{"name":"Topic","start_time":"01:30"}]}`,
@@ -26,6 +27,7 @@ func TestBuildChapterResponseFromFeed(t *testing.T) {
 	}
 }
 
+// TestBuildChapterResponseFromID3Fallback handles the corresponding operation.
 func TestBuildChapterResponseFromID3Fallback(t *testing.T) {
 	item := db.PodcastItem{
 		ID3ChaptersJSON: `[{"title":"From ID3","start_time_ms":5000}]`,

@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// TranscriptAsset represents a public type.
 type TranscriptAsset struct {
 	URL      string `json:"url"`
 	Type     string `json:"type,omitempty"`
@@ -16,6 +17,7 @@ type TranscriptAsset struct {
 	Content  string `json:"content,omitempty"`
 }
 
+// MarshalMetadata handles the corresponding operation.
 func MarshalMetadata(value interface{}) string {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -24,6 +26,7 @@ func MarshalMetadata(value interface{}) string {
 	return string(data)
 }
 
+// GetString handles the corresponding operation.
 func GetString(mapData map[string]interface{}, key string) string {
 	if mapData == nil {
 		return ""
@@ -35,6 +38,7 @@ func GetString(mapData map[string]interface{}, key string) string {
 	return stringValue(value)
 }
 
+// GetNestedString handles the corresponding operation.
 func GetNestedString(mapData map[string]interface{}, keys ...string) string {
 	current := mapData
 	for i := 0; i < len(keys); i++ {
@@ -58,6 +62,7 @@ func GetNestedString(mapData map[string]interface{}, keys ...string) string {
 	return ""
 }
 
+// PickFirstNonEmpty handles the corresponding operation.
 func PickFirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -68,6 +73,7 @@ func PickFirstNonEmpty(values ...string) string {
 	return ""
 }
 
+// PickLongest handles the corresponding operation.
 func PickLongest(values ...string) string {
 	best := ""
 	for _, value := range values {
@@ -79,6 +85,7 @@ func PickLongest(values ...string) string {
 	return best
 }
 
+// CollectContentValues handles the corresponding operation.
 func CollectContentValues(entry map[string]interface{}) []string {
 	raw, ok := entry["content"]
 	if !ok {
@@ -99,6 +106,7 @@ func CollectContentValues(entry map[string]interface{}) []string {
 	return values
 }
 
+// CollectDetailValue handles the corresponding operation.
 func CollectDetailValue(entry map[string]interface{}, key string) string {
 	value, ok := entry[key]
 	if !ok {
@@ -110,6 +118,7 @@ func CollectDetailValue(entry map[string]interface{}, key string) string {
 	return stringValue(value)
 }
 
+// ExtractEntryShowNotesHTML handles the corresponding operation.
 func ExtractEntryShowNotesHTML(entry map[string]interface{}) string {
 	candidates := []string{
 		CollectDetailValue(entry, "summary_detail"),
@@ -123,6 +132,7 @@ func ExtractEntryShowNotesHTML(entry map[string]interface{}) string {
 	return PickLongest(candidates...)
 }
 
+// ExtractFeedShowNotesHTML handles the corresponding operation.
 func ExtractFeedShowNotesHTML(feed map[string]interface{}) string {
 	candidates := []string{
 		CollectDetailValue(feed, "summary_detail"),
@@ -135,6 +145,7 @@ func ExtractFeedShowNotesHTML(feed map[string]interface{}) string {
 	return PickLongest(candidates...)
 }
 
+// ExtractImageURL handles the corresponding operation.
 func ExtractImageURL(mapData map[string]interface{}) string {
 	return PickFirstNonEmpty(
 		GetNestedString(mapData, "image", "href"),
@@ -144,6 +155,7 @@ func ExtractImageURL(mapData map[string]interface{}) string {
 	)
 }
 
+// ExtractEntryImage handles the corresponding operation.
 func ExtractEntryImage(entry map[string]interface{}, fallback string) string {
 	image := ExtractImageURL(entry)
 	if image != "" {
@@ -152,6 +164,7 @@ func ExtractEntryImage(entry map[string]interface{}, fallback string) string {
 	return fallback
 }
 
+// ExtractEnclosureURL handles the corresponding operation.
 func ExtractEnclosureURL(entry map[string]interface{}) string {
 	if raw, ok := entry["enclosures"]; ok {
 		if list, ok := raw.([]interface{}); ok {
@@ -185,6 +198,7 @@ func ExtractEnclosureURL(entry map[string]interface{}) string {
 	return GetString(entry, "link")
 }
 
+// ExtractEntryGUID handles the corresponding operation.
 func ExtractEntryGUID(entry map[string]interface{}) string {
 	return PickFirstNonEmpty(
 		GetString(entry, "id"),
@@ -193,6 +207,7 @@ func ExtractEntryGUID(entry map[string]interface{}) string {
 	)
 }
 
+// ParseEntryDate handles the corresponding operation.
 func ParseEntryDate(entry map[string]interface{}) time.Time {
 	candidates := []string{
 		GetString(entry, "published"),
@@ -204,6 +219,7 @@ func ParseEntryDate(entry map[string]interface{}) time.Time {
 	return ParseFeedTime(candidates...)
 }
 
+// ParseFeedTime handles the corresponding operation.
 func ParseFeedTime(values ...string) time.Time {
 	layouts := []string{
 		time.RFC1123Z,
@@ -229,6 +245,7 @@ func ParseFeedTime(values ...string) time.Time {
 	return time.Time{}
 }
 
+// ParseDurationSeconds handles the corresponding operation.
 func ParseDurationSeconds(raw string) int {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -267,6 +284,7 @@ func ParseDurationSeconds(raw string) int {
 	return 0
 }
 
+// ExtractPodcastChapters handles the corresponding operation.
 func ExtractPodcastChapters(entry map[string]interface{}) (string, string) {
 	keys := []string{"podcast_chapters", "chapters", "psc_chapters"}
 	for _, key := range keys {
@@ -278,6 +296,7 @@ func ExtractPodcastChapters(entry map[string]interface{}) (string, string) {
 	return "", ""
 }
 
+// ExtractTranscripts handles the corresponding operation.
 func ExtractTranscripts(entry map[string]interface{}) []TranscriptAsset {
 	keys := []string{"podcast_transcript", "transcript", "transcripts"}
 	assets := make([]TranscriptAsset, 0)

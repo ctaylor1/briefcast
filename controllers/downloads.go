@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// DownloadQueueQuery represents a public type.
 type DownloadQueueQuery struct {
 	Limit int `form:"limit" query:"limit"`
 }
@@ -19,6 +20,7 @@ const (
 	maxDownloadQueueLimit     = 200
 )
 
+// GetDownloadQueue handles the corresponding operation.
 func GetDownloadQueue(c *gin.Context) {
 	// Bound limit to avoid unbounded queue payloads under heavy libraries.
 	limit := defaultDownloadQueueLimit
@@ -69,6 +71,7 @@ func GetDownloadQueue(c *gin.Context) {
 	})
 }
 
+// PauseDownloads handles the corresponding operation.
 func PauseDownloads(c *gin.Context) {
 	if err := service.PauseAllDownloads(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pause downloads."})
@@ -77,6 +80,7 @@ func PauseDownloads(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// ResumeDownloads handles the corresponding operation.
 func ResumeDownloads(c *gin.Context) {
 	if err := service.ResumeAllDownloads(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resume downloads."})
@@ -85,6 +89,7 @@ func ResumeDownloads(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// CancelAllDownloads handles the corresponding operation.
 func CancelAllDownloads(c *gin.Context) {
 	if err := service.CancelAllDownloads(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop downloads."})
@@ -93,27 +98,29 @@ func CancelAllDownloads(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// CancelPodcastItemDownload handles the corresponding operation.
 func CancelPodcastItemDownload(c *gin.Context) {
-	var searchByIdQuery SearchByIdQuery
-	if c.ShouldBindUri(&searchByIdQuery) != nil {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
-	if err := service.CancelEpisodeDownload(searchByIdQuery.Id); err != nil {
+	if err := service.CancelEpisodeDownload(searchByIDQuery.ID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// ResumePodcastItemDownload handles the corresponding operation.
 func ResumePodcastItemDownload(c *gin.Context) {
-	var searchByIdQuery SearchByIdQuery
-	if c.ShouldBindUri(&searchByIdQuery) != nil {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	shouldStart, err := service.ResumeEpisodeDownload(searchByIdQuery.Id)
+	shouldStart, err := service.ResumeEpisodeDownload(searchByIDQuery.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -123,7 +130,7 @@ func ResumePodcastItemDownload(c *gin.Context) {
 			if runErr := service.DownloadSingleEpisode(podcastItemID); runErr != nil {
 				controllerLogger.Warnw("failed to resume podcast item download", "podcast_item_id", podcastItemID, "error", runErr)
 			}
-		}(searchByIdQuery.Id)
+		}(searchByIDQuery.ID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{})

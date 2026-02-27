@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// TestParseAddColumnIfNotExists handles the corresponding operation.
 func TestParseAddColumnIfNotExists(t *testing.T) {
 	query := "alter table settings add column if not exists retention_keep_all boolean default true"
 	table, column, ok := parseAddColumnIfNotExists(query)
@@ -20,6 +21,7 @@ func TestParseAddColumnIfNotExists(t *testing.T) {
 	}
 }
 
+// TestExecuteAndSaveMigrationRunsOnce handles the corresponding operation.
 func TestExecuteAndSaveMigrationRunsOnce(t *testing.T) {
 	setupDBForTest(t)
 
@@ -41,6 +43,7 @@ func TestExecuteAndSaveMigrationRunsOnce(t *testing.T) {
 	}
 }
 
+// TestExecuteMigrationQuerySQLiteSkipsExistingColumn handles the corresponding operation.
 func TestExecuteMigrationQuerySQLiteSkipsExistingColumn(t *testing.T) {
 	setupDBForTest(t)
 

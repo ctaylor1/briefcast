@@ -2,6 +2,7 @@ package id3meta
 
 import "testing"
 
+// TestShouldExtract handles the corresponding operation.
 func TestShouldExtract(t *testing.T) {
 	if !ShouldExtract("", "", "") {
 		t.Fatalf("expected true when all empty")
@@ -17,6 +18,7 @@ func TestShouldExtract(t *testing.T) {
 	}
 }
 
+// TestSplitRawEmpty handles the corresponding operation.
 func TestSplitRawEmpty(t *testing.T) {
 	tags, chapters, hasTags, hasChapters, err := SplitRaw(nil)
 	if err != nil {
@@ -27,6 +29,7 @@ func TestSplitRawEmpty(t *testing.T) {
 	}
 }
 
+// TestSplitRawInvalid handles the corresponding operation.
 func TestSplitRawInvalid(t *testing.T) {
 	_, _, _, _, err := SplitRaw([]byte("{bad json"))
 	if err == nil {
@@ -34,6 +37,7 @@ func TestSplitRawInvalid(t *testing.T) {
 	}
 }
 
+// TestSplitRawTagsOnly handles the corresponding operation.
 func TestSplitRawTagsOnly(t *testing.T) {
 	raw := []byte(`{"tags":{"TIT2":["Episode"]},"chapters":[]}`)
 	tags, chapters, hasTags, hasChapters, err := SplitRaw(raw)
@@ -48,6 +52,7 @@ func TestSplitRawTagsOnly(t *testing.T) {
 	}
 }
 
+// TestSplitRawChaptersOnly handles the corresponding operation.
 func TestSplitRawChaptersOnly(t *testing.T) {
 	raw := []byte(`{"tags":{},"chapters":[{"id":"ch1","start_time_ms":0}]}`)
 	tags, chapters, hasTags, hasChapters, err := SplitRaw(raw)
@@ -62,6 +67,7 @@ func TestSplitRawChaptersOnly(t *testing.T) {
 	}
 }
 
+// TestSplitRawBoth handles the corresponding operation.
 func TestSplitRawBoth(t *testing.T) {
 	raw := []byte(`{"tags":{"TIT2":["Episode"]},"chapters":[{"id":"ch1"}]}`)
 	tags, chapters, hasTags, hasChapters, err := SplitRaw(raw)

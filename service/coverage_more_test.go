@@ -14,6 +14,7 @@ import (
 	"github.com/ctaylor1/briefcast/model"
 )
 
+// TestTranscribePendingEpisodesWorkerBranches handles the corresponding operation.
 func TestTranscribePendingEpisodesWorkerBranches(t *testing.T) {
 	setupRetentionTestDB(t)
 	pythonPath := requireWorkingPython(t)
@@ -80,7 +81,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	}
 
 	var refreshedSuccess db.PodcastItem
-	if err := db.GetPodcastItemById(successItem.ID, &refreshedSuccess); err != nil {
+	if err := db.GetPodcastItemByID(successItem.ID, &refreshedSuccess); err != nil {
 		t.Fatalf("failed to reload success item: %v", err)
 	}
 	if refreshedSuccess.TranscriptStatus != "available" {
@@ -98,7 +99,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	}
 
 	var refreshedMissing db.PodcastItem
-	if err := db.GetPodcastItemById(missingItem.ID, &refreshedMissing); err != nil {
+	if err := db.GetPodcastItemByID(missingItem.ID, &refreshedMissing); err != nil {
 		t.Fatalf("failed to reload missing item: %v", err)
 	}
 	if refreshedMissing.TranscriptStatus != "failed" {
@@ -112,7 +113,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	}
 
 	var refreshedFailed db.PodcastItem
-	if err := db.GetPodcastItemById(failedItem.ID, &refreshedFailed); err != nil {
+	if err := db.GetPodcastItemByID(failedItem.ID, &refreshedFailed); err != nil {
 		t.Fatalf("failed to reload failed item: %v", err)
 	}
 	if refreshedFailed.TranscriptStatus != "failed" {
@@ -126,6 +127,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	}
 }
 
+// TestTranscribePendingEpisodesDisabledLockAndScriptErrors handles the corresponding operation.
 func TestTranscribePendingEpisodesDisabledLockAndScriptErrors(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -173,7 +175,7 @@ json.dump({"segments":[]}, sys.stdout)
 	}
 
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload lock test item: %v", err)
 	}
 	if refreshed.TranscriptStatus != "pending_whisperx" {
@@ -190,7 +192,7 @@ json.dump({"segments":[]}, sys.stdout)
 	if err := TranscribePendingEpisodes(); err != nil {
 		t.Fatalf("expected expired lock to be reacquired and processed, got %v", err)
 	}
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload lock test item after expired lock run: %v", err)
 	}
 	if refreshed.TranscriptStatus != "available" {
@@ -198,6 +200,7 @@ json.dump({"segments":[]}, sys.stdout)
 	}
 }
 
+// TestSearchProviderErrorBranches handles the corresponding operation.
 func TestSearchProviderErrorBranches(t *testing.T) {
 	origGpodder := gpodderBaseURL
 	origItunes := itunesBaseURL
@@ -241,6 +244,7 @@ func TestSearchProviderErrorBranches(t *testing.T) {
 	}
 }
 
+// TestDeletePodcastWithoutDeletingExternalFiles handles the corresponding operation.
 func TestDeletePodcastWithoutDeletingExternalFiles(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "delete-podcast-no-files", false)
@@ -274,11 +278,12 @@ func TestDeletePodcastWithoutDeletingExternalFiles(t *testing.T) {
 	}
 
 	var removedPodcast db.Podcast
-	if err := db.GetPodcastById(podcast.ID, &removedPodcast); err == nil {
+	if err := db.GetPodcastByID(podcast.ID, &removedPodcast); err == nil {
 		t.Fatalf("expected podcast to be deleted")
 	}
 }
 
+// TestSetPodcastItemAsDownloadedTranscriptDefaults handles the corresponding operation.
 func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	setupRetentionTestDB(t)
 	podcast := createPodcast(t, "set-downloaded-state", false)
@@ -299,7 +304,7 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	}
 
 	var refreshedPending db.PodcastItem
-	if err := db.GetPodcastItemById(pendingItem.ID, &refreshedPending); err != nil {
+	if err := db.GetPodcastItemByID(pendingItem.ID, &refreshedPending); err != nil {
 		t.Fatalf("failed to reload pending item: %v", err)
 	}
 	if refreshedPending.DownloadStatus != db.Downloaded {
@@ -333,7 +338,7 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	}
 
 	var refreshedAvailable db.PodcastItem
-	if err := db.GetPodcastItemById(availableItem.ID, &refreshedAvailable); err != nil {
+	if err := db.GetPodcastItemByID(availableItem.ID, &refreshedAvailable); err != nil {
 		t.Fatalf("failed to reload available item: %v", err)
 	}
 	if refreshedAvailable.TranscriptStatus != "available" {
@@ -348,6 +353,7 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	}
 }
 
+// TestAddPodcastAndAddPodcastItemsCoverage handles the corresponding operation.
 func TestAddPodcastAndAddPodcastItemsCoverage(t *testing.T) {
 	setupRetentionTestDB(t)
 	pythonPath := requireWorkingPython(t)
@@ -463,7 +469,7 @@ json.dump(payload, sys.stdout)
 	}
 
 	var items []db.PodcastItem
-	if err := db.GetAllPodcastItemsByPodcastId(podcast.ID, &items); err != nil {
+	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &items); err != nil {
 		t.Fatalf("failed to load podcast items: %v", err)
 	}
 	if len(items) != 2 {
@@ -503,7 +509,7 @@ json.dump(payload, sys.stdout)
 		t.Fatalf("add podcast items (existing podcast) failed: %v", err)
 	}
 	var itemsAfterSecondRun []db.PodcastItem
-	if err := db.GetAllPodcastItemsByPodcastId(podcast.ID, &itemsAfterSecondRun); err != nil {
+	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &itemsAfterSecondRun); err != nil {
 		t.Fatalf("failed to load podcast items after second run: %v", err)
 	}
 	if len(itemsAfterSecondRun) != 2 {
@@ -511,6 +517,7 @@ json.dump(payload, sys.stdout)
 	}
 }
 
+// TestDeletePodcastAndEpisodeDeleteBranches handles the corresponding operation.
 func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
 	dataDir := filepath.Join(tempDir, "assets")
@@ -538,7 +545,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 		t.Fatalf("delete podcast episodes failed: %v", err)
 	}
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload deleted episode item: %v", err)
 	}
 	if refreshed.DownloadStatus != db.Deleted {
@@ -581,7 +588,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	}
 
 	var removedPodcast db.Podcast
-	if err := db.GetPodcastById(podcastForDelete.ID, &removedPodcast); err == nil {
+	if err := db.GetPodcastByID(podcastForDelete.ID, &removedPodcast); err == nil {
 		t.Fatalf("expected podcast record to be deleted")
 	}
 
@@ -593,6 +600,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	}
 }
 
+// TestSetPodcastItemAsDownloadedExtractsID3Metadata handles the corresponding operation.
 func TestSetPodcastItemAsDownloadedExtractsID3Metadata(t *testing.T) {
 	setupRetentionTestDB(t)
 	pythonPath := requireWorkingPython(t)
@@ -623,7 +631,7 @@ json.dump(payload, sys.stdout)
 	}
 
 	var refreshed db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshed); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("failed to reload id3-updated item: %v", err)
 	}
 	if strings.TrimSpace(refreshed.ID3TagsJSON) == "" {

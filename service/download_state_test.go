@@ -7,6 +7,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 )
 
+// TestDownloadStateTransitions handles the corresponding operation.
 func TestDownloadStateTransitions(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -28,7 +29,7 @@ func TestDownloadStateTransitions(t *testing.T) {
 		t.Fatalf("queue for download failed: %v", err)
 	}
 	var queued db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &queued); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &queued); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if queued.DownloadStatus != db.NotDownloaded {
@@ -42,7 +43,7 @@ func TestDownloadStateTransitions(t *testing.T) {
 		t.Fatalf("pause failed: %v", err)
 	}
 	var paused db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &paused); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &paused); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if paused.DownloadStatus != db.Paused {
@@ -53,7 +54,7 @@ func TestDownloadStateTransitions(t *testing.T) {
 		t.Fatalf("set not downloaded failed: %v", err)
 	}
 	var cleared db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &cleared); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &cleared); err != nil {
 		t.Fatalf("reload item failed: %v", err)
 	}
 	if cleared.DownloadStatus != db.Deleted {

@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestPickFirstNonEmpty handles the corresponding operation.
 func TestPickFirstNonEmpty(t *testing.T) {
 	if got := PickFirstNonEmpty("", "  ", "value", "next"); got != "value" {
 		t.Fatalf("expected value, got %q", got)
@@ -15,12 +16,14 @@ func TestPickFirstNonEmpty(t *testing.T) {
 	}
 }
 
+// TestPickLongest handles the corresponding operation.
 func TestPickLongest(t *testing.T) {
 	if got := PickLongest("short", "longer", ""); got != "longer" {
 		t.Fatalf("expected longer, got %q", got)
 	}
 }
 
+// TestExtractEntryShowNotesHTML handles the corresponding operation.
 func TestExtractEntryShowNotesHTML(t *testing.T) {
 	entry := map[string]interface{}{
 		"summary": "short",
@@ -37,6 +40,7 @@ func TestExtractEntryShowNotesHTML(t *testing.T) {
 	}
 }
 
+// TestExtractFeedShowNotesHTML handles the corresponding operation.
 func TestExtractFeedShowNotesHTML(t *testing.T) {
 	feed := map[string]interface{}{
 		"summary":        "short",
@@ -48,6 +52,7 @@ func TestExtractFeedShowNotesHTML(t *testing.T) {
 	}
 }
 
+// TestExtractPodcastChapters handles the corresponding operation.
 func TestExtractPodcastChapters(t *testing.T) {
 	entry := map[string]interface{}{
 		"podcast_chapters": map[string]interface{}{
@@ -61,6 +66,7 @@ func TestExtractPodcastChapters(t *testing.T) {
 	}
 }
 
+// TestExtractPodcastChaptersFallbacks handles the corresponding operation.
 func TestExtractPodcastChaptersFallbacks(t *testing.T) {
 	entry := map[string]interface{}{
 		"chapters": []interface{}{
@@ -83,6 +89,7 @@ func TestExtractPodcastChaptersFallbacks(t *testing.T) {
 	}
 }
 
+// TestExtractTranscripts handles the corresponding operation.
 func TestExtractTranscripts(t *testing.T) {
 	entry := map[string]interface{}{
 		"podcast_transcript": []interface{}{
@@ -104,6 +111,7 @@ func TestExtractTranscripts(t *testing.T) {
 	}
 }
 
+// TestExtractTranscriptsDedup handles the corresponding operation.
 func TestExtractTranscriptsDedup(t *testing.T) {
 	entry := map[string]interface{}{
 		"transcripts": []interface{}{
@@ -120,6 +128,7 @@ func TestExtractTranscriptsDedup(t *testing.T) {
 	}
 }
 
+// TestExtractTranscriptsSingleString handles the corresponding operation.
 func TestExtractTranscriptsSingleString(t *testing.T) {
 	entry := map[string]interface{}{
 		"transcript": "https://example.com/t-single.vtt",
@@ -133,6 +142,7 @@ func TestExtractTranscriptsSingleString(t *testing.T) {
 	}
 }
 
+// TestExtractEnclosureURL handles the corresponding operation.
 func TestExtractEnclosureURL(t *testing.T) {
 	entry := map[string]interface{}{
 		"enclosures": []interface{}{
@@ -163,6 +173,7 @@ func TestExtractEnclosureURL(t *testing.T) {
 	}
 }
 
+// TestParseDurationSeconds handles the corresponding operation.
 func TestParseDurationSeconds(t *testing.T) {
 	if got := ParseDurationSeconds("90"); got != 90 {
 		t.Fatalf("expected 90, got %d", got)
@@ -181,6 +192,7 @@ func TestParseDurationSeconds(t *testing.T) {
 	}
 }
 
+// TestParseFeedTime handles the corresponding operation.
 func TestParseFeedTime(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	raw := now.Format(time.RFC3339)
@@ -193,6 +205,7 @@ func TestParseFeedTime(t *testing.T) {
 	}
 }
 
+// TestParseEntryDate handles the corresponding operation.
 func TestParseEntryDate(t *testing.T) {
 	entry := map[string]interface{}{
 		"published": "2026-01-31T13:30:00Z",
@@ -224,6 +237,7 @@ func TestParseEntryDate(t *testing.T) {
 	}
 }
 
+// TestExtractEntryGUID handles the corresponding operation.
 func TestExtractEntryGUID(t *testing.T) {
 	entry := map[string]interface{}{
 		"id": "entry-id",
@@ -239,6 +253,7 @@ func TestExtractEntryGUID(t *testing.T) {
 	}
 }
 
+// TestExtractEntryImage handles the corresponding operation.
 func TestExtractEntryImage(t *testing.T) {
 	entry := map[string]interface{}{
 		"image": map[string]interface{}{
@@ -253,6 +268,7 @@ func TestExtractEntryImage(t *testing.T) {
 	}
 }
 
+// TestGetStringAndNested handles the corresponding operation.
 func TestGetStringAndNested(t *testing.T) {
 	entry := map[string]interface{}{
 		"count": 42.0,
@@ -271,6 +287,7 @@ func TestGetStringAndNested(t *testing.T) {
 	}
 }
 
+// TestExtractImageURL handles the corresponding operation.
 func TestExtractImageURL(t *testing.T) {
 	entry := map[string]interface{}{
 		"itunes_image": "https://example.com/itunes.png",
@@ -280,6 +297,7 @@ func TestExtractImageURL(t *testing.T) {
 	}
 }
 
+// TestMarshalMetadata handles the corresponding operation.
 func TestMarshalMetadata(t *testing.T) {
 	raw := map[string]interface{}{"key": "value"}
 	if got := MarshalMetadata(raw); !strings.Contains(got, "key") {

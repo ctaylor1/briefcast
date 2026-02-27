@@ -13,6 +13,7 @@ import (
 	"testing"
 )
 
+// TestParseContentRangeTotal handles the corresponding operation.
 func TestParseContentRangeTotal(t *testing.T) {
 	if got := parseContentRangeTotal("bytes 0-99/1234"); got != 1234 {
 		t.Fatalf("expected 1234, got %d", got)
@@ -25,6 +26,7 @@ func TestParseContentRangeTotal(t *testing.T) {
 	}
 }
 
+// TestResolveTotalBytes handles the corresponding operation.
 func TestResolveTotalBytes(t *testing.T) {
 	resp := &http.Response{
 		StatusCode:    http.StatusPartialContent,
@@ -51,6 +53,7 @@ func TestResolveTotalBytes(t *testing.T) {
 	}
 }
 
+// TestFileHelpers handles the corresponding operation.
 func TestFileHelpers(t *testing.T) {
 	if name := getFileName("https://example.com/audio", "My Épisode", ".mp3"); !strings.HasSuffix(name, ".mp3") {
 		t.Fatalf("expected default extension .mp3, got %q", name)
@@ -66,12 +69,14 @@ func TestFileHelpers(t *testing.T) {
 	}
 }
 
+// TestDownloadReturnsErrorForInvalidURL handles the corresponding operation.
 func TestDownloadReturnsErrorForInvalidURL(t *testing.T) {
 	if _, err := Download("", "://bad-url", "Episode", "Podcast", ""); err == nil {
 		t.Fatalf("expected download to fail for invalid URL")
 	}
 }
 
+// TestDownloadRetriesFromScratchAfterRange416 handles the corresponding operation.
 func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
 	setupRetentionTestDB(t)
 
@@ -121,6 +126,7 @@ func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
 	}
 }
 
+// TestFileExistsDeleteAndGetSize handles the corresponding operation.
 func TestFileExistsDeleteAndGetSize(t *testing.T) {
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "sample.txt")
@@ -148,6 +154,7 @@ func TestFileExistsDeleteAndGetSize(t *testing.T) {
 	}
 }
 
+// TestAddFileToTarWriter handles the corresponding operation.
 func TestAddFileToTarWriter(t *testing.T) {
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "archive-me.txt")

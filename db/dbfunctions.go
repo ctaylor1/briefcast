@@ -13,15 +13,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// GetPodcastByURL handles the corresponding operation.
 func GetPodcastByURL(url string, podcast *Podcast) error {
 	result := podcastsWithAssociations(DB).Where(&Podcast{URL: url}).First(&podcast)
 	return result.Error
 }
 
+// GetPodcastsByURLList handles the corresponding operation.
 func GetPodcastsByURLList(urls []string, podcasts *[]Podcast) error {
 	result := podcastsWithAssociations(DB).Where("url in ?", urls).First(&podcasts)
 	return result.Error
 }
+
+// GetAllPodcasts handles the corresponding operation.
 func GetAllPodcasts(podcasts *[]Podcast, sorting string) error {
 	if sorting == "" {
 		sorting = "created_at"
@@ -29,10 +33,14 @@ func GetAllPodcasts(podcasts *[]Podcast, sorting string) error {
 	result := podcastsWithTags(DB).Order(sorting).Find(&podcasts)
 	return result.Error
 }
+
+// GetAllPodcastItems handles the corresponding operation.
 func GetAllPodcastItems(podcasts *[]PodcastItem) error {
 	result := podcastItemsWithPodcast(DB).Order("pub_date desc").Find(&podcasts)
 	return result.Error
 }
+
+// GetAllPodcastItemsWithoutSize handles the corresponding operation.
 func GetAllPodcastItemsWithoutSize() (*[]PodcastItem, error) {
 	var podcasts []PodcastItem
 	result := DB.Where("file_size<=?", 0).Order("pub_date desc").Find(&podcasts)
@@ -41,19 +49,20 @@ func GetAllPodcastItemsWithoutSize() (*[]PodcastItem, error) {
 
 func getSortOrder(sorting model.EpisodeSort) string {
 	switch sorting {
-	case model.RELEASE_ASC:
+	case model.ReleaseAsc:
 		return "pub_date asc"
-	case model.RELEASE_DESC:
+	case model.ReleaseDesc:
 		return "pub_date desc"
-	case model.DURATION_ASC:
+	case model.DurationAsc:
 		return "duration asc"
-	case model.DURATION_DESC:
+	case model.DurationDesc:
 		return "duration desc"
 	default:
 		return "pub_date desc"
 	}
 }
 
+// GetPaginatedPodcastItemsNew handles the corresponding operation.
 func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastItem, int64, error) {
 	var podcasts []PodcastItem
 	var total int64
@@ -90,6 +99,7 @@ func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastIte
 	return &podcasts, total, result.Error
 }
 
+// GetPaginatedPodcastItems handles the corresponding operation.
 func GetPaginatedPodcastItems(page int, count int, downloadedOnly *bool, playedOnly *bool, fromDate time.Time, podcasts *[]PodcastItem, total *int64) error {
 	query := podcastItemsWithPodcast(DB)
 	query = applyDownloadStatusFilter(query, downloadedOnly)
@@ -104,6 +114,8 @@ func GetPaginatedPodcastItems(page int, count int, downloadedOnly *bool, playedO
 	result := query.Limit(count).Offset((page - 1) * count).Order("pub_date desc").Find(&podcasts)
 	return result.Error
 }
+
+// GetPaginatedTags handles the corresponding operation.
 func GetPaginatedTags(page int, count int, tags *[]Tag, total *int64) error {
 	query := tagsWithPodcasts(DB)
 
@@ -113,7 +125,9 @@ func GetPaginatedTags(page int, count int, tags *[]Tag, total *int64) error {
 
 	return result.Error
 }
-func GetPodcastById(id string, podcast *Podcast) error {
+
+// GetPodcastByID handles the corresponding operation.
+func GetPodcastByID(id string, podcast *Podcast) error {
 
 	result := DB.Preload("PodcastItems", func(db *gorm.DB) *gorm.DB {
 		return db.Order("podcast_items.pub_date DESC")
@@ -121,38 +135,49 @@ func GetPodcastById(id string, podcast *Podcast) error {
 	return result.Error
 }
 
-func GetPodcastItemById(id string, podcastItem *PodcastItem) error {
+// GetPodcastItemByID handles the corresponding operation.
+func GetPodcastItemByID(id string, podcastItem *PodcastItem) error {
 
 	result := podcastItemsWithAssociations(DB).First(&podcastItem, "id=?", id)
 	return result.Error
 }
-func DeletePodcastItemById(id string) error {
+
+// DeletePodcastItemByID handles the corresponding operation.
+func DeletePodcastItemByID(id string) error {
 
 	result := DB.Where("id=?", id).Delete(&PodcastItem{})
 	return result.Error
 }
-func DeletePodcastById(id string) error {
+
+// DeletePodcastByID handles the corresponding operation.
+func DeletePodcastByID(id string) error {
 
 	result := DB.Where("id=?", id).Delete(&Podcast{})
 	return result.Error
 }
 
-func DeleteTagById(id string) error {
+// DeleteTagByID handles the corresponding operation.
+func DeleteTagByID(id string) error {
 
 	result := DB.Where("id=?", id).Delete(&Tag{})
 	return result.Error
 }
 
-func GetAllPodcastItemsByPodcastId(podcastId string, podcastItems *[]PodcastItem) error {
+// GetAllPodcastItemsByPodcastID handles the corresponding operation.
+func GetAllPodcastItemsByPodcastID(podcastID string, podcastItems *[]PodcastItem) error {
 
-	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastId}).Find(&podcastItems)
+	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastID}).Find(&podcastItems)
 	return result.Error
 }
+
+// GetAllPodcastItemsByPodcastIds handles the corresponding operation.
 func GetAllPodcastItemsByPodcastIds(podcastIds []string, podcastItems *[]PodcastItem) error {
 
 	result := podcastItemsWithAssociations(DB).Where("podcast_id in ?", podcastIds).Order("pub_date desc").Find(&podcastItems)
 	return result.Error
 }
+
+// GetAllPodcastItemsByIds handles the corresponding operation.
 func GetAllPodcastItemsByIds(podcastItemIds []string) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	if len(podcastItemIds) == 0 {
@@ -180,20 +205,25 @@ func GetAllPodcastItemsByIds(podcastItemIds []string) (*[]PodcastItem, error) {
 	return &podcastItems, result.Error
 }
 
-func SetAllEpisodesToDownload(podcastId string) error {
-	result := DB.Model(PodcastItem{}).Where(&PodcastItem{PodcastID: podcastId, DownloadStatus: Deleted}).Update("download_status", NotDownloaded)
-	return result.Error
-}
-func UpdateLastEpisodeDateForPodcast(podcastId string, lastEpisode time.Time) error {
-	result := DB.Model(Podcast{}).Where("id=?", podcastId).Update("last_episode", lastEpisode)
+// SetAllEpisodesToDownload handles the corresponding operation.
+func SetAllEpisodesToDownload(podcastID string) error {
+	result := DB.Model(PodcastItem{}).Where(&PodcastItem{PodcastID: podcastID, DownloadStatus: Deleted}).Update("download_status", NotDownloaded)
 	return result.Error
 }
 
-func UpdatePodcastItemFileSize(podcastItemId string, size int64) error {
-	result := DB.Model(PodcastItem{}).Where("id=?", podcastItemId).Update("file_size", size)
+// UpdateLastEpisodeDateForPodcast handles the corresponding operation.
+func UpdateLastEpisodeDateForPodcast(podcastID string, lastEpisode time.Time) error {
+	result := DB.Model(Podcast{}).Where("id=?", podcastID).Update("last_episode", lastEpisode)
 	return result.Error
 }
 
+// UpdatePodcastItemFileSize handles the corresponding operation.
+func UpdatePodcastItemFileSize(podcastItemID string, size int64) error {
+	result := DB.Model(PodcastItem{}).Where("id=?", podcastItemID).Update("file_size", size)
+	return result.Error
+}
+
+// GetAllPodcastItemsWithoutImage handles the corresponding operation.
 func GetAllPodcastItemsWithoutImage() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	result := podcastItemsWithAssociations(DB).
@@ -205,17 +235,21 @@ func GetAllPodcastItemsWithoutImage() (*[]PodcastItem, error) {
 	return &podcastItems, result.Error
 }
 
+// GetAllPodcastItemsToBeDownloaded handles the corresponding operation.
 func GetAllPodcastItemsToBeDownloaded() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	result := podcastItemsWithAssociations(DB).Where("download_status=?", NotDownloaded).Find(&podcastItems)
 	return &podcastItems, result.Error
 }
+
+// GetAllPodcastItemsAlreadyDownloaded handles the corresponding operation.
 func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	result := podcastItemsWithAssociations(DB).Where("download_status=?", Downloaded).Find(&podcastItems)
 	return &podcastItems, result.Error
 }
 
+// GetPodcastItemsForWhisperx handles the corresponding operation.
 func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	// Transcript workers consume only downloaded episodes with empty transcript payloads.
@@ -240,6 +274,7 @@ func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, e
 	return &podcastItems, result.Error
 }
 
+// GetPodcastItemsByDownloadStatuses handles the corresponding operation.
 func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]PodcastItem, error) {
 	var podcastItems []PodcastItem
 	statusPriority := clause.Expr{
@@ -258,22 +293,25 @@ func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]
 	return podcastItems, result.Error
 }
 
-func UpdatePodcastItemDownloadProgress(podcastItemId string, downloadedBytes int64, totalBytes int64) error {
+// UpdatePodcastItemDownloadProgress handles the corresponding operation.
+func UpdatePodcastItemDownloadProgress(podcastItemID string, downloadedBytes int64, totalBytes int64) error {
 	updates := map[string]interface{}{
 		"downloaded_bytes": downloadedBytes,
 	}
 	if totalBytes > 0 {
 		updates["download_total_bytes"] = totalBytes
 	}
-	return DB.Model(&PodcastItem{}).Where("id=?", podcastItemId).Updates(updates).Error
+	return DB.Model(&PodcastItem{}).Where("id=?", podcastItemID).Updates(updates).Error
 }
 
+// GetPodcastEpisodeStats handles the corresponding operation.
 func GetPodcastEpisodeStats() (*[]PodcastItemStatsModel, error) {
 	var stats []PodcastItemStatsModel
 	result := DB.Model(&PodcastItem{}).Select("download_status,podcast_id, count(1) as count,sum(file_size) as size").Group("podcast_id,download_status").Find(&stats)
 	return &stats, result.Error
 }
 
+// GetPodcastEpisodeDiskStats handles the corresponding operation.
 func GetPodcastEpisodeDiskStats() (PodcastItemConsolidateDiskStatsModel, error) {
 	var stats []PodcastItemDiskStatsModel
 	result := DB.Model(&PodcastItem{}).Select("download_status,count(1) as count,sum(file_size) as size").Group("download_status").Find(&stats)
@@ -293,7 +331,8 @@ func GetPodcastEpisodeDiskStats() (PodcastItemConsolidateDiskStatsModel, error) 
 	return toReturn, result.Error
 }
 
-func GetEpisodeNumber(podcastItemId, podcastId string) (int, error) {
+// GetEpisodeNumber handles the corresponding operation.
+func GetEpisodeNumber(podcastItemID, podcastID string) (int, error) {
 	var id string
 	var sequence int
 	row := DB.Raw(`;With cte as(
@@ -308,59 +347,75 @@ func GetEpisodeNumber(podcastItemId, podcastId string) (int, error) {
 	select * 
 	from cte 
 	where id = ?
-	`, podcastId, podcastItemId).Row()
+	`, podcastID, podcastItemID).Row()
 	error := row.Scan(&id, &sequence)
 	return sequence, error
 }
 
-func ForceSetLastEpisodeDate(podcastId string) {
-	DB.Exec("update podcasts set last_episode = (select max(pi.pub_date) from podcast_items pi where pi.podcast_id = @id) where id = @id", sql.Named("id", podcastId))
+// ForceSetLastEpisodeDate handles the corresponding operation.
+func ForceSetLastEpisodeDate(podcastID string) {
+	DB.Exec("update podcasts set last_episode = (select max(pi.pub_date) from podcast_items pi where pi.podcast_id = @id) where id = @id", sql.Named("id", podcastID))
 }
 
-func TogglePodcastPauseStatus(podcastId string, isPaused bool) error {
+// TogglePodcastPauseStatus handles the corresponding operation.
+func TogglePodcastPauseStatus(podcastID string, isPaused bool) error {
 
-	tx := DB.Exec("update podcasts set is_paused = @isPaused where id = @id", sql.Named("id", podcastId), sql.Named("isPaused", isPaused))
+	tx := DB.Exec("update podcasts set is_paused = @isPaused where id = @id", sql.Named("id", podcastID), sql.Named("isPaused", isPaused))
 	return tx.Error
 }
 
-func GetPodcastItemsByPodcastIdAndGUIDs(podcastId string, guids []string) (*[]PodcastItem, error) {
+// GetPodcastItemsByPodcastIDAndGUIDs handles the corresponding operation.
+func GetPodcastItemsByPodcastIDAndGUIDs(podcastID string, guids []string) (*[]PodcastItem, error) {
 	var podcastItems []PodcastItem
-	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastId}).Where("guid IN ?", guids).Find(&podcastItems)
+	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastID}).Where("guid IN ?", guids).Find(&podcastItems)
 	return &podcastItems, result.Error
 }
-func GetPodcastItemByPodcastIdAndGUID(podcastId string, guid string, podcastItem *PodcastItem) error {
 
-	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastId, GUID: guid}).First(&podcastItem)
+// GetPodcastItemByPodcastIDAndGUID handles the corresponding operation.
+func GetPodcastItemByPodcastIDAndGUID(podcastID string, guid string, podcastItem *PodcastItem) error {
+
+	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastID, GUID: guid}).First(&podcastItem)
 	return result.Error
 }
+
+// GetPodcastByTitleAndAuthor handles the corresponding operation.
 func GetPodcastByTitleAndAuthor(title string, author string, podcast *Podcast) error {
 
 	result := podcastsWithAssociations(DB).Where(&Podcast{Title: title, Author: author}).First(&podcast)
 	return result.Error
 }
 
+// CreatePodcast handles the corresponding operation.
 func CreatePodcast(podcast *Podcast) error {
 	tx := DB.Create(&podcast)
 	return tx.Error
 }
 
+// CreatePodcastItem handles the corresponding operation.
 func CreatePodcastItem(podcastItem *PodcastItem) error {
 	tx := DB.Omit("Podcast").Create(&podcastItem)
 	return tx.Error
 }
 
+// UpdatePodcast handles the corresponding operation.
 func UpdatePodcast(podcast *Podcast) error {
 	tx := DB.Save(&podcast)
 	return tx.Error
 }
+
+// UpdatePodcastItem handles the corresponding operation.
 func UpdatePodcastItem(podcastItem *PodcastItem) error {
 	tx := DB.Omit("Podcast").Save(&podcastItem)
 	return tx.Error
 }
+
+// UpdateSettings handles the corresponding operation.
 func UpdateSettings(setting *Setting) error {
 	tx := DB.Save(&setting)
 	return tx.Error
 }
+
+// GetOrCreateSetting handles the corresponding operation.
 func GetOrCreateSetting() *Setting {
 	var setting Setting
 	result := DB.First(&setting)
@@ -538,6 +593,7 @@ func UnlockMissedJobs() {
 	}
 }
 
+// GetAllTags handles the corresponding operation.
 func GetAllTags(sorting string) (*[]Tag, error) {
 	var tags []Tag
 	if sorting == "" {
@@ -547,19 +603,24 @@ func GetAllTags(sorting string) (*[]Tag, error) {
 	return &tags, result.Error
 }
 
-func GetTagById(id string) (*Tag, error) {
+// GetTagByID handles the corresponding operation.
+func GetTagByID(id string) (*Tag, error) {
 	var tag Tag
 	result := tagsWithAssociations(DB).
 		First(&tag, "id=?", id)
 
 	return &tag, result.Error
 }
+
+// GetTagsByIds handles the corresponding operation.
 func GetTagsByIds(ids []string) (*[]Tag, error) {
 	var tag []Tag
 	result := tagsWithAssociations(DB).Where("id in ?", ids).Find(&tag)
 
 	return &tag, result.Error
 }
+
+// GetTagByLabel handles the corresponding operation.
 func GetTagByLabel(label string) (*Tag, error) {
 	var tag Tag
 	result := tagsWithAssociations(DB).
@@ -568,29 +629,37 @@ func GetTagByLabel(label string) (*Tag, error) {
 	return &tag, result.Error
 }
 
+// CreateTag handles the corresponding operation.
 func CreateTag(tag *Tag) error {
 	tx := DB.Omit("Podcasts").Create(&tag)
 	return tx.Error
 }
+
+// UpdateTag handles the corresponding operation.
 func UpdateTag(tag *Tag) error {
 	tx := DB.Omit("Podcast").Save(&tag)
 	return tx.Error
 }
-func AddTagToPodcast(id, tagId string) error {
+
+// AddTagToPodcast handles the corresponding operation.
+func AddTagToPodcast(id, tagID string) error {
 	tx := DB.Table("podcast_tags").Clauses(clause.OnConflict{
 		DoNothing: true,
 	}).Create(map[string]interface{}{
 		"podcast_id": id,
-		"tag_id":     tagId,
+		"tag_id":     tagID,
 	})
 	return tx.Error
 }
-func RemoveTagFromPodcast(id, tagId string) error {
-	tx := DB.Exec("DELETE FROM podcast_tags WHERE podcast_id=? AND tag_id=?", id, tagId)
+
+// RemoveTagFromPodcast handles the corresponding operation.
+func RemoveTagFromPodcast(id, tagID string) error {
+	tx := DB.Exec("DELETE FROM podcast_tags WHERE podcast_id=? AND tag_id=?", id, tagID)
 	return tx.Error
 }
 
-func UntagAllByTagId(tagId string) error {
-	tx := DB.Exec("DELETE FROM podcast_tags WHERE tag_id=?", tagId)
+// UntagAllByTagID handles the corresponding operation.
+func UntagAllByTagID(tagID string) error {
+	tx := DB.Exec("DELETE FROM podcast_tags WHERE tag_id=?", tagID)
 	return tx.Error
 }

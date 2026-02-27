@@ -14,6 +14,7 @@ const (
 	maxLocalSearchLimit     = 200
 )
 
+// SearchLocalRecords handles the corresponding operation.
 func SearchLocalRecords(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
 	if query == "" {

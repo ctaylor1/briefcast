@@ -62,11 +62,13 @@ func Migrate() {
 	RunMigrations()
 }
 
+// GetDB handles the corresponding operation.
 // Using this function to get a connection, you can create your connection pool here.
 func GetDB() *gorm.DB {
 	return DB
 }
 
+// CurrentDriver handles the corresponding operation.
 func CurrentDriver() DatabaseDriver {
 	return activeDriver
 }

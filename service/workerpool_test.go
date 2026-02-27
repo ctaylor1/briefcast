@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestBoundedWorkerCount handles the corresponding operation.
 func TestBoundedWorkerCount(t *testing.T) {
 	cases := []struct {
 		requested int
@@ -26,6 +27,7 @@ func TestBoundedWorkerCount(t *testing.T) {
 	}
 }
 
+// TestRunWorkerPoolExecutesAllJobs handles the corresponding operation.
 func TestRunWorkerPoolExecutesAllJobs(t *testing.T) {
 	jobs := []int{1, 2, 3, 4, 5}
 	seen := map[int]bool{}
@@ -47,6 +49,7 @@ func TestRunWorkerPoolExecutesAllJobs(t *testing.T) {
 	}
 }
 
+// TestRunWorkerPoolNoopConditions handles the corresponding operation.
 func TestRunWorkerPoolNoopConditions(t *testing.T) {
 	calls := 0
 	runWorkerPool([]int{}, 2, func(_ int) { calls++ })

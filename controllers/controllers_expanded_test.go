@@ -37,6 +37,7 @@ type mockSearchService struct {
 	result []*model.CommonSearchResultModel
 }
 
+// Query handles the corresponding operation.
 func (m mockSearchService) Query(_ string) []*model.CommonSearchResultModel {
 	return m.result
 }
@@ -47,8 +48,8 @@ func makeExpandedRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setting := db.GetOrCreateSetting()
-		if setting.BaseUrl == "" {
-			setting.BaseUrl = "http://localhost"
+		if setting.BaseURL == "" {
+			setting.BaseURL = "http://localhost"
 			_ = db.UpdateSettings(setting)
 		}
 		c.Set("setting", setting)
@@ -74,46 +75,46 @@ func makeExpandedRouter(t *testing.T) *gin.Engine {
 	router.GET("/episodes", AllEpisodesPage)
 	router.GET("/tags-page", AllTagsPage)
 	router.GET("/search", Search)
-	router.GET("/opml", GetOmpl)
+	router.GET("/opml", GetOPML)
 	router.POST("/opml", UploadOpml)
 	router.POST("/add-new", AddNewPodcast)
 
 	router.POST("/podcasts", AddPodcast)
 	router.GET("/podcasts", GetAllPodcasts)
-	router.GET("/podcasts/:id", GetPodcastById)
-	router.GET("/podcasts/:id/image", GetPodcastImageById)
-	router.GET("/podcasts/:id/items", GetPodcastItemsByPodcastId)
-	router.GET("/podcasts/:id/download", DownloadAllEpisodesByPodcastId)
-	router.GET("/podcasts/:id/pause", PausePodcastById)
-	router.GET("/podcasts/:id/unpause", UnpausePodcastById)
+	router.GET("/podcasts/:id", GetPodcastByID)
+	router.GET("/podcasts/:id/image", GetPodcastImageByID)
+	router.GET("/podcasts/:id/items", GetPodcastItemsByPodcastID)
+	router.GET("/podcasts/:id/download", DownloadAllEpisodesByPodcastID)
+	router.GET("/podcasts/:id/pause", PausePodcastByID)
+	router.GET("/podcasts/:id/unpause", UnpausePodcastByID)
 	router.PATCH("/podcasts/:id/retention", PatchPodcastRetention)
 	router.PATCH("/podcasts/:id/sponsor-skip", PatchPodcastSponsorSkip)
-	router.DELETE("/podcasts/:id/items", DeletePodcastEpisodesById)
-	router.DELETE("/podcasts/:id/items-only", DeletePodcasDeleteOnlyPodcasttEpisodesById)
-	router.DELETE("/podcasts/:id/podcast", DeleteOnlyPodcastById)
-	router.DELETE("/podcasts/:id", DeletePodcastById)
-	router.GET("/podcasts/:id/rss", GetRssForPodcastById)
+	router.DELETE("/podcasts/:id/items", DeletePodcastEpisodesByID)
+	router.DELETE("/podcasts/:id/items-only", DeletePodcasDeleteOnlyPodcasttEpisodesByID)
+	router.DELETE("/podcasts/:id/podcast", DeleteOnlyPodcastByID)
+	router.DELETE("/podcasts/:id", DeletePodcastByID)
+	router.GET("/podcasts/:id/rss", GetRssForPodcastByID)
 
 	router.GET("/podcastitems", GetAllPodcastItems)
-	router.GET("/podcastitems/:id", GetPodcastItemById)
-	router.GET("/podcastitems/:id/image", GetPodcastItemImageById)
-	router.GET("/podcastitems/:id/file", GetPodcastItemFileById)
+	router.GET("/podcastitems/:id", GetPodcastItemByID)
+	router.GET("/podcastitems/:id/image", GetPodcastItemImageByID)
+	router.GET("/podcastitems/:id/file", GetPodcastItemFileByID)
 	router.GET("/podcastitems/:id/markUnplayed", MarkPodcastItemAsUnplayed)
 	router.GET("/podcastitems/:id/markPlayed", MarkPodcastItemAsPlayed)
 	router.GET("/podcastitems/:id/bookmark", BookmarkPodcastItem)
 	router.GET("/podcastitems/:id/unbookmark", UnbookmarkPodcastItem)
-	router.PATCH("/podcastitems/:id", PatchPodcastItemById)
+	router.PATCH("/podcastitems/:id", PatchPodcastItemByID)
 	router.GET("/podcastitems/:id/download", DownloadPodcastItem)
 	router.GET("/podcastitems/:id/delete", DeletePodcastItem)
 	router.POST("/podcastitems/:id/resume", ResumePodcastItemDownload)
 
 	router.GET("/tags", GetAllTags)
-	router.GET("/tags/:id", GetTagById)
-	router.GET("/tags/:id/rss", GetRssForTagById)
+	router.GET("/tags/:id", GetTagByID)
+	router.GET("/tags/:id/rss", GetRssForTagByID)
 	router.POST("/tags", AddTag)
-	router.POST("/podcasts/:id/tags/:tagId", AddTagToPodcast)
-	router.DELETE("/podcasts/:id/tags/:tagId", RemoveTagFromPodcast)
-	router.DELETE("/tags/:id", DeleteTagById)
+	router.POST("/podcasts/:id/tags/:tagID", AddTagToPodcast)
+	router.DELETE("/podcasts/:id/tags/:tagID", RemoveTagFromPodcast)
+	router.DELETE("/tags/:id", DeleteTagByID)
 
 	router.POST("/settings", UpdateSetting)
 	router.GET("/rss", GetRss)
@@ -132,6 +133,7 @@ func performRequest(router *gin.Engine, method, target string, body io.Reader, h
 	return resp
 }
 
+// TestPodcastAndPagesHandlersCoverage handles the corresponding operation.
 func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	setupControllersTestDB(t)
 	service.ResumeDownloads()
@@ -144,7 +146,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("update podcast failed: %v", err)
 	}
 	var refreshedItem db.PodcastItem
-	if err := db.GetPodcastItemById(item.ID, &refreshedItem); err != nil {
+	if err := db.GetPodcastItemByID(item.ID, &refreshedItem); err != nil {
 		t.Fatalf("reload podcast item failed: %v", err)
 	}
 	item = refreshedItem
@@ -216,9 +218,9 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /player itemIds expected 200, got %d", resp.Code)
 	}
-	resp = performRequest(router, http.MethodGet, "/player?podcastId="+podcast.ID, nil, nil)
+	resp = performRequest(router, http.MethodGet, "/player?podcastID="+podcast.ID, nil, nil)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /player podcastId expected 200, got %d", resp.Code)
+		t.Fatalf("GET /player podcastID expected 200, got %d", resp.Code)
 	}
 	resp = performRequest(router, http.MethodGet, "/player?tagIds="+tag.ID, nil, nil)
 	if resp.Code != http.StatusOK {
@@ -449,13 +451,13 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	}
 	resp = performRequest(router, http.MethodPost, "/podcasts/"+podcast.ID+"/tags/"+tag.ID, nil, nil)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("POST /podcasts/:id/tags/:tagId expected 200, got %d", resp.Code)
+		t.Fatalf("POST /podcasts/:id/tags/:tagID expected 200, got %d", resp.Code)
 	}
 	resp = performRequest(router, http.MethodDelete, "/podcasts/"+podcast.ID+"/tags/"+tag.ID, nil, nil)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("DELETE /podcasts/:id/tags/:tagId expected 200, got %d", resp.Code)
+		t.Fatalf("DELETE /podcasts/:id/tags/:tagID expected 200, got %d", resp.Code)
 	}
-	resp = performRequest(router, http.MethodPost, "/settings", strings.NewReader(`{"downloadOnAdd":true,"initialDownloadCount":1,"autoDownload":true,"appendDateToFileName":false,"appendEpisodeNumberToFileName":false,"darkMode":false,"downloadEpisodeImages":true,"generateNFOFile":false,"dontDownloadDeletedFromDisk":true,"baseUrl":"http://localhost","maxDownloadConcurrency":2,"userAgent":"briefcast-test"}`), map[string]string{
+	resp = performRequest(router, http.MethodPost, "/settings", strings.NewReader(`{"downloadOnAdd":true,"initialDownloadCount":1,"autoDownload":true,"appendDateToFileName":false,"appendEpisodeNumberToFileName":false,"darkMode":false,"downloadEpisodeImages":true,"generateNFOFile":false,"dontDownloadDeletedFromDisk":true,"baseURL":"http://localhost","maxDownloadConcurrency":2,"userAgent":"briefcast-test"}`), map[string]string{
 		"Content-Type": "application/json",
 	})
 	if resp.Code != http.StatusOK {
@@ -522,6 +524,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	}
 }
 
+// TestControllerHelpers handles the corresponding operation.
 func TestControllerHelpers(t *testing.T) {
 	setupControllersTestDB(t)
 	podcast, item := createControllerPodcastAndItem(t)
@@ -540,7 +543,7 @@ func TestControllerHelpers(t *testing.T) {
 
 	options := getSortOptions()
 	b, err := json.Marshal(options)
-	if err != nil || !bytes.Contains(b, []byte("release_asc")) {
+	if err != nil || !bytes.Contains(b, []byte("ReleaseAsc")) {
 		t.Fatalf("unexpected sort options payload: %v %s", err, string(b))
 	}
 
@@ -565,6 +568,7 @@ func TestControllerHelpers(t *testing.T) {
 	}
 }
 
+// TestHandleWebsocketMessagesWithoutConnections handles the corresponding operation.
 func TestHandleWebsocketMessagesWithoutConnections(t *testing.T) {
 	activePlayers = make(map[*websocket.Conn]string)
 	allConnections = make(map[*websocket.Conn]string)
@@ -575,10 +579,11 @@ func TestHandleWebsocketMessagesWithoutConnections(t *testing.T) {
 	broadcast <- Message{
 		Identifier:  "alpha",
 		MessageType: "Enqueue",
-		Payload:     `{"itemIds":[],"podcastId":"","tagIds":[]}`,
+		Payload:     `{"itemIds":[],"podcastID":"","tagIds":[]}`,
 	}
 }
 
+// TestControllerMissingIDErrorBranches handles the corresponding operation.
 func TestControllerMissingIDErrorBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeExpandedRouter(t)
@@ -640,6 +645,7 @@ func TestControllerMissingIDErrorBranches(t *testing.T) {
 	}
 }
 
+// TestDownloadAndSearchControllersHandleDatabaseErrors handles the corresponding operation.
 func TestDownloadAndSearchControllersHandleDatabaseErrors(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
@@ -665,6 +671,7 @@ func TestDownloadAndSearchControllersHandleDatabaseErrors(t *testing.T) {
 	}
 }
 
+// TestWebsocketHandlerRoundTrip handles the corresponding operation.
 func TestWebsocketHandlerRoundTrip(t *testing.T) {
 	setupControllersTestDB(t)
 	startWebsocketDispatcher()
@@ -724,7 +731,7 @@ func TestWebsocketHandlerRoundTrip(t *testing.T) {
 		t.Fatalf("expected PlayerExists for registered client, got %+v", registerAck)
 	}
 
-	payload := `{"itemIds":["` + item.ID + `"],"podcastId":"","tagIds":[]}`
+	payload := `{"itemIds":["` + item.ID + `"],"podcastID":"","tagIds":[]}`
 	if err := clientConn.WriteJSON(Message{
 		Identifier:  "player-1",
 		MessageType: "Enqueue",

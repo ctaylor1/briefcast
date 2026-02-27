@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TestUploadOpmlSuccessAndAllTagsErrorBranches handles the corresponding operation.
 func TestUploadOpmlSuccessAndAllTagsErrorBranches(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeExpandedRouter(t)
@@ -21,7 +22,7 @@ func TestUploadOpmlSuccessAndAllTagsErrorBranches(t *testing.T) {
 <opml version="2.0">
   <head><title>Briefcast Import</title></head>
   <body>
-    <outline text="Controller Podcast" type="rss" xmlUrl="` + podcast.URL + `" />
+    <outline text="Controller Podcast" type="rss" xmlURL="` + podcast.URL + `" />
   </body>
 </opml>`
 
@@ -64,6 +65,7 @@ func TestUploadOpmlSuccessAndAllTagsErrorBranches(t *testing.T) {
 	}
 }
 
+// TestPodcastHandlerUriValidationBranches handles the corresponding operation.
 func TestPodcastHandlerUriValidationBranches(t *testing.T) {
 	setupControllersTestDB(t)
 
@@ -93,7 +95,7 @@ func TestPodcastHandlerUriValidationBranches(t *testing.T) {
 		rec := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(rec)
 		c.Request = httptest.NewRequest(http.MethodGet, "/podcasts/missing/download", nil)
-		DownloadAllEpisodesByPodcastId(c)
+		DownloadAllEpisodesByPodcastID(c)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected queue-all uri validation failure to return 400, got %d", rec.Code)
 		}
