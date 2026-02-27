@@ -22,10 +22,14 @@ const classes = computed(() =>
     props.tone === "warning" && "ui-alert--warning",
   ),
 );
+
+const liveRole = computed(() =>
+  props.tone === "danger" || props.tone === "warning" ? "alert" : "status",
+);
 </script>
 
 <template>
-  <div role="status" :class="classes">
+  <div :role="liveRole" aria-atomic="true" :class="classes">
     <slot />
   </div>
 </template>
