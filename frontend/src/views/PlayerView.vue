@@ -458,7 +458,7 @@ onBeforeUnmount(() => {
           <audio
             ref="audioRef"
             class="player-audio"
-            controls
+            aria-label="Podcast audio"
             :src="currentSource"
             @ended="handleEnded"
             @timeupdate="handleTimeUpdate"
