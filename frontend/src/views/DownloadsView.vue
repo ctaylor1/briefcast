@@ -8,9 +8,14 @@ import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
+import UiDialog from "../components/ui/UiDialog.vue";
 
 const infoMessage = ref("");
 const actionError = ref("");
+const confirmStopAllOpen = ref(false);
+const stoppingAllBusy = ref(false);
+const undoCancelItem = ref<PodcastItem | null>(null);
+let undoCancelTimer: number | undefined;
 const DOWNLOAD_STATUS_QUEUED = 0;
 const DOWNLOAD_STATUS_DOWNLOADING = 1;
 const DOWNLOAD_STATUS_DOWNLOADED = 2;
@@ -142,12 +147,59 @@ async function resumeAllDownloads(): Promise<void> {
 async function cancelAllDownloads(): Promise<void> {
   infoMessage.value = "";
   actionError.value = "";
+  stoppingAllBusy.value = true;
   try {
     await cancelAllQueuedDownloads();
     infoMessage.value = "All queued downloads cancelled.";
     await fetchQueue();
+    clearUndoCancel();
   } catch (error) {
     actionError.value = getErrorMessage(error, "Could not cancel downloads.");
+  } finally {
+    stoppingAllBusy.value = false;
+  }
+}
+
+function requestCancelAllDownloads(): void {
+  confirmStopAllOpen.value = true;
+}
+
+async function confirmCancelAllDownloads(): Promise<void> {
+  confirmStopAllOpen.value = false;
+  await cancelAllDownloads();
+}
+
+function clearUndoCancel(): void {
+  if (undoCancelTimer) {
+    window.clearTimeout(undoCancelTimer);
+    undoCancelTimer = undefined;
+  }
+  undoCancelItem.value = null;
+}
+
+function armUndoCancel(item: PodcastItem): void {
+  clearUndoCancel();
+  undoCancelItem.value = item;
+  undoCancelTimer = window.setTimeout(() => {
+    undoCancelTimer = undefined;
+    undoCancelItem.value = null;
+  }, 5000);
+}
+
+async function undoCancelDownload(): Promise<void> {
+  const item = undoCancelItem.value;
+  if (!item) {
+    return;
+  }
+  infoMessage.value = "";
+  actionError.value = "";
+  clearUndoCancel();
+  try {
+    await resumeEpisodeDownload(item.ID);
+    infoMessage.value = "Download resumed.";
+    await fetchQueue();
+  } catch (error) {
+    actionError.value = getErrorMessage(error, "Could not resume download.");
   }
 }
 
@@ -157,6 +209,7 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
   try {
     await cancelEpisodeDownload(item.ID);
     infoMessage.value = "Download cancelled.";
+    armUndoCancel(item);
     await fetchQueue();
   } catch (error) {
     actionError.value = getErrorMessage(error, "Could not cancel download.");
@@ -210,6 +263,7 @@ onUnmounted(() => {
   if (queueInterval) {
     window.clearInterval(queueInterval);
   }
+  clearUndoCancel();
 });
 </script>
 
@@ -227,6 +281,14 @@ onUnmounted(() => {
     </UiAlert>
     <UiAlert v-if="actionError" tone="danger">
       {{ actionError }}
+    </UiAlert>
+    <UiAlert v-if="undoCancelItem" tone="info">
+      <div class="queue-undo">
+        <span>Stopped "{{ undoCancelItem.Title }}".</span>
+        <UiButton size="sm" variant="secondary" @click="undoCancelDownload">
+          Undo
+        </UiButton>
+      </div>
     </UiAlert>
 
     <UiCard padding="lg" class="stack-3">
@@ -253,7 +315,7 @@ onUnmounted(() => {
             size="sm"
             variant="danger"
             :disabled="queueCounts.queued === 0 && queueCounts.downloading === 0"
-            @click="cancelAllDownloads"
+            @click="requestCancelAllDownloads"
           >
             Stop all
           </UiButton>
@@ -352,10 +414,30 @@ onUnmounted(() => {
         </li>
       </ul>
     </UiCard>
+
+    <UiDialog
+      :open="confirmStopAllOpen"
+      tone="danger"
+      title="Stop all downloads?"
+      description="This will cancel all queued and active downloads. You can resume individual episodes from the queue."
+      confirm-label="Stop all"
+      cancel-label="Keep downloads running"
+      :busy="stoppingAllBusy"
+      @close="confirmStopAllOpen = false"
+      @confirm="confirmCancelAllDownloads"
+    />
   </section>
 </template>
 
 <style scoped>
+.queue-undo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 .queue-toolbar {
   display: flex;
   flex-wrap: wrap;
