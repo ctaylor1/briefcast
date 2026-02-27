@@ -4,10 +4,10 @@
   --color-text-primary: #37352f;
   --color-text-secondary: #6d6b66;
   --color-text-tertiary: #66645f;
-  --color-accent: #2383e2;
-  --color-accent-hover: #1b6ec2;
+  --color-accent: #1b6ec2;
+  --color-accent-hover: #15579b;
   --color-accent-subtle: #e8f0fe;
-  --color-danger: #eb5757;
+  --color-danger: #c74242;
   --color-success: #4dab9a;
   --color-warning: #cb912f;
   --color-border: #e9e9e7;
@@ -474,7 +474,7 @@ img {
 }
 
 .ui-button--danger:hover {
-  background: #d64848;
+  background: #b53a3a;
   color: #ffffff;
 }
 
@@ -589,7 +589,7 @@ img {
 
 .ui-badge--success {
   background: rgba(77, 171, 154, 0.16);
-  color: #2f7c6f;
+  color: #245f55;
 }
 
 .ui-badge--danger {
@@ -599,7 +599,7 @@ img {
 
 .ui-badge--warning {
   background: rgba(203, 145, 47, 0.16);
-  color: #9d6e26;
+  color: #744f13;
 }
 
 .ui-alert {
