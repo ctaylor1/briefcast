@@ -293,9 +293,11 @@ function restoreCommandFocus(): void {
   const target = lastCommandInvokerRef.value ?? commandTriggerRef.value;
   if (target && document.contains(target)) {
     target.focus();
+    lastCommandInvokerRef.value = null;
     return;
   }
   commandTriggerRef.value?.focus();
+  lastCommandInvokerRef.value = null;
 }
 
 function openCommandPalette(target?: EventTarget | null): void {
@@ -312,11 +314,6 @@ function closeCommandPalette(): void {
   commandQuery.value = "";
   globalSearchQuery.value = "";
   void runGlobalSearch();
-  if (wasOpen) {
-    void nextTick(() => {
-      restoreCommandFocus();
-    });
-  }
 }
 
 function localResultLabel(result: LocalSearchResult): string {
@@ -605,7 +602,7 @@ onBeforeUnmount(() => {
     </RouterLink>
   </nav>
 
-  <TransitionRoot as="template" :show="commandOpen">
+  <TransitionRoot as="template" :show="commandOpen" @after-leave="restoreCommandFocus">
     <Dialog
       as="div"
       class="ui-layer"
