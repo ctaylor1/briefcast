@@ -55,3 +55,18 @@ func TestExecuteMigrationQuerySQLiteSkipsExistingColumn(t *testing.T) {
 		t.Fatalf("expected existing-column migration to be skipped without error, got %v", err)
 	}
 }
+
+// TestPodcastItemCanonicalTranscriptColumnsExistAfterMigrate handles the corresponding operation.
+func TestPodcastItemCanonicalTranscriptColumnsExistAfterMigrate(t *testing.T) {
+	setupDBForTest(t)
+
+	if !DB.Migrator().HasColumn(&PodcastItem{}, "canonical_transcript") {
+		t.Fatalf("expected canonical_transcript column to exist after migrate")
+	}
+	if !DB.Migrator().HasColumn(&PodcastItem{}, "canonical_transcript_version") {
+		t.Fatalf("expected canonical_transcript_version column to exist after migrate")
+	}
+	if !DB.Migrator().HasColumn(&PodcastItem{}, "canonical_updated_at") {
+		t.Fatalf("expected canonical_updated_at column to exist after migrate")
+	}
+}

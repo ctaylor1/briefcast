@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-02-27
+
+### Added
+- Added `canonical_transcript`, `canonical_transcript_version`, and `canonical_updated_at` database columns for `podcast_items`.
+- Added canonical transcript formatting/backfill services and a CLI backfill command at `cmd/backfill_canonical_transcripts`.
+- Added unit/integration coverage for canonical transcript formatting, migration presence, and batch backfill behavior.
+
+### Changed
+- Updated WhisperX script output to include `segments_pre_align` and preserve a word-array-free segment snapshot for canonical text generation.
+- Updated ingestion/transcription flows to persist canonical transcript text and version metadata alongside transcript JSON.
+- Updated README release/version references for `v1.1.0`.
+
+### Fixed
+- Fixed UI copy to read `Briefcast transcription in progress.`.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.0.11] - 2026-02-27
 
 ### Added

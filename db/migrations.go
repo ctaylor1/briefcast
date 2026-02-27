@@ -113,6 +113,18 @@ where id in (
 		Name:  "2026_02_25_01_03_BackfillTranscriptProgressPct",
 		Query: "update podcast_items set transcript_progress_pct = 0 where transcript_progress_pct is null",
 	},
+	{
+		Name:  "2026_02_27_01_00_AddCanonicalTranscript",
+		Query: "alter table podcast_items add column if not exists canonical_transcript text",
+	},
+	{
+		Name:  "2026_02_27_01_01_AddCanonicalTranscriptVersion",
+		Query: "alter table podcast_items add column if not exists canonical_transcript_version integer",
+	},
+	{
+		Name:  "2026_02_27_01_02_AddCanonicalUpdatedAt",
+		Query: "alter table podcast_items add column if not exists canonical_updated_at timestamp",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

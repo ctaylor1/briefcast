@@ -284,6 +284,17 @@ def shift_segment_timing(segment, offset_seconds):
     return shifted
 
 
+def strip_word_payload(segment):
+    if not isinstance(segment, dict):
+        return segment
+    cleaned = {}
+    for key, value in segment.items():
+        if key == "words":
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 def load_resume_checkpoint():
     resume_file = os.environ.get("WHISPERX_RESUME_FILE", "").strip()
     raw = ""
@@ -671,6 +682,7 @@ def main():
                 if total_seconds <= 0:
                     break
 
+        pre_align_segments = [strip_word_payload(segment) for segment in merged_segments]
         result = {
             "language": checkpoint_language or language,
             "segments": merged_segments,
@@ -805,6 +817,7 @@ def main():
                 "max_speakers": max_speakers,
                 "error": diarize_error,
             },
+            "segments_pre_align": pre_align_segments,
             "segments": result.get("segments", []),
             "metadata": {
                 "generated_at": datetime.now(UTC).isoformat(),

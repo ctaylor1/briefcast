@@ -364,6 +364,9 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			transcriptAssets := feedmeta.ExtractTranscripts(entry)
 			transcriptStatus := "pending_whisperx"
 			transcriptJSON := ""
+			canonicalTranscript := ""
+			canonicalTranscriptVersion := 0
+			var canonicalUpdatedAt *time.Time
 			transcriptProgressPct := 0
 			transcriptProgressStage := "queued"
 			if len(transcriptAssets) > 0 {
@@ -379,6 +382,10 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 					transcriptAssets[i].Content = string(body)
 				}
 				transcriptJSON = feedmeta.MarshalMetadata(transcriptAssets)
+				canonicalTranscript = buildCanonicalTranscriptFromTranscriptJSON(transcriptJSON)
+				canonicalTranscriptVersion = canonicalTranscriptVersionCurrent
+				updatedAt := time.Now().UTC()
+				canonicalUpdatedAt = &updatedAt
 				transcriptStatus = "available"
 				transcriptProgressPct = 100
 				transcriptProgressStage = "complete"
@@ -388,26 +395,29 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			}
 
 			podcastItem = db.PodcastItem{
-				PodcastID:                podcast.ID,
-				Title:                    feedmeta.GetString(entry, "title"),
-				Summary:                  showNotesText,
-				SummaryHTML:              showNotesHTML,
-				EpisodeType:              feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_episodetype"), feedmeta.GetString(entry, "episodetype")),
-				Duration:                 duration,
-				PubDate:                  pubDate,
-				FileURL:                  feedmeta.ExtractEnclosureURL(entry),
-				GUID:                     guid,
-				Image:                    feedmeta.ExtractEntryImage(entry, feedImage),
-				DownloadStatus:           downloadStatus,
-				ChaptersURL:              chaptersURL,
-				ChaptersType:             chaptersType,
-				ChaptersJSON:             chaptersJSON,
-				ItemMetadata:             feedmeta.MarshalMetadata(entry),
-				TranscriptJSON:           transcriptJSON,
-				TranscriptStatus:         transcriptStatus,
-				TranscriptProgressPct:    transcriptProgressPct,
-				TranscriptProgressStage:  transcriptProgressStage,
-				TranscriptCheckpointJSON: "",
+				PodcastID:                  podcast.ID,
+				Title:                      feedmeta.GetString(entry, "title"),
+				Summary:                    showNotesText,
+				SummaryHTML:                showNotesHTML,
+				EpisodeType:                feedmeta.PickFirstNonEmpty(feedmeta.GetString(entry, "itunes_episodetype"), feedmeta.GetString(entry, "episodetype")),
+				Duration:                   duration,
+				PubDate:                    pubDate,
+				FileURL:                    feedmeta.ExtractEnclosureURL(entry),
+				GUID:                       guid,
+				Image:                      feedmeta.ExtractEntryImage(entry, feedImage),
+				DownloadStatus:             downloadStatus,
+				ChaptersURL:                chaptersURL,
+				ChaptersType:               chaptersType,
+				ChaptersJSON:               chaptersJSON,
+				ItemMetadata:               feedmeta.MarshalMetadata(entry),
+				TranscriptJSON:             transcriptJSON,
+				CanonicalTranscript:        canonicalTranscript,
+				CanonicalTranscriptVersion: canonicalTranscriptVersion,
+				CanonicalUpdatedAt:         canonicalUpdatedAt,
+				TranscriptStatus:           transcriptStatus,
+				TranscriptProgressPct:      transcriptProgressPct,
+				TranscriptProgressStage:    transcriptProgressStage,
+				TranscriptCheckpointJSON:   "",
 			}
 			if createErr := db.CreatePodcastItem(&podcastItem); createErr != nil {
 				Logger.Errorw("failed to persist podcast item", "podcast_id", podcast.ID, "episode_guid", guid, "error", createErr)

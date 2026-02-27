@@ -85,9 +85,12 @@ type PodcastItem struct {
 	HasChapters   bool `gorm:"-"`
 	HasTranscript bool `gorm:"-"`
 
-	ItemMetadata     string `gorm:"type:text" json:"-"`
-	TranscriptJSON   string `gorm:"type:text" json:"-"`
-	TranscriptStatus string `gorm:"type:text"`
+	ItemMetadata               string `gorm:"type:text" json:"-"`
+	TranscriptJSON             string `gorm:"type:text" json:"-"`
+	CanonicalTranscript        string `gorm:"type:text" json:"-"`
+	CanonicalTranscriptVersion int
+	CanonicalUpdatedAt         *time.Time
+	TranscriptStatus           string `gorm:"type:text"`
 	// Progress fields are persisted so long-running transcriptions can resume after restarts.
 	TranscriptProgressPct    int    `gorm:"default:0"`
 	TranscriptProgressStage  string `gorm:"type:text"`

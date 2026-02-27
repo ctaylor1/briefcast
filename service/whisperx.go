@@ -413,6 +413,10 @@ func TranscribePendingEpisodes() error {
 		}
 
 		item.TranscriptJSON = string(output)
+		item.CanonicalTranscript = buildCanonicalTranscriptFromTranscriptJSON(item.TranscriptJSON)
+		item.CanonicalTranscriptVersion = canonicalTranscriptVersionCurrent
+		canonicalUpdatedAt := time.Now().UTC()
+		item.CanonicalUpdatedAt = &canonicalUpdatedAt
 		item.TranscriptStatus = "available"
 		item.TranscriptRetryCount = 0
 		item.TranscriptNextAttempt = nil

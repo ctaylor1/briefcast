@@ -112,6 +112,19 @@ func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 	if !strings.Contains(item.TranscriptJSON, "\"segments\"") {
 		t.Fatalf("expected transcript segments, got %s", item.TranscriptJSON)
 	}
+	if strings.TrimSpace(item.CanonicalTranscript) != "hello pre align world" {
+		t.Fatalf("expected canonical transcript from pre-align segments, got %q", item.CanonicalTranscript)
+	}
+	if item.CanonicalTranscriptVersion != canonicalTranscriptVersionCurrent {
+		t.Fatalf(
+			"expected canonical transcript version %d, got %d",
+			canonicalTranscriptVersionCurrent,
+			item.CanonicalTranscriptVersion,
+		)
+	}
+	if item.CanonicalUpdatedAt == nil {
+		t.Fatalf("expected canonical updated timestamp to be set")
+	}
 	if item.SummaryHTML == "" {
 		t.Fatalf("expected summary html to be populated")
 	}
@@ -193,8 +206,11 @@ import sys
 
 payload = {
     "provider": "whisperx",
+    "segments_pre_align": [
+        {"start": 0.0, "end": 1.0, "text": "hello pre align world"}
+    ],
     "segments": [
-        {"start": 0.0, "end": 1.0, "text": "hello world"}
+        {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00", "text": "hello post align world", "words": [{"start": 0.0, "end": 0.3, "word": "hello"}]}
     ],
     "metadata": {"generated_at": "2026-02-13T00:00:00Z"},
 }
