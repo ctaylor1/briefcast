@@ -26,7 +26,7 @@ const emit = defineEmits<{
 
 <template>
   <TransitionRoot as="template" :show="open">
-    <Dialog as="div" class="ui-layer" @close="emit('close')">
+    <Dialog as="div" class="ui-layer" aria-modal="true" @close="emit('close')">
       <TransitionChild
         as="template"
         enter="ui-transition-fade-enter"
@@ -36,7 +36,7 @@ const emit = defineEmits<{
         leave-from="ui-transition-fade-leave-from"
         leave-to="ui-transition-fade-leave-to"
       >
-        <div class="dialog-overlay" />
+        <div class="dialog-overlay" @click="emit('close')" />
       </TransitionChild>
 
       <div class="drawer-wrap">
