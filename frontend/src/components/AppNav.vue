@@ -267,13 +267,23 @@ function toggleSidebar(): void {
 }
 
 function resolveCommandInvoker(target?: EventTarget | null): HTMLElement | null {
+  const normalize = (element: HTMLElement | null): HTMLElement | null => {
+    if (!element) {
+      return null;
+    }
+    if (element === document.body || element === document.documentElement) {
+      return null;
+    }
+    return element;
+  };
+
   if (target instanceof HTMLElement) {
-    return target;
+    return normalize(target);
   }
   if (typeof document === "undefined") {
     return null;
   }
-  return document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  return document.activeElement instanceof HTMLElement ? normalize(document.activeElement) : null;
 }
 
 function restoreCommandFocus(): void {
