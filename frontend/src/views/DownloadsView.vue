@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useDownloadQueue } from "../composables/useDownloadQueue";
 import { getErrorMessage } from "../lib/api";
 import type { PodcastItem } from "../types/api";
@@ -15,6 +16,7 @@ const DOWNLOAD_STATUS_DOWNLOADING = 1;
 const DOWNLOAD_STATUS_DOWNLOADED = 2;
 const DOWNLOAD_STATUS_PAUSED = 4;
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
+const router = useRouter();
 
 const {
   queueItems,
@@ -189,8 +191,12 @@ function queueProgressAriaText(item: PodcastItem): string {
 }
 
 function openPlayer(item: PodcastItem): void {
-  const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}`;
-  window.open(target, "briefcast_player");
+  void router.push({
+    path: "/player",
+    query: {
+      itemIds: item.ID,
+    },
+  });
 }
 
 onMounted(() => {

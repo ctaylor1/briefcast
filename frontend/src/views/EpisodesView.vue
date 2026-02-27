@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
 import EpisodesFilters from "../components/episodes/EpisodesFilters.vue";
@@ -20,6 +20,7 @@ import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
 
 const route = useRoute();
+const router = useRouter();
 
 const isLoading = ref(true);
 const errorMessage = ref("");
@@ -27,8 +28,6 @@ const infoMessage = ref("");
 const items = ref<PodcastItem[]>([]);
 const podcastOptions = ref<Podcast[]>([]);
 const playingEpisodeId = ref<string | null>(null);
-const playerWindowRef = ref<Window | null>(null);
-let playerWindowWatchTimer: number | null = null;
 
 const {
   drawerOpen,
@@ -246,11 +245,12 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
 }
 
 function openPlayer(item: PodcastItem): void {
-  const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}`;
-  const opened = window.open(target, "briefcast_player");
-  if (opened) {
-    playerWindowRef.value = opened;
-  }
+  void router.push({
+    path: "/player",
+    query: {
+      itemIds: item.ID,
+    },
+  });
   playingEpisodeId.value = item.ID;
 }
 
@@ -259,25 +259,19 @@ function stopPlayback(item: PodcastItem): void {
     return;
   }
 
-  const playerWindow = playerWindowRef.value;
-  if (playerWindow && !playerWindow.closed) {
-    playerWindow.postMessage(
-      {
-        type: "briefcast-player-control",
-        action: "stop",
-      },
-      window.location.origin,
-    );
-  }
-
   playingEpisodeId.value = null;
   infoMessage.value = "Playback stopped.";
 }
 
 function openPlayerAt(item: PodcastItem, startSeconds: number): void {
   const normalizedStart = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
-  const target = `/app/#/player?itemIds=${encodeURIComponent(item.ID)}&start=${encodeURIComponent(normalizedStart.toString())}`;
-  window.open(target, "briefcast_player");
+  void router.push({
+    path: "/player",
+    query: {
+      itemIds: item.ID,
+      start: normalizedStart.toString(),
+    },
+  });
 }
 
 watch(
@@ -323,24 +317,6 @@ onMounted(() => {
     void fetchEpisodes();
   }
   void loadPodcastOptions();
-
-  playerWindowWatchTimer = window.setInterval(() => {
-    const playerWindow = playerWindowRef.value;
-    if (!playerWindow) {
-      return;
-    }
-    if (playerWindow.closed) {
-      playerWindowRef.value = null;
-      playingEpisodeId.value = null;
-    }
-  }, 1000);
-});
-
-onUnmounted(() => {
-  if (playerWindowWatchTimer !== null) {
-    clearInterval(playerWindowWatchTimer);
-    playerWindowWatchTimer = null;
-  }
 });
 </script>
 

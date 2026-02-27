@@ -52,11 +52,6 @@ const activeDownloads = computed(() =>
   sortedPodcasts.value.reduce((sum, podcast) => sum + podcast.DownloadingEpisodesCount, 0),
 );
 
-function openPlayer(podcastId: string): void {
-  const target = `/app/#/player?podcastId=${encodeURIComponent(podcastId)}`;
-  window.open(target, "briefcast_player");
-}
-
 function openPlayerScreen(podcastId: string): void {
   void router.push({
     path: "/player",
@@ -214,7 +209,7 @@ onMounted(loadPodcasts);
           :podcast="podcast"
           :busy="activeId === podcast.ID"
           @open-player="openPlayerScreen"
-          @play="openPlayer"
+          @play="openPlayerScreen"
           @download-all="downloadAll"
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
@@ -228,7 +223,7 @@ onMounted(loadPodcasts);
           :podcasts="sortedPodcasts"
           :active-id="activeId"
           @open-player="openPlayerScreen"
-          @play="openPlayer"
+          @play="openPlayerScreen"
           @download-all="downloadAll"
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
