@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Briefcast microphone icon">
+  <defs>
+    <linearGradient id="micGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea7e0" />
+      <stop offset="100%" stop-color="#1a2d6b" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#f2f5f8" />
+  <rect x="22" y="8" width="20" height="34" rx="10" fill="url(#micGradient)" />
+  <polygon points="30,21 30,29 37,25" fill="#f6fbff" />
+  <path d="M16 22 Q11 26 16 32" fill="none" stroke="url(#micGradient)" stroke-width="2.8" stroke-linecap="round" />
+  <path d="M48 22 Q53 26 48 32" fill="none" stroke="url(#micGradient)" stroke-width="2.8" stroke-linecap="round" />
+  <path d="M22 34 A10 10 0 0 0 42 34" fill="none" stroke="#f6fbff" stroke-width="2.4" stroke-linecap="round" />
+  <rect x="30" y="42" width="4" height="10" rx="2" fill="#24356f" />
+  <rect x="22" y="52" width="20" height="4" rx="2" fill="#1d2d66" />
+</svg>

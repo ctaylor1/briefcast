@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "briefcast-python-tools"
-version = "1.2.1"
+version = "1.2.2"
 description = "Python utilities and quality tooling for the Briefcast repository."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -50,5 +50,6 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q -p no:cacheprovider"
+
 
 

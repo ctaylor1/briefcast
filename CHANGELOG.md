@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-02-28
+
+### Added
+- Added a microphone-only browser tab favicon (`frontend/public/favicon.svg`) and wired it in `frontend/index.html`.
+
+### Changed
+- Updated frontend dev dependency `@types/node` to `24.11.0` (non-breaking patch update).
+- Updated README release/version references and examples to `1.2.2`.
+
+### Fixed
+- Replaced the default Vite tab icon with project-branded favicon metadata.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.2.1] - 2026-02-28
 
 ### Added
