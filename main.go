@@ -20,6 +20,16 @@ import (
 	"go.uber.org/zap"
 )
 
+const defaultRepoURL = "https://github.com/ctaylor1/briefcast"
+
+var appVersion = "dev"
+var appRepoURL = defaultRepoURL
+
+type versionResponse struct {
+	Version string `json:"version"`
+	RepoURL string `json:"repoUrl"`
+}
+
 func main() {
 	defer logging.Sync()
 	appLogger := logging.Sugar()
@@ -133,6 +143,12 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.GET("/search/local", controllers.SearchLocalRecords)
 	router.GET("/settings", controllers.GetSettings)
 	router.PATCH("/settings", controllers.PatchSettings)
+	router.GET("/version", func(c *gin.Context) {
+		c.JSON(http.StatusOK, versionResponse{
+			Version: resolveRunningVersion(),
+			RepoURL: resolveRepositoryURL(),
+		})
+	})
 	router.POST("/settings", controllers.UpdateSetting)
 	router.POST("/opml", controllers.UploadOpml)
 	router.GET("/opml", controllers.GetOPML)
@@ -170,6 +186,26 @@ var defaultCronJobs = cronJobSet{
 	DownloadMissingImages:    service.DownloadMissingImages,
 	TranscribePendingEpisode: service.TranscribePendingEpisodes,
 	CreateBackup:             service.CreateBackup,
+}
+
+func resolveRunningVersion() string {
+	if version := strings.TrimSpace(os.Getenv("BRIEFCAST_VERSION")); version != "" {
+		return version
+	}
+	if version := strings.TrimSpace(appVersion); version != "" {
+		return version
+	}
+	return "dev"
+}
+
+func resolveRepositoryURL() string {
+	if repoURL := strings.TrimSpace(os.Getenv("BRIEFCAST_REPO_URL")); repoURL != "" {
+		return repoURL
+	}
+	if repoURL := strings.TrimSpace(appRepoURL); repoURL != "" {
+		return repoURL
+	}
+	return defaultRepoURL
 }
 
 func resolveCheckFrequency(raw string, appLogger *zap.SugaredLogger) int {

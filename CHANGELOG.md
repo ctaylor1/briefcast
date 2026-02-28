@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-02-28
+
+### Added
+- Added an About screen in the frontend with repo link and running-version display.
+- Added `/version` API response wiring to expose runtime version and repository URL.
+- Added version-resolution tests for runtime/env fallback behavior in `main_test.go`.
+
+### Changed
+- Updated Docker and `build_tar.ps1` flows to pass `APP_VERSION` into build/runtime metadata.
+- Updated frontend dependency `axios` to `1.13.6` (patch, non-breaking).
+- Updated README release references and examples to `1.2.1`.
+
+### Fixed
+- Fixed release artifact metadata so runtime version can be surfaced in the UI.
+
+### Deprecated
+- None.
+
+### Removed
+- None.
+
+### Security
+- Re-ran dependency and static security audits (`npm audit`, `pip-audit`, `govulncheck`, `gosec`) with no HIGH/CRITICAL findings.
+
 ## [1.2.0] - 2026-02-27
 
 ### Added

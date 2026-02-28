@@ -1,6 +1,7 @@
 ARG GO_VERSION=1.26.0
 ARG NODE_VERSION=24.12.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG APP_VERSION=dev
 
 FROM node:${NODE_VERSION}-alpine AS frontend-builder
 WORKDIR /frontend
@@ -10,6 +11,7 @@ COPY frontend ./
 RUN npm run build
 
 FROM golang:${GO_VERSION} AS builder
+ARG APP_VERSION=dev
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -24,7 +26,7 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-RUN go build -o ./app ./main.go
+RUN go build -ldflags "-X main.appVersion=${APP_VERSION}" -o ./app ./main.go
 
 FROM python:3.12-slim
 ARG TARGETARCH
@@ -32,11 +34,13 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG TORCH_VERSION=2.8.0
 ARG TORCH_BUILD=+cpu
 ARG INSTALL_WHISPERX=true
+ARG APP_VERSION=dev
 
 LABEL org.opencontainers.image.source="https://github.com/ctaylor1/briefcast"
 
 ENV CONFIG=/config
 ENV DATA=/assets
+ENV BRIEFCAST_VERSION=${APP_VERSION}
 ENV UID=998
 ENV PID=100
 ENV GIN_MODE=release

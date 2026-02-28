@@ -54,7 +54,7 @@ if (Test-Path -LiteralPath $tarPath) {
 }
 
 Write-Host "Building Docker image: $imageTag"
-docker build --platform $Platform --build-arg INSTALL_WHISPERX=true -t $imageTag .
+docker build --platform $Platform --build-arg INSTALL_WHISPERX=true --build-arg APP_VERSION=$Version -t $imageTag .
 if ($LASTEXITCODE -ne 0) {
     throw "docker build failed for image tag '$imageTag'."
 }

@@ -136,3 +136,8 @@ export interface RetentionSettings {
   deleteAfterDays: number;
   deleteOnlyPlayed: boolean;
 }
+
+export interface RuntimeVersionInfo {
+  version: string;
+  repoUrl: string;
+}

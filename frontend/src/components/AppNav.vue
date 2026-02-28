@@ -18,7 +18,7 @@ import type { LocalSearchResult } from "../types/api";
 import UiDropdown from "./ui/UiDropdown.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
 
-type NavIcon = "podcasts" | "episodes" | "downloads" | "add" | "player" | "settings";
+type NavIcon = "podcasts" | "episodes" | "downloads" | "add" | "player" | "settings" | "about";
 
 interface NavItem {
   to: string;
@@ -52,7 +52,7 @@ type CommandItem = CommandRouteItem | CommandLocalItem;
 const route = useRoute();
 const router = useRouter();
 
-const navItems: NavItem[] = [
+const primaryNavItems: NavItem[] = [
   {
     to: "/",
     label: "Podcasts",
@@ -103,9 +103,20 @@ const navItems: NavItem[] = [
   },
 ];
 
+const aboutNavItem: NavItem = {
+  to: "/about",
+  label: "About",
+  icon: "about",
+  section: "System",
+  meta: "Repo and running version",
+  keywords: "about version github source repository release",
+};
+
+const routeNavItems: NavItem[] = [...primaryNavItems, aboutNavItem];
+
 const navSections = computed(() => {
   const grouped = new Map<string, NavItem[]>();
-  for (const item of navItems) {
+  for (const item of primaryNavItems) {
     if (!grouped.has(item.section)) {
       grouped.set(item.section, []);
     }
@@ -143,12 +154,12 @@ const topTitle = computed(() => {
 });
 
 const topDescription = computed(() => {
-  const active = navItems.find((item) => isActive(item.to));
+  const active = routeNavItems.find((item) => isActive(item.to));
   return active?.meta ?? "Podcast workflows without clutter.";
 });
 
 const breadcrumbs = computed(() => {
-  const active = navItems.find((item) => isActive(item.to));
+  const active = routeNavItems.find((item) => isActive(item.to));
   if (!active || active.to === "/") {
     return ["Home"];
   }
@@ -157,7 +168,7 @@ const breadcrumbs = computed(() => {
 
 const routeCommandItems = computed<CommandRouteItem[]>(() => {
   const query = commandQuery.value.trim().toLowerCase();
-  return navItems
+  return routeNavItems
     .filter((item) => {
       const haystack = `${item.label} ${item.section} ${item.keywords}`.toLowerCase();
       return !query || haystack.includes(query);
@@ -193,7 +204,7 @@ const commandItems = computed<CommandItem[]>(() => {
 
 const commandHint = computed(() => (isMac() ? "Cmd+K" : "Ctrl+K"));
 const bottomTabsStyle = computed(() => ({
-  "--app-bottom-tabs-count": String(navItems.length),
+  "--app-bottom-tabs-count": String(primaryNavItems.length),
 }));
 
 function isMac(): boolean {
@@ -224,6 +235,8 @@ function iconStrokes(name: NavIcon | "search" | "user" | "panel"): string[] {
       return ["M9 7v10l8-5z", "M5 5h14v14H5z"];
     case "settings":
       return ["M4 7h16", "M4 17h16", "M9 5v4", "M15 15v4"];
+    case "about":
+      return ["M12 16v-5", "M12 8h.01", "M12 21a9 9 0 1 1 0-18a9 9 0 0 1 0 18z"];
     case "search":
       return ["M20 20l-4.2-4.2", "M11 18a7 7 0 1 1 0-14a7 7 0 0 1 0 14z"];
     case "user":
@@ -410,6 +423,10 @@ function goToPlayer(): void {
   void router.push("/player");
 }
 
+function goToAbout(): void {
+  void router.push("/about");
+}
+
 watch(sidebarExpanded, (value) => {
   persistSidebarPreference(value);
 });
@@ -516,6 +533,30 @@ onBeforeUnmount(() => {
         </svg>
         <span class="app-nav__label">{{ sidebarExpandedState ? "Collapse" : "Expand" }}</span>
       </button>
+
+      <div class="app-sidebar__footer">
+        <RouterLink
+          :to="aboutNavItem.to"
+          class="app-nav__link"
+          :aria-current="isActive(aboutNavItem.to) ? 'page' : undefined"
+        >
+          <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              v-for="stroke in iconStrokes(aboutNavItem.icon)"
+              :key="stroke"
+              :d="stroke"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="app-nav__text">
+            <span class="app-nav__label">{{ aboutNavItem.label }}</span>
+            <span class="app-nav__meta meta-text">{{ aboutNavItem.meta }}</span>
+          </span>
+        </RouterLink>
+      </div>
     </aside>
 
     <div class="app-main-wrap">
@@ -570,6 +611,7 @@ onBeforeUnmount(() => {
               <p class="app-user-menu__heading">Quick actions</p>
               <button type="button" class="app-user-menu__item" @click="goToSettings">Open settings</button>
               <button type="button" class="app-user-menu__item" @click="goToPlayer">Open player</button>
+              <button type="button" class="app-user-menu__item" @click="goToAbout">About</button>
               <button
                 type="button"
                 class="app-user-menu__item"
@@ -589,7 +631,7 @@ onBeforeUnmount(() => {
 
   <nav class="app-bottom-tabs" aria-label="Mobile navigation" :style="bottomTabsStyle">
     <RouterLink
-      v-for="item in navItems"
+      v-for="item in primaryNavItems"
       :key="item.to"
       :to="item.to"
       class="app-bottom-tabs__link"

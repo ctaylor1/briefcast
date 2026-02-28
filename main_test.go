@@ -55,6 +55,7 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 		"GET /app":       false,
 		"GET /app/":      false,
 		"POST /podcasts": false,
+		"GET /version":   false,
 		"GET /ws":        false,
 	}
 	for _, route := range routes {
@@ -67,6 +68,52 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 		if !found {
 			t.Fatalf("expected route %s to be registered", key)
 		}
+	}
+}
+
+// TestResolveRunningVersion handles the corresponding operation.
+func TestResolveRunningVersion(t *testing.T) {
+	t.Setenv("BRIEFCAST_VERSION", "1.2.3")
+	if got := resolveRunningVersion(); got != "1.2.3" {
+		t.Fatalf("expected env version override, got %q", got)
+	}
+
+	t.Setenv("BRIEFCAST_VERSION", "")
+	previous := appVersion
+	appVersion = "dev-build"
+	t.Cleanup(func() {
+		appVersion = previous
+	})
+	if got := resolveRunningVersion(); got != "dev-build" {
+		t.Fatalf("expected build version fallback, got %q", got)
+	}
+
+	appVersion = ""
+	if got := resolveRunningVersion(); got != "dev" {
+		t.Fatalf("expected default dev version, got %q", got)
+	}
+}
+
+// TestResolveRepositoryURL handles the corresponding operation.
+func TestResolveRepositoryURL(t *testing.T) {
+	t.Setenv("BRIEFCAST_REPO_URL", "https://example.com/custom/repo")
+	if got := resolveRepositoryURL(); got != "https://example.com/custom/repo" {
+		t.Fatalf("expected env repository override, got %q", got)
+	}
+
+	t.Setenv("BRIEFCAST_REPO_URL", "")
+	previous := appRepoURL
+	appRepoURL = "https://example.com/fallback"
+	t.Cleanup(func() {
+		appRepoURL = previous
+	})
+	if got := resolveRepositoryURL(); got != "https://example.com/fallback" {
+		t.Fatalf("expected build repo fallback, got %q", got)
+	}
+
+	appRepoURL = ""
+	if got := resolveRepositoryURL(); got != defaultRepoURL {
+		t.Fatalf("expected default repository URL, got %q", got)
 	}
 }
 

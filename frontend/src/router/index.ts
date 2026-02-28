@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import AddPodcastView from "../views/AddPodcastView.vue";
+import AboutView from "../views/AboutView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DownloadsView from "../views/DownloadsView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
@@ -44,6 +45,12 @@ const router = createRouter({
       name: "settings",
       component: SettingsView,
       meta: { title: "Settings" },
+    },
+    {
+      path: "/about",
+      name: "about",
+      component: AboutView,
+      meta: { title: "About" },
     },
   ],
 });
