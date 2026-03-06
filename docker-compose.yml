@@ -1,7 +1,7 @@
 services:
   briefcast:
     image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
-    container_name: briefcast
+    container_name: ${BRIEFCAST_CONTAINER_NAME:-briefcast}
     env_file:
       # Keep short syntax for compatibility with older Docker Compose parsers (for example Synology).
       - .env
@@ -28,6 +28,15 @@ services:
       - WHISPERX_DIARIZATION=${WHISPERX_DIARIZATION:-false}
       - WHISPERX_CHECK_FREQUENCY=${WHISPERX_CHECK_FREQUENCY:-30}
       - WHISPERX_MAX_CONCURRENCY=${WHISPERX_MAX_CONCURRENCY:-1}
+      - LLM_ENABLED=${LLM_ENABLED:-false}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-120}
+      - LLM_SUMMARIZATION_PROMPT=${LLM_SUMMARIZATION_PROMPT:-}
       # For an external postgres use:
       # - DB_DRIVER=postgres
       # - DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable

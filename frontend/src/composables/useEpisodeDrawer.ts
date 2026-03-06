@@ -1,8 +1,8 @@
 import { computed, ref } from "vue";
 import { episodesApi, getErrorMessage } from "../lib/api";
-import type { Chapter, ChaptersResponse, PodcastItem, TranscriptResponse } from "../types/api";
+import type { Chapter, ChaptersResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../types/api";
 
-type DrawerTab = "overview" | "chapters" | "transcript";
+type DrawerTab = "overview" | "chapters" | "transcript" | "summary";
 type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
 type TranscriptAsset = { url?: string; type?: string; language?: string };
 
@@ -11,6 +11,7 @@ export function useEpisodeDrawer() {
     { id: "overview", label: "Overview" },
     { id: "chapters", label: "Chapters" },
     { id: "transcript", label: "Transcript" },
+    { id: "summary", label: "Summary" },
   ];
   const drawerOpen = ref(false);
   const drawerItem = ref<PodcastItem | null>(null);
@@ -26,6 +27,13 @@ export function useEpisodeDrawer() {
   const drawerLoadError = ref("");
   const chaptersSearch = ref("");
   const transcriptSearch = ref("");
+
+  // Summary state
+  const drawerSummaryStatus = ref("not_attempted");
+  const drawerSummaryText = ref("");
+  const drawerSummaryDate = ref("");
+  const drawerSummaryModel = ref("");
+  const drawerLoadingSummary = ref(false);
 
   const chaptersSearchQuery = computed(() => chaptersSearch.value.trim().toLowerCase());
   const transcriptSearchQuery = computed(() => transcriptSearch.value.trim().toLowerCase());
@@ -95,6 +103,10 @@ export function useEpisodeDrawer() {
     drawerTranscriptSegments.value = [];
     drawerTranscriptText.value = "";
     drawerTranscriptAssets.value = [];
+    drawerSummaryStatus.value = "not_attempted";
+    drawerSummaryText.value = "";
+    drawerSummaryDate.value = "";
+    drawerSummaryModel.value = "";
   }
 
   function openDrawer(item: PodcastItem, tab: DrawerTab = "overview", searchTerm = ""): void {
@@ -113,8 +125,9 @@ export function useEpisodeDrawer() {
     resetDrawerData();
     drawerLoadingChapters.value = true;
     drawerLoadingTranscript.value = true;
+    drawerLoadingSummary.value = true;
 
-    await Promise.all([fetchChapters(id), fetchTranscript(id)]);
+    await Promise.all([fetchChapters(id), fetchTranscript(id), fetchSummary(id)]);
   }
 
   async function fetchChapters(id: string): Promise<void> {
@@ -185,6 +198,25 @@ export function useEpisodeDrawer() {
     }
   }
 
+  async function fetchSummary(id: string): Promise<void> {
+    drawerLoadingSummary.value = true;
+    drawerSummaryText.value = "";
+    drawerSummaryStatus.value = "not_attempted";
+    drawerSummaryDate.value = "";
+    drawerSummaryModel.value = "";
+    try {
+      const response: SummaryResponse = await episodesApi.getSummary(id);
+      drawerSummaryStatus.value = response.status || "not_attempted";
+      drawerSummaryText.value = response.summary ?? "";
+      drawerSummaryDate.value = response.generatedAt ?? "";
+      drawerSummaryModel.value = response.model ?? "";
+    } catch (error) {
+      drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
+    } finally {
+      drawerLoadingSummary.value = false;
+    }
+  }
+
   function drawerTranscriptSummary(): string {
     if (drawerTranscriptStatus.value === "available") {
       return "Transcript is ready.";
@@ -208,6 +240,22 @@ export function useEpisodeDrawer() {
     return `${drawerChapters.value.length} chapters available.`;
   }
 
+  function drawerSummarySummary(): string {
+    if (drawerSummaryStatus.value === "available") {
+      return "AI summary is ready.";
+    }
+    if (drawerSummaryStatus.value === "processing") {
+      return "Summary is being generated.";
+    }
+    if (drawerSummaryStatus.value === "pending") {
+      return "Summary generation queued.";
+    }
+    if (drawerSummaryStatus.value === "failed") {
+      return "Summary generation failed.";
+    }
+    return "No AI summary available.";
+  }
+
   return {
     drawerOpen,
     drawerItem,
@@ -228,14 +276,22 @@ export function useEpisodeDrawer() {
     transcriptLines,
     filteredTranscriptLines,
     transcriptDisplayText,
+    // Summary
+    drawerSummaryStatus,
+    drawerSummaryText,
+    drawerSummaryDate,
+    drawerSummaryModel,
+    drawerLoadingSummary,
     openDrawer,
     setDrawerTab,
     closeDrawer,
     fetchDrawerData,
     fetchChapters,
     fetchTranscript,
+    fetchSummary,
     drawerTranscriptSummary,
     drawerChaptersSummary,
+    drawerSummarySummary,
     drawerTabs,
   };
 }

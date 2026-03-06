@@ -7,31 +7,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RetentionSettingsResponse represents a public type.
-type RetentionSettingsResponse struct {
+// SettingsResponse is the full settings payload returned by GET /settings.
+type SettingsResponse struct {
+	// Retention
 	KeepAllEpisodes    bool `json:"keepAllEpisodes"`
 	KeepLatestEpisodes int  `json:"keepLatestEpisodes"`
 	DeleteAfterDays    int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   bool `json:"deleteOnlyPlayed"`
+	// Summarization
+	SummarizationEnabled bool   `json:"summarizationEnabled"`
+	SummarizationPrompt  string `json:"summarizationPrompt"`
 }
 
-// RetentionSettingsPatch represents a public type.
-type RetentionSettingsPatch struct {
+// SettingsPatch is the partial update payload accepted by PATCH /settings.
+type SettingsPatch struct {
+	// Retention
 	KeepAllEpisodes    *bool `json:"keepAllEpisodes"`
 	KeepLatestEpisodes *int  `json:"keepLatestEpisodes"`
 	DeleteAfterDays    *int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   *bool `json:"deleteOnlyPlayed"`
+	// Summarization
+	SummarizationEnabled *bool   `json:"summarizationEnabled"`
+	SummarizationPrompt  *string `json:"summarizationPrompt"`
 }
 
 // GetSettings handles the corresponding operation.
 func GetSettings(c *gin.Context) {
 	setting := db.GetOrCreateSetting()
-	c.JSON(http.StatusOK, retentionSettingsFromSetting(setting))
+	c.JSON(http.StatusOK, settingsFromModel(setting))
 }
 
 // PatchSettings handles the corresponding operation.
 func PatchSettings(c *gin.Context) {
-	var patch RetentionSettingsPatch
+	var patch SettingsPatch
 	if err := c.ShouldBindJSON(&patch); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -58,20 +66,28 @@ func PatchSettings(c *gin.Context) {
 	if patch.DeleteOnlyPlayed != nil {
 		setting.RetentionDeleteOnlyPlayed = *patch.DeleteOnlyPlayed
 	}
+	if patch.SummarizationEnabled != nil {
+		setting.SummarizationEnabled = *patch.SummarizationEnabled
+	}
+	if patch.SummarizationPrompt != nil {
+		setting.SummarizationPrompt = *patch.SummarizationPrompt
+	}
 
 	if err := db.UpdateSettings(setting); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, retentionSettingsFromSetting(setting))
+	c.JSON(http.StatusOK, settingsFromModel(setting))
 }
 
-func retentionSettingsFromSetting(setting *db.Setting) RetentionSettingsResponse {
-	return RetentionSettingsResponse{
-		KeepAllEpisodes:    setting.RetentionKeepAll,
-		KeepLatestEpisodes: setting.RetentionKeepLatest,
-		DeleteAfterDays:    setting.RetentionDeleteAfterDays,
-		DeleteOnlyPlayed:   setting.RetentionDeleteOnlyPlayed,
+func settingsFromModel(setting *db.Setting) SettingsResponse {
+	return SettingsResponse{
+		KeepAllEpisodes:      setting.RetentionKeepAll,
+		KeepLatestEpisodes:   setting.RetentionKeepLatest,
+		DeleteAfterDays:      setting.RetentionDeleteAfterDays,
+		DeleteOnlyPlayed:     setting.RetentionDeleteOnlyPlayed,
+		SummarizationEnabled: setting.SummarizationEnabled,
+		SummarizationPrompt:  setting.SummarizationPrompt,
 	}
 }

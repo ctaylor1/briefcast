@@ -424,9 +424,31 @@ func TranscribePendingEpisodes() error {
 		item.TranscriptProgressPct = 100
 		item.TranscriptProgressStage = "complete"
 		item.TranscriptCheckpointJSON = ""
+		// Lineage: record which WhisperX model produced this transcript.
+		item.TranscriptModel = cfg.Model
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
 			setError(err)
+		}
+
+		// Summarize the transcript if LLM summarization is enabled.
+		llmCfg := LoadLLMConfig()
+		setting := db.GetOrCreateSetting()
+		if llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != "" {
+			prompt := ResolveSummarizationPrompt(setting, llmCfg)
+			if sumErr := SummarizeEpisode(&item, llmCfg, prompt); sumErr != nil {
+				jobLogger.Warnw(
+					"episode summarization failed",
+					"podcast_item_id", item.ID,
+					"error", sumErr,
+				)
+			} else {
+				jobLogger.Infow(
+					"episode summarized successfully",
+					"podcast_item_id", item.ID,
+					"summary_length", len(item.LLMSummary),
+				)
+			}
 		}
 	})
 

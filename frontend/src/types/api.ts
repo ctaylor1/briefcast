@@ -55,6 +55,8 @@ export interface PodcastItem {
   TranscriptStatus: string;
   HasChapters: boolean;
   HasTranscript: boolean;
+  HasSummary: boolean;
+  LLMSummaryStatus: string;
   IsPlayed: boolean;
   BookmarkDate: string;
 }
@@ -86,6 +88,13 @@ export interface ChaptersResponse {
 export interface TranscriptResponse {
   status: string;
   transcript?: unknown;
+}
+
+export interface SummaryResponse {
+  status: string;
+  summary?: string;
+  generatedAt?: string;
+  model?: string;
 }
 
 export interface EpisodesFilter {
@@ -130,11 +139,13 @@ export interface LocalSearchResult {
   startSeconds?: number;
 }
 
-export interface RetentionSettings {
+export interface AppSettings {
   keepAllEpisodes: boolean;
   keepLatestEpisodes: number;
   deleteAfterDays: number;
   deleteOnlyPlayed: boolean;
+  summarizationEnabled: boolean;
+  summarizationPrompt: string;
 }
 
 export interface RuntimeVersionInfo {

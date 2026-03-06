@@ -758,6 +758,7 @@ func decoratePodcastItem(item *db.PodcastItem) {
 	}
 	item.HasChapters = item.ChaptersJSON != "" || item.ID3ChaptersJSON != ""
 	item.HasTranscript = item.TranscriptJSON != "" || item.TranscriptStatus == "available"
+	item.HasSummary = item.LLMSummaryStatus == "available"
 	if strings.TrimSpace(item.TranscriptStatus) == "" {
 		item.TranscriptStatus = "missing"
 	}

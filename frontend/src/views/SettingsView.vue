@@ -6,7 +6,7 @@ import UiCard from "../components/ui/UiCard.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { getErrorMessage, settingsApi } from "../lib/api";
-import type { RetentionSettings } from "../types/api";
+import type { AppSettings } from "../types/api";
 
 type RetentionForm = {
   keepAllEpisodes: boolean;
@@ -15,8 +15,14 @@ type RetentionForm = {
   deleteOnlyPlayed: boolean;
 };
 
+type SummarizationForm = {
+  summarizationEnabled: boolean;
+  summarizationPrompt: string;
+};
+
 const isLoading = ref(true);
-const isSaving = ref(false);
+const isSavingRetention = ref(false);
+const isSavingSummarization = ref(false);
 const {
   errorMessage,
   successMessage,
@@ -26,16 +32,21 @@ const {
   setSuccess,
 } = useStatusMessage(5000);
 
-const form = ref<RetentionForm>({
+const retentionForm = ref<RetentionForm>({
   keepAllEpisodes: true,
   keepLatestEpisodes: "0",
   deleteAfterDays: "0",
   deleteOnlyPlayed: true,
 });
 
-const retentionEnabled = computed(() => !form.value.keepAllEpisodes);
+const summarizationForm = ref<SummarizationForm>({
+  summarizationEnabled: false,
+  summarizationPrompt: "",
+});
 
-function mapToForm(settings: RetentionSettings): RetentionForm {
+const retentionEnabled = computed(() => !retentionForm.value.keepAllEpisodes);
+
+function mapToRetentionForm(settings: AppSettings): RetentionForm {
   return {
     keepAllEpisodes: settings.keepAllEpisodes,
     keepLatestEpisodes: String(settings.keepLatestEpisodes ?? 0),
@@ -57,7 +68,11 @@ async function loadSettings(): Promise<void> {
   clearError();
   try {
     const settings = await settingsApi.get();
-    form.value = mapToForm(settings);
+    retentionForm.value = mapToRetentionForm(settings);
+    summarizationForm.value = {
+      summarizationEnabled: settings.summarizationEnabled,
+      summarizationPrompt: settings.summarizationPrompt ?? "",
+    };
   } catch (error) {
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
@@ -65,23 +80,42 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-async function saveSettings(): Promise<void> {
-  isSaving.value = true;
+async function saveRetentionSettings(): Promise<void> {
+  isSavingRetention.value = true;
   clearAll();
-  const payload: RetentionSettings = {
-    keepAllEpisodes: form.value.keepAllEpisodes,
-    keepLatestEpisodes: sanitizeNumber(form.value.keepLatestEpisodes),
-    deleteAfterDays: sanitizeNumber(form.value.deleteAfterDays),
-    deleteOnlyPlayed: form.value.deleteOnlyPlayed,
-  };
   try {
-    const updated = await settingsApi.update(payload);
-    form.value = mapToForm(updated);
+    const updated = await settingsApi.update({
+      keepAllEpisodes: retentionForm.value.keepAllEpisodes,
+      keepLatestEpisodes: sanitizeNumber(retentionForm.value.keepLatestEpisodes),
+      deleteAfterDays: sanitizeNumber(retentionForm.value.deleteAfterDays),
+      deleteOnlyPlayed: retentionForm.value.deleteOnlyPlayed,
+    });
+    retentionForm.value = mapToRetentionForm(updated);
     setSuccess("Retention settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update settings."));
+    setError(getErrorMessage(error, "Failed to update retention settings."));
   } finally {
-    isSaving.value = false;
+    isSavingRetention.value = false;
+  }
+}
+
+async function saveSummarizationSettings(): Promise<void> {
+  isSavingSummarization.value = true;
+  clearAll();
+  try {
+    const updated = await settingsApi.update({
+      summarizationEnabled: summarizationForm.value.summarizationEnabled,
+      summarizationPrompt: summarizationForm.value.summarizationPrompt,
+    });
+    summarizationForm.value = {
+      summarizationEnabled: updated.summarizationEnabled,
+      summarizationPrompt: updated.summarizationPrompt ?? "",
+    };
+    setSuccess("Summarization settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update summarization settings."));
+  } finally {
+    isSavingSummarization.value = false;
   }
 }
 
@@ -93,7 +127,7 @@ onMounted(loadSettings);
     <header class="page-header">
       <h2 class="section-title">Settings</h2>
       <p class="section-subtitle">
-        Control retention behavior so storage stays clean while preserving the episodes you care about.
+        Configure retention, summarization, and other application behavior.
       </p>
     </header>
 
@@ -111,7 +145,8 @@ onMounted(loadSettings);
       <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
     </UiCard>
 
-    <UiCard v-else padding="lg" class="stack-4">
+    <!-- Retention settings -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Retention</h3>
         <p class="section-subtitle">
@@ -121,7 +156,7 @@ onMounted(loadSettings);
 
       <label class="settings-checkbox-row">
         <input
-          v-model="form.keepAllEpisodes"
+          v-model="retentionForm.keepAllEpisodes"
           type="checkbox"
           class="settings-checkbox"
         />
@@ -136,7 +171,7 @@ onMounted(loadSettings);
       <div class="surface-grid surface-grid--2">
         <div class="stack-1">
           <UiInput
-            v-model="form.keepLatestEpisodes"
+            v-model="retentionForm.keepLatestEpisodes"
             type="number"
             min="0"
             :disabled="!retentionEnabled"
@@ -150,7 +185,7 @@ onMounted(loadSettings);
 
         <div class="stack-1">
           <UiInput
-            v-model="form.deleteAfterDays"
+            v-model="retentionForm.deleteAfterDays"
             type="number"
             min="0"
             :disabled="!retentionEnabled"
@@ -165,7 +200,7 @@ onMounted(loadSettings);
 
       <label class="settings-checkbox-row">
         <input
-          v-model="form.deleteOnlyPlayed"
+          v-model="retentionForm.deleteOnlyPlayed"
           type="checkbox"
           class="settings-checkbox"
           :disabled="!retentionEnabled"
@@ -179,12 +214,59 @@ onMounted(loadSettings);
       </label>
 
       <div class="surface-row">
-        <UiButton :disabled="isSaving" @click="saveSettings">
-          {{ isSaving ? "Saving..." : "Save retention settings" }}
+        <UiButton :disabled="isSavingRetention" @click="saveRetentionSettings">
+          {{ isSavingRetention ? "Saving..." : "Save retention settings" }}
         </UiButton>
         <p class="meta-text">
           Retention cleanup runs daily. Use podcast-level overrides to keep everything for specific feeds.
         </p>
+      </div>
+    </UiCard>
+
+    <!-- AI Summarization settings -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">AI Summarization</h3>
+        <p class="section-subtitle">
+          Automatically generate a summary for each episode after transcription completes.
+          Requires an LLM API key configured via environment variables.
+        </p>
+      </div>
+
+      <label class="settings-checkbox-row">
+        <input
+          v-model="summarizationForm.summarizationEnabled"
+          type="checkbox"
+          class="settings-checkbox"
+        />
+        <div>
+          <p class="settings-checkbox-title">Enable summarization</p>
+          <p class="meta-text">
+            When enabled, new transcriptions will be sent to your configured LLM for summarization.
+          </p>
+        </div>
+      </label>
+
+      <div class="stack-1">
+        <label class="settings-label" for="summarization-prompt">Summarization prompt</label>
+        <textarea
+          id="summarization-prompt"
+          v-model="summarizationForm.summarizationPrompt"
+          rows="6"
+          class="settings-textarea"
+          :disabled="!summarizationForm.summarizationEnabled"
+          placeholder="Leave blank to use the default prompt from your environment configuration."
+        />
+        <p class="meta-text">
+          This prompt is sent as the system message to the LLM alongside the episode transcript.
+          Leave blank to use the default prompt from your .env configuration.
+        </p>
+      </div>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingSummarization" @click="saveSummarizationSettings">
+          {{ isSavingSummarization ? "Saving..." : "Save summarization settings" }}
+        </UiButton>
       </div>
     </UiCard>
   </section>
@@ -224,6 +306,32 @@ onMounted(loadSettings);
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-line-height);
   font-weight: 600;
+}
+
+.settings-label {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: var(--font-body-size);
+  font-weight: 500;
+}
+
+.settings-textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line-height);
+  resize: vertical;
+}
+
+.settings-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .settings-skeleton-line {

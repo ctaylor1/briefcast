@@ -99,6 +99,19 @@ type PodcastItem struct {
 	TranscriptRetryCount  int `gorm:"default:0"`
 	TranscriptNextAttempt *time.Time
 	TranscriptLastError   string `gorm:"type:text" json:"-"`
+	// Lineage: which WhisperX model produced the transcript.
+	TranscriptModel string `gorm:"type:text"`
+
+	// LLM-generated summary fields (populated after successful transcription).
+	LLMSummary       string     `gorm:"type:text" json:"-"`
+	LLMSummaryStatus string     `gorm:"type:text"`
+	LLMSummaryError  string     `gorm:"type:text" json:"-"`
+	LLMSummaryDate   *time.Time
+	// Lineage: which LLM model and prompt produced the summary.
+	LLMSummaryModel  string `gorm:"type:text"`
+	LLMSummaryPrompt string `gorm:"type:text" json:"-"`
+
+	HasSummary bool `gorm:"-"`
 }
 
 // DownloadStatus represents a public type.
@@ -137,6 +150,10 @@ type Setting struct {
 	RetentionKeepLatest       int  `gorm:"default:0"`
 	RetentionDeleteAfterDays  int  `gorm:"default:0"`
 	RetentionDeleteOnlyPlayed bool `gorm:"default:true"`
+
+	// LLM summarization settings (user-configurable from the UI).
+	SummarizationEnabled bool   `gorm:"default:false"`
+	SummarizationPrompt  string `gorm:"type:text"`
 }
 
 // Migration represents a public type.

@@ -1,11 +1,11 @@
-import type { RetentionSettings } from "../../types/api";
+import type { AppSettings } from "../../types/api";
 import { httpClient } from "./http";
 
 export const settingsApi = {
-  get(): Promise<RetentionSettings> {
-    return httpClient.get<RetentionSettings>("/settings");
+  get(): Promise<AppSettings> {
+    return httpClient.get<AppSettings>("/settings");
   },
-  update(payload: Partial<RetentionSettings>): Promise<RetentionSettings> {
-    return httpClient.patch<RetentionSettings, Partial<RetentionSettings>>("/settings", payload);
+  update(payload: Partial<AppSettings>): Promise<AppSettings> {
+    return httpClient.patch<AppSettings, Partial<AppSettings>>("/settings", payload);
   },
 };

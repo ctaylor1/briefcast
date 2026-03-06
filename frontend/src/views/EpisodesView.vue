@@ -48,11 +48,17 @@ const {
   transcriptLines,
   filteredTranscriptLines,
   transcriptDisplayText,
+  drawerSummaryStatus,
+  drawerSummaryText,
+  drawerSummaryDate,
+  drawerSummaryModel,
+  drawerLoadingSummary,
   openDrawer,
   setDrawerTab,
   closeDrawer,
   drawerTranscriptSummary,
   drawerChaptersSummary,
+  drawerSummarySummary,
   drawerTabs,
 } = useEpisodeDrawer();
 
@@ -533,6 +539,20 @@ onMounted(() => {
             </ul>
           </div>
         </div>
+
+        <div v-else-if="drawerTab === 'summary'" class="stack-3">
+          <p v-if="drawerLoadingSummary" class="meta-text">Loading summary...</p>
+          <p v-else-if="drawerSummaryStatus !== 'available'" class="meta-text">{{ drawerSummarySummary() }}</p>
+          <div v-else class="stack-3">
+            <div class="drawer-summary-raw">
+              <pre>{{ drawerSummaryText }}</pre>
+            </div>
+            <div v-if="drawerSummaryModel || drawerSummaryDate" class="meta-text drawer-summary-lineage">
+              <span v-if="drawerSummaryModel">Model: {{ drawerSummaryModel }}</span>
+              <span v-if="drawerSummaryDate"> · Generated: {{ new Date(drawerSummaryDate).toLocaleDateString() }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </UiDrawer>
   </section>
@@ -651,6 +671,29 @@ onMounted(() => {
   font-family: var(--font-family);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line-height);
+}
+
+.drawer-summary-raw {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  padding: var(--space-3);
+}
+
+.drawer-summary-raw pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+}
+
+.drawer-summary-lineage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 
 .empty-state__title {

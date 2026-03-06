@@ -125,6 +125,49 @@ where id in (
 		Name:  "2026_02_27_01_02_AddCanonicalUpdatedAt",
 		Query: "alter table podcast_items add column if not exists canonical_updated_at timestamp",
 	},
+	// Transcription lineage.
+	{
+		Name:  "2026_03_05_01_00_AddTranscriptModel",
+		Query: "alter table podcast_items add column if not exists transcript_model text",
+	},
+	// LLM summarization columns on podcast_items.
+	{
+		Name:  "2026_03_05_01_01_AddLLMSummary",
+		Query: "alter table podcast_items add column if not exists llm_summary text",
+	},
+	{
+		Name:  "2026_03_05_01_02_AddLLMSummaryStatus",
+		Query: "alter table podcast_items add column if not exists llm_summary_status text",
+	},
+	{
+		Name:  "2026_03_05_01_03_AddLLMSummaryError",
+		Query: "alter table podcast_items add column if not exists llm_summary_error text",
+	},
+	{
+		Name:  "2026_03_05_01_04_AddLLMSummaryDate",
+		Query: "alter table podcast_items add column if not exists llm_summary_date timestamp",
+	},
+	{
+		Name:  "2026_03_05_01_05_AddLLMSummaryModel",
+		Query: "alter table podcast_items add column if not exists llm_summary_model text",
+	},
+	{
+		Name:  "2026_03_05_01_06_AddLLMSummaryPrompt",
+		Query: "alter table podcast_items add column if not exists llm_summary_prompt text",
+	},
+	// Summarization settings on settings table.
+	{
+		Name:  "2026_03_05_01_07_AddSummarizationEnabled",
+		Query: "alter table settings add column if not exists summarization_enabled boolean default false",
+	},
+	{
+		Name:  "2026_03_05_01_08_AddSummarizationPrompt",
+		Query: "alter table settings add column if not exists summarization_prompt text",
+	},
+	{
+		Name:  "2026_03_05_01_09_BackfillSummarizationEnabled",
+		Query: "update settings set summarization_enabled = false where summarization_enabled is null",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
