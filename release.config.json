@@ -1,0 +1,87 @@
+{
+  "project": "briefcast",
+
+  "version": {
+    "file": "pyproject.toml",
+    "sync": [
+      "frontend/package.json"
+    ]
+  },
+
+  "test": [
+    {
+      "name": "Go tests",
+      "run": "go test ./...",
+      "dir": "."
+    },
+    {
+      "name": "Frontend typecheck + build",
+      "run": "npm run build",
+      "dir": "frontend"
+    },
+    {
+      "name": "Python lint (ruff)",
+      "run": "uv run ruff check .",
+      "dir": "."
+    },
+    {
+      "name": "Python typecheck (mypy)",
+      "run": "uv run mypy src",
+      "dir": "."
+    },
+    {
+      "name": "Python tests (pytest)",
+      "run": "uv run pytest",
+      "dir": "."
+    }
+  ],
+
+  "images": [
+    {
+      "name": "briefcast",
+      "dockerfile": "Dockerfile",
+      "context": ".",
+      "build_args": {
+        "APP_VERSION": "{version}"
+      },
+      "smoke_test": "docker run --rm {image} ./app --version",
+      "services": ["briefcast"]
+    }
+  ],
+
+  "deploy": {
+    "compose_file": "docker-compose.yml",
+    "env_file": ".env",
+    "infra_services": ["postgres"],
+    "health_checks": [
+      {
+        "name": "Briefcast HTTP",
+        "url": "http://localhost:{port}/",
+        "port_env": "HOST_PORT",
+        "port_default": 8080,
+        "expect_status": 200
+      }
+    ],
+    "startup_timeout_seconds": 60,
+    "data_dirs": [
+      { "env": "HOST_CONFIG_DIR", "default": "./config" },
+      { "env": "HOST_ASSETS_DIR", "default": "./assets" },
+      { "env": "HOST_LOGS_DIR", "default": "./logs" }
+    ],
+    "env_overrides": {
+      "BRIEFCAST_IMAGE": "{image}",
+      "BRIEFCAST_CONTAINER_NAME": "{container_name}"
+    },
+    "container_name_env": "BRIEFCAST_CONTAINER_NAME",
+    "container_name_default": "briefcast",
+    "whisperx_env_file_key": "WHISPERX_ENV_FILE",
+    "whisperx_env_file_default": ".env.whisperx"
+  },
+
+  "git": {
+    "exclude_paths": [
+      ".claude/worktrees",
+      ".claude/worktrees/**"
+    ]
+  }
+}
