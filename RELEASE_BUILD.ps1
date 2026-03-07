@@ -138,7 +138,7 @@ function Set-VersionInFile {
     $replaced = $content -replace $Pattern, "`${1}$NewVersion`${2}"
 
     if ($replaced -eq $content) {
-        throw "Failed to update version in $FilePath — pattern did not match."
+        throw "Failed to update version in $FilePath - pattern did not match."
     }
 
     Set-Content -LiteralPath $FilePath -Value $replaced -NoNewline
@@ -195,7 +195,7 @@ try {
     Pop-Location
 }
 
-# We allow uncommitted changes — the script will commit them as part of the release.
+# We allow uncommitted changes - the script will commit them as part of the release.
 # But warn if there are untracked files outside the expected set.
 if ($gitStatus) {
     Write-Detail "Working tree has uncommitted changes (they will be included in the release commit)."
@@ -293,10 +293,21 @@ Write-Step "Committing release"
 
 Push-Location $ProjectDir
 try {
+    $releaseCommitMessage = "release: v$newVersion"
+
     git add -A
-    git commit -m "release: v$newVersion"
+    # Never release local Codex/Claude worktree metadata as an embedded repository.
+    git rm --cached -r --ignore-unmatch .claude/worktrees 2>$null | Out-Null
+
+    git commit -m $releaseCommitMessage
     if ($LASTEXITCODE -ne 0) {
-        throw "Git commit failed."
+        Write-Detail "Initial commit failed; re-staging in case pre-commit hooks modified files."
+        git add -A
+        git rm --cached -r --ignore-unmatch .claude/worktrees 2>$null | Out-Null
+        git commit -m $releaseCommitMessage
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git commit failed after retry. Check hook output above."
+        }
     }
     Write-Ok "Committed: release: v$newVersion"
 
