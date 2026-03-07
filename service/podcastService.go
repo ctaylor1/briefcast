@@ -286,6 +286,14 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	feed := parsed.Feed
 	feedImage := feedmeta.ExtractImageURL(feed)
 	setting := db.GetOrCreateSetting()
+	llmCfg := LoadLLMConfig()
+	summarizationEnabled := llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != ""
+	summarizationPrompt := ""
+	summarizationUserPrompt := ""
+	if summarizationEnabled {
+		summarizationPrompt = ResolveSummarizationPrompt(setting, llmCfg)
+		summarizationUserPrompt = ResolveSummarizationUserPrompt(setting, llmCfg)
+	}
 	limit := setting.InitialDownloadCount
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
@@ -425,6 +433,16 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 					firstItemErr = createErr
 				}
 				continue
+			}
+			if summarizationEnabled && transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
+				if sumErr := SummarizeEpisode(&podcastItem, llmCfg, summarizationPrompt, summarizationUserPrompt); sumErr != nil {
+					Logger.Warnw(
+						"episode summarization failed for feed transcript",
+						"podcast_item_id", podcastItem.ID,
+						"episode_guid", guid,
+						"error", sumErr,
+					)
+				}
 			}
 		}
 	}

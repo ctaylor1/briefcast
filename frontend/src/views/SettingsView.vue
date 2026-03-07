@@ -18,11 +18,14 @@ type RetentionForm = {
 type SummarizationForm = {
   summarizationEnabled: boolean;
   summarizationPrompt: string;
+  summarizationUserPrompt: string;
 };
 
 const isLoading = ref(true);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
+const defaultSystemPrompt = ref("");
+const defaultUserPrompt = ref("");
 const {
   errorMessage,
   successMessage,
@@ -42,6 +45,7 @@ const retentionForm = ref<RetentionForm>({
 const summarizationForm = ref<SummarizationForm>({
   summarizationEnabled: false,
   summarizationPrompt: "",
+  summarizationUserPrompt: "",
 });
 
 const retentionEnabled = computed(() => !retentionForm.value.keepAllEpisodes);
@@ -72,7 +76,10 @@ async function loadSettings(): Promise<void> {
     summarizationForm.value = {
       summarizationEnabled: settings.summarizationEnabled,
       summarizationPrompt: settings.summarizationPrompt ?? "",
+      summarizationUserPrompt: settings.summarizationUserPrompt ?? "",
     };
+    defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
+    defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
   } catch (error) {
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
@@ -106,10 +113,12 @@ async function saveSummarizationSettings(): Promise<void> {
     const updated = await settingsApi.update({
       summarizationEnabled: summarizationForm.value.summarizationEnabled,
       summarizationPrompt: summarizationForm.value.summarizationPrompt,
+      summarizationUserPrompt: summarizationForm.value.summarizationUserPrompt,
     });
     summarizationForm.value = {
       summarizationEnabled: updated.summarizationEnabled,
       summarizationPrompt: updated.summarizationPrompt ?? "",
+      summarizationUserPrompt: updated.summarizationUserPrompt ?? "",
     };
     setSuccess("Summarization settings updated.");
   } catch (error) {
@@ -248,20 +257,38 @@ onMounted(loadSettings);
       </label>
 
       <div class="stack-1">
-        <label class="settings-label" for="summarization-prompt">Summarization prompt</label>
+        <label class="settings-label" for="summarization-system-prompt">System prompt</label>
         <textarea
-          id="summarization-prompt"
+          id="summarization-system-prompt"
           v-model="summarizationForm.summarizationPrompt"
           rows="6"
           class="settings-textarea"
           :disabled="!summarizationForm.summarizationEnabled"
-          placeholder="Leave blank to use the default prompt from your environment configuration."
+          :placeholder="defaultSystemPrompt || 'Leave blank to use the default system prompt from your environment configuration.'"
         />
         <p class="meta-text">
-          This prompt is sent as the system message to the LLM alongside the episode transcript.
-          Leave blank to use the default prompt from your .env configuration.
+          Sent as the system message to the LLM. Leave blank to use the default prompt from your .env configuration.
         </p>
       </div>
+
+      <div class="stack-1">
+        <label class="settings-label" for="summarization-user-prompt">User prompt prefix</label>
+        <textarea
+          id="summarization-user-prompt"
+          v-model="summarizationForm.summarizationUserPrompt"
+          rows="4"
+          class="settings-textarea"
+          :disabled="!summarizationForm.summarizationEnabled"
+          :placeholder="defaultUserPrompt || 'Leave blank to use the default user prompt prefix.'"
+        />
+        <p class="meta-text">
+          Prepended to the transcript in the user message. Leave blank to use the default prefix.
+        </p>
+      </div>
+
+      <UiAlert tone="info">
+        Changes to prompts only apply to future summarizations. Existing summaries are not affected.
+      </UiAlert>
 
       <div class="surface-row">
         <UiButton :disabled="isSavingSummarization" @click="saveSummarizationSettings">

@@ -136,6 +136,24 @@ func SearchLocalRecords(query string, limit int) ([]LocalSearchResult, error) {
 				}
 			}
 		}
+
+		if len(results) >= limit {
+			break
+		}
+
+		if item.LLMSummary != "" && containsTerm(item.LLMSummary, lowerTerm) {
+			snippet := makeSnippet(item.LLMSummary, lowerTerm, 140)
+			if add(LocalSearchResult{
+				Type:           "summary",
+				PodcastID:      item.PodcastID,
+				PodcastTitle:   item.Podcast.Title,
+				EpisodeID:      item.ID,
+				EpisodeTitle:   item.Title,
+				SummarySnippet: snippet,
+			}) {
+				break
+			}
+		}
 	}
 
 	return results, nil

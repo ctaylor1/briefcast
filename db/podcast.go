@@ -152,8 +152,9 @@ type Setting struct {
 	RetentionDeleteOnlyPlayed bool `gorm:"default:true"`
 
 	// LLM summarization settings (user-configurable from the UI).
-	SummarizationEnabled bool   `gorm:"default:false"`
-	SummarizationPrompt  string `gorm:"type:text"`
+	SummarizationEnabled    bool   `gorm:"default:false"`
+	SummarizationPrompt     string `gorm:"type:text"`
+	SummarizationUserPrompt string `gorm:"type:text"`
 }
 
 // Migration represents a public type.

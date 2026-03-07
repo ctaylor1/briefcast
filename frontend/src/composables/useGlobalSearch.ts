@@ -35,6 +35,8 @@ export function useGlobalSearch(limit = 50) {
         return "Chapter";
       case "transcript":
         return "Transcript";
+      case "summary":
+        return "Summary";
       default:
         return "Episode";
     }
@@ -46,6 +48,9 @@ export function useGlobalSearch(limit = 50) {
     }
     if (result.type === "transcript") {
       return result.transcriptSnippet || "Transcript match";
+    }
+    if (result.type === "summary") {
+      return result.summarySnippet || "Summary match";
     }
     return result.summarySnippet || "";
   }

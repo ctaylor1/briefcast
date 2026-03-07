@@ -125,7 +125,7 @@ export interface SearchResult {
   categories?: string[];
 }
 
-export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript";
+export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript" | "summary";
 
 export interface LocalSearchResult {
   type: LocalSearchRecordType;
@@ -146,6 +146,9 @@ export interface AppSettings {
   deleteOnlyPlayed: boolean;
   summarizationEnabled: boolean;
   summarizationPrompt: string;
+  summarizationUserPrompt: string;
+  defaultSystemPrompt: string;
+  defaultUserPrompt: string;
 }
 
 export interface RuntimeVersionInfo {

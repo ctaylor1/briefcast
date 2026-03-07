@@ -17,33 +17,37 @@ import (
 
 const defaultSummarizationPrompt = "You are a helpful podcast summarization assistant. Given the following podcast transcript, produce a concise summary that captures the key topics, main arguments, notable quotes, and any actionable takeaways. Structure the summary with clear sections. Keep it under 500 words."
 
+const defaultUserPrompt = "Here is the podcast transcript:\n\n"
+
 const maxTranscriptChars = 200000
 
 // LLMConfig holds configuration for the LLM provider, loaded from environment variables.
 type LLMConfig struct {
-	Enabled       bool
-	Provider      string
-	APIKey        string
-	BaseURL       string
-	Model         string
-	MaxTokens     int
-	Temperature   float64
-	TimeoutSecs   int
-	DefaultPrompt string
+	Enabled           bool
+	Provider          string
+	APIKey            string
+	BaseURL           string
+	Model             string
+	MaxTokens         int
+	Temperature       float64
+	TimeoutSecs       int
+	DefaultPrompt     string
+	DefaultUserPrompt string
 }
 
 // LoadLLMConfig reads LLM settings from environment variables.
 func LoadLLMConfig() LLMConfig {
 	return LLMConfig{
-		Enabled:       getEnvBool("LLM_ENABLED", false),
-		Provider:      getEnvString("LLM_PROVIDER", "openai"),
-		APIKey:        strings.TrimSpace(os.Getenv("LLM_API_KEY")),
-		BaseURL:       getEnvString("LLM_BASE_URL", "https://api.openai.com/v1"),
-		Model:         getEnvString("LLM_MODEL", "gpt-4o-mini"),
-		MaxTokens:     getEnvInt("LLM_MAX_TOKENS", 1024),
-		Temperature:   getEnvFloat("LLM_TEMPERATURE", 0.3),
-		TimeoutSecs:   getEnvInt("LLM_TIMEOUT_SECONDS", 120),
-		DefaultPrompt: getEnvString("LLM_SUMMARIZATION_PROMPT", defaultSummarizationPrompt),
+		Enabled:           getEnvBool("LLM_ENABLED", false),
+		Provider:          getEnvString("LLM_PROVIDER", "openai"),
+		APIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
+		BaseURL:           getEnvString("LLM_BASE_URL", "https://api.openai.com/v1"),
+		Model:             getEnvString("LLM_MODEL", "gpt-4o-mini"),
+		MaxTokens:         getEnvInt("LLM_MAX_TOKENS", 1024),
+		Temperature:       getEnvFloat("LLM_TEMPERATURE", 0.3),
+		TimeoutSecs:       getEnvInt("LLM_TIMEOUT_SECONDS", 120),
+		DefaultPrompt:     getEnvString("LLM_SUMMARIZATION_PROMPT", defaultSummarizationPrompt),
+		DefaultUserPrompt: getEnvString("LLM_SUMMARIZATION_USER_PROMPT", defaultUserPrompt),
 	}
 }
 
@@ -70,7 +74,7 @@ type openAIChatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// ResolveSummarizationPrompt returns the effective prompt: DB setting if non-empty,
+// ResolveSummarizationPrompt returns the effective system prompt: DB setting if non-empty,
 // otherwise the env var default.
 func ResolveSummarizationPrompt(setting *db.Setting, cfg LLMConfig) string {
 	if setting != nil {
@@ -81,8 +85,19 @@ func ResolveSummarizationPrompt(setting *db.Setting, cfg LLMConfig) string {
 	return cfg.DefaultPrompt
 }
 
+// ResolveSummarizationUserPrompt returns the effective user prompt prefix:
+// DB setting if non-empty, otherwise the env var default.
+func ResolveSummarizationUserPrompt(setting *db.Setting, cfg LLMConfig) string {
+	if setting != nil {
+		if prompt := strings.TrimSpace(setting.SummarizationUserPrompt); prompt != "" {
+			return prompt
+		}
+	}
+	return cfg.DefaultUserPrompt
+}
+
 // SummarizeTranscript sends the canonical transcript to the configured LLM and returns the summary.
-func SummarizeTranscript(transcript string, prompt string, cfg LLMConfig) (string, error) {
+func SummarizeTranscript(transcript string, prompt string, userPrompt string, cfg LLMConfig) (string, error) {
 	if strings.TrimSpace(transcript) == "" {
 		return "", fmt.Errorf("transcript is empty")
 	}
@@ -98,7 +113,7 @@ func SummarizeTranscript(transcript string, prompt string, cfg LLMConfig) (strin
 		Model: cfg.Model,
 		Messages: []openAIChatMessage{
 			{Role: "system", Content: prompt},
-			{Role: "user", Content: "Here is the podcast transcript:\n\n" + transcript},
+			{Role: "user", Content: userPrompt + transcript},
 		},
 		MaxTokens:   cfg.MaxTokens,
 		Temperature: cfg.Temperature,
@@ -163,7 +178,7 @@ func SummarizeTranscript(transcript string, prompt string, cfg LLMConfig) (strin
 
 // SummarizeEpisode summarizes a single episode's canonical transcript using the configured LLM.
 // It persists the result (including lineage: model and prompt used) to the database.
-func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string) error {
+func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string) error {
 	jobLogger := logging.Sugar()
 
 	transcript := strings.TrimSpace(item.CanonicalTranscript)
@@ -178,7 +193,7 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string) error 
 		jobLogger.Warnw("failed to mark summary processing", "podcast_item_id", item.ID, "error", err)
 	}
 
-	summary, err := SummarizeTranscript(transcript, prompt, cfg)
+	summary, err := SummarizeTranscript(transcript, prompt, userPrompt, cfg)
 	if err != nil {
 		item.LLMSummaryStatus = "failed"
 		item.LLMSummaryError = trimToLength(err.Error(), 1000)

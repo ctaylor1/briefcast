@@ -1169,6 +1169,68 @@ img {
   padding: var(--space-4);
 }
 
+.command-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.command-pill--podcast {
+  background: #e8f0fe;
+  color: #1a56db;
+}
+
+.command-pill--episode {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.command-pill--chapter {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.command-pill--transcript {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.command-pill--summary {
+  background: #fce7f3;
+  color: #be185d;
+}
+
+@media (prefers-color-scheme: dark) {
+  .command-pill--podcast {
+    background: rgba(35, 131, 226, 0.2);
+    color: #7cb8f7;
+  }
+
+  .command-pill--episode {
+    background: rgba(22, 163, 74, 0.2);
+    color: #6ee7a0;
+  }
+
+  .command-pill--chapter {
+    background: rgba(180, 83, 9, 0.2);
+    color: #fbbf24;
+  }
+
+  .command-pill--transcript {
+    background: rgba(124, 58, 237, 0.2);
+    color: #c4b5fd;
+  }
+
+  .command-pill--summary {
+    background: rgba(190, 24, 93, 0.2);
+    color: #f9a8d4;
+  }
+}
+
 .app-user-trigger {
   min-height: 40px;
   padding-inline: var(--space-3);

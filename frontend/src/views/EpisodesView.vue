@@ -459,7 +459,7 @@ onMounted(() => {
         </div>
 
         <div v-else-if="drawerTab === 'chapters'" class="stack-3">
-          <div class="surface-row">
+          <div class="surface-row drawer-search-row">
             <UiInput v-model="chaptersSearch" placeholder="Search chapters" />
             <span v-if="drawerChapters.length > 0" class="meta-text">
               Showing {{ filteredChapters.length }} of {{ drawerChapters.length }}
@@ -494,7 +494,7 @@ onMounted(() => {
         </div>
 
         <div v-else-if="drawerTab === 'transcript'" class="stack-3">
-          <div class="surface-row">
+          <div class="surface-row drawer-search-row">
             <UiInput v-model="transcriptSearch" placeholder="Search transcript" />
             <span v-if="drawerTranscriptSegments.length > 0" class="meta-text">
               Showing {{ filteredTranscriptSegments.length }} of {{ drawerTranscriptSegments.length }}
@@ -597,6 +597,14 @@ onMounted(() => {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: 1fr;
+}
+
+.drawer-search-row {
+  margin-bottom: var(--space-3);
+}
+
+.drawer-search-row :deep(.ui-field) {
+  flex: 0 0 57.5%;
 }
 
 .drawer-list {

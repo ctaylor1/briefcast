@@ -377,6 +377,9 @@ func TestAddPodcastAndAddPodcastItemsCoverage(t *testing.T) {
 			_, _ = w.Write([]byte(`{"chapters":[{"title":"Intro","startTime":0}]}`))
 		case "/transcript1.json":
 			_, _ = w.Write([]byte(`hello transcript`))
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Executive summary from feed transcript"}}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -431,12 +434,17 @@ json.dump(payload, sys.stdout)
 	t.Setenv("TEST_BASE_URL", server.URL)
 	t.Setenv(feedparserPythonEnv, pythonPath)
 	t.Setenv(feedparserScriptEnv, feedScript)
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", server.URL)
+	t.Setenv("LLM_MODEL", "test-model")
 
 	setting := db.GetOrCreateSetting()
 	setting.GenerateNFOFile = true
 	setting.AutoDownload = true
 	setting.DownloadOnAdd = true
 	setting.InitialDownloadCount = 1
+	setting.SummarizationEnabled = true
 	if err := db.UpdateSettings(setting); err != nil {
 		t.Fatalf("failed to update settings for add podcast coverage: %v", err)
 	}
@@ -497,6 +505,15 @@ json.dump(payload, sys.stdout)
 	}
 	if ep1.TranscriptStatus != "available" || !strings.Contains(ep1.TranscriptJSON, "hello transcript") {
 		t.Fatalf("expected ep-1 transcript to be available with fetched content, got status=%q json=%s", ep1.TranscriptStatus, ep1.TranscriptJSON)
+	}
+	if ep1.LLMSummaryStatus != "available" {
+		t.Fatalf("expected ep-1 summary status available, got %q", ep1.LLMSummaryStatus)
+	}
+	if ep1.LLMSummary != "Executive summary from feed transcript" {
+		t.Fatalf("expected ep-1 LLM summary from stub response, got %q", ep1.LLMSummary)
+	}
+	if ep1.LLMSummaryModel != "test-model" {
+		t.Fatalf("expected ep-1 LLM summary model to be recorded, got %q", ep1.LLMSummaryModel)
 	}
 	if ep2.TranscriptStatus != "pending_whisperx" {
 		t.Fatalf("expected ep-2 transcript to be queued for whisperx, got %q", ep2.TranscriptStatus)

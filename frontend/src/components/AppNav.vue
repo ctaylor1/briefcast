@@ -188,7 +188,7 @@ const localCommandItems = computed<CommandLocalItem[]>(() =>
     kind: "local",
     key: `local:${result.type}:${result.episodeId || result.podcastId || index}:${index}`,
     label: localResultLabel(result),
-    section: `${localResultTypeLabel(result)} result`,
+    section: localResultTypeLabel(result),
     meta: localResultSummary(result) || result.podcastTitle || "Library match",
     result,
   })),
@@ -347,6 +347,8 @@ function localResultLabel(result: LocalSearchResult): string {
       return result.chapterTitle || result.episodeTitle || "Chapter match";
     case "transcript":
       return result.episodeTitle || result.podcastTitle || "Transcript match";
+    case "summary":
+      return result.episodeTitle || result.podcastTitle || "Summary match";
     default:
       return "Search result";
   }
@@ -370,6 +372,9 @@ function localResultRoute(result: LocalSearchResult): { path: string; query?: Re
     if (result.type === "transcript") {
       return result.episodeTitle || result.transcriptSnippet || "";
     }
+    if (result.type === "summary") {
+      return result.episodeTitle || "";
+    }
     return result.podcastTitle || "";
   })();
 
@@ -388,6 +393,26 @@ function localResultRoute(result: LocalSearchResult): { path: string; query?: Re
   }
 
   return { path: "/episodes" };
+}
+
+function pillClass(item: CommandItem): string {
+  if (item.kind !== "local") {
+    return "";
+  }
+  switch (item.result.type) {
+    case "podcast":
+      return "command-pill command-pill--podcast";
+    case "episode":
+      return "command-pill command-pill--episode";
+    case "chapter":
+      return "command-pill command-pill--chapter";
+    case "transcript":
+      return "command-pill command-pill--transcript";
+    case "summary":
+      return "command-pill command-pill--summary";
+    default:
+      return "command-pill";
+  }
 }
 
 function selectCommand(item: CommandItem): void {
@@ -724,7 +749,8 @@ onBeforeUnmount(() => {
                   >
                     <span class="command-item__line">
                       <span>{{ item.label }}</span>
-                      <span class="meta-text">{{ item.section }}</span>
+                      <span v-if="item.kind === 'local'" :class="pillClass(item)">{{ item.section }}</span>
+                      <span v-else class="meta-text">{{ item.section }}</span>
                     </span>
                     <span class="command-item__meta">{{ item.meta }}</span>
                   </div>

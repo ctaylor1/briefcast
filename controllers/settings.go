@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,8 +16,12 @@ type SettingsResponse struct {
 	DeleteAfterDays    int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   bool `json:"deleteOnlyPlayed"`
 	// Summarization
-	SummarizationEnabled bool   `json:"summarizationEnabled"`
-	SummarizationPrompt  string `json:"summarizationPrompt"`
+	SummarizationEnabled    bool   `json:"summarizationEnabled"`
+	SummarizationPrompt     string `json:"summarizationPrompt"`
+	SummarizationUserPrompt string `json:"summarizationUserPrompt"`
+	// Read-only defaults so the UI can show placeholders.
+	DefaultSystemPrompt string `json:"defaultSystemPrompt"`
+	DefaultUserPrompt   string `json:"defaultUserPrompt"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -27,8 +32,9 @@ type SettingsPatch struct {
 	DeleteAfterDays    *int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   *bool `json:"deleteOnlyPlayed"`
 	// Summarization
-	SummarizationEnabled *bool   `json:"summarizationEnabled"`
-	SummarizationPrompt  *string `json:"summarizationPrompt"`
+	SummarizationEnabled    *bool   `json:"summarizationEnabled"`
+	SummarizationPrompt     *string `json:"summarizationPrompt"`
+	SummarizationUserPrompt *string `json:"summarizationUserPrompt"`
 }
 
 // GetSettings handles the corresponding operation.
@@ -72,6 +78,9 @@ func PatchSettings(c *gin.Context) {
 	if patch.SummarizationPrompt != nil {
 		setting.SummarizationPrompt = *patch.SummarizationPrompt
 	}
+	if patch.SummarizationUserPrompt != nil {
+		setting.SummarizationUserPrompt = *patch.SummarizationUserPrompt
+	}
 
 	if err := db.UpdateSettings(setting); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -82,12 +91,16 @@ func PatchSettings(c *gin.Context) {
 }
 
 func settingsFromModel(setting *db.Setting) SettingsResponse {
+	cfg := service.LoadLLMConfig()
 	return SettingsResponse{
-		KeepAllEpisodes:      setting.RetentionKeepAll,
-		KeepLatestEpisodes:   setting.RetentionKeepLatest,
-		DeleteAfterDays:      setting.RetentionDeleteAfterDays,
-		DeleteOnlyPlayed:     setting.RetentionDeleteOnlyPlayed,
-		SummarizationEnabled: setting.SummarizationEnabled,
-		SummarizationPrompt:  setting.SummarizationPrompt,
+		KeepAllEpisodes:         setting.RetentionKeepAll,
+		KeepLatestEpisodes:      setting.RetentionKeepLatest,
+		DeleteAfterDays:         setting.RetentionDeleteAfterDays,
+		DeleteOnlyPlayed:        setting.RetentionDeleteOnlyPlayed,
+		SummarizationEnabled:    setting.SummarizationEnabled,
+		SummarizationPrompt:     setting.SummarizationPrompt,
+		SummarizationUserPrompt: setting.SummarizationUserPrompt,
+		DefaultSystemPrompt:     cfg.DefaultPrompt,
+		DefaultUserPrompt:       cfg.DefaultUserPrompt,
 	}
 }

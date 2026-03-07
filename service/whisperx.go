@@ -436,7 +436,8 @@ func TranscribePendingEpisodes() error {
 		setting := db.GetOrCreateSetting()
 		if llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != "" {
 			prompt := ResolveSummarizationPrompt(setting, llmCfg)
-			if sumErr := SummarizeEpisode(&item, llmCfg, prompt); sumErr != nil {
+			userPrompt := ResolveSummarizationUserPrompt(setting, llmCfg)
+			if sumErr := SummarizeEpisode(&item, llmCfg, prompt, userPrompt); sumErr != nil {
 				jobLogger.Warnw(
 					"episode summarization failed",
 					"podcast_item_id", item.ID,

@@ -26,8 +26,8 @@ func SearchPodcastsByLike(like string, limit int, podcasts *[]Podcast) error {
 func SearchPodcastItemsByLike(like string, limit int, items *[]PodcastItem) error {
 	query := podcastItemsWithPodcast(DB).
 		Where(
-			"lower(title) like ? OR lower(summary) like ? OR lower(summary_html) like ? OR lower(chapters_json) like ? OR lower(id3_chapters_json) like ? OR lower(transcript_json) like ?",
-			like, like, like, like, like, like,
+			"lower(title) like ? OR lower(summary) like ? OR lower(summary_html) like ? OR lower(chapters_json) like ? OR lower(id3_chapters_json) like ? OR lower(transcript_json) like ? OR lower(llm_summary) like ?",
+			like, like, like, like, like, like, like,
 		)
 	if limit > 0 {
 		query = query.Limit(limit)
