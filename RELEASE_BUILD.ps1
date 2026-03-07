@@ -295,15 +295,15 @@ Push-Location $ProjectDir
 try {
     $releaseCommitMessage = "release: v$newVersion"
 
-    git add -A
+    git add -A -- . ":(exclude).claude/worktrees" ":(exclude).claude/worktrees/**"
     # Never release local Codex/Claude worktree metadata as an embedded repository.
-    git rm --cached -r --ignore-unmatch .claude/worktrees 2>$null | Out-Null
+    git rm --cached -r --ignore-unmatch .claude/worktrees .claude/worktrees/focused-noyce 2>$null | Out-Null
 
     git commit -m $releaseCommitMessage
     if ($LASTEXITCODE -ne 0) {
         Write-Detail "Initial commit failed; re-staging in case pre-commit hooks modified files."
-        git add -A
-        git rm --cached -r --ignore-unmatch .claude/worktrees 2>$null | Out-Null
+        git add -A -- . ":(exclude).claude/worktrees" ":(exclude).claude/worktrees/**"
+        git rm --cached -r --ignore-unmatch .claude/worktrees .claude/worktrees/focused-noyce 2>$null | Out-Null
         git commit -m $releaseCommitMessage
         if ($LASTEXITCODE -ne 0) {
             throw "Git commit failed after retry. Check hook output above."

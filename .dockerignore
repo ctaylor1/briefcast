@@ -8,3 +8,19 @@ frontend/dist
 dist
 bin
 *.log
+
+# Runtime/state directories should never be part of image build context.
+config/
+assets/
+logs/
+builds/
+
+# Local tooling/worktree noise.
+.claude/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+coverage
+coverage*.out
+*.test.exe
