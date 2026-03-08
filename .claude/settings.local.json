@@ -1,22 +1,6 @@
 {
   "model": "opusplan",
   "permissions": {
-    "allow": [
-      "Edit",
-      "MultiEdit",
-      "Write(*)",
-      "Bash(git:*)",
-      "Bash(npm:*)",
-      "Bash(npx:*)",
-      "Bash(python:*)",
-      "Bash(ls:*)",
-      "Bash(find:*)",
-      "Bash(grep:*)",
-      "Bash(mkdir:*)",
-      "Bash(touch:*)"
-    ],
-    "deny": [
-      "Bash(rm -rf *)"
-    ]
+    "defaultMode": "bypassPermissions"
   }
 }
