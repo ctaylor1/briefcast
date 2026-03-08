@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       "/podcasts": { target: "http://localhost:8080", changeOrigin: true },
       "/podcastitems": { target: "http://localhost:8080", changeOrigin: true },
+      "/summaries": { target: "http://localhost:8080", changeOrigin: true },
       "/tags": { target: "http://localhost:8080", changeOrigin: true },
       "/search": { target: "http://localhost:8080", changeOrigin: true },
       "/settings": { target: "http://localhost:8080", changeOrigin: true },

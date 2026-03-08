@@ -13,12 +13,14 @@
     "@headlessui/vue": "^1.7.23",
     "axios": "^1.13.6",
     "clsx": "^2.1.1",
+    "marked": "^17.0.4",
     "tailwind-merge": "^3.5.0",
     "vue": "^3.5.25",
     "vue-router": "^5.0.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",
+    "@types/marked": "^5.0.2",
     "@types/node": "^24.11.0",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/tsconfig": "^0.8.1",

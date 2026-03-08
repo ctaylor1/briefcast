@@ -6,6 +6,7 @@ import DownloadsView from "../views/DownloadsView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
 import PlayerView from "../views/PlayerView.vue";
 import SettingsView from "../views/SettingsView.vue";
+import SummariesView from "../views/SummariesView.vue";
 
 const router = createRouter({
   history: createWebHashHistory("/app/"),
@@ -21,6 +22,12 @@ const router = createRouter({
       name: "episodes",
       component: EpisodesView,
       meta: { title: "Episodes" },
+    },
+    {
+      path: "/summaries",
+      name: "summaries",
+      component: SummariesView,
+      meta: { title: "Summaries" },
     },
     {
       path: "/downloads",

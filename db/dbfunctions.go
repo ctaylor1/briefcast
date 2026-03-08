@@ -304,6 +304,45 @@ func UpdatePodcastItemDownloadProgress(podcastItemID string, downloadedBytes int
 	return DB.Model(&PodcastItem{}).Where("id=?", podcastItemID).Updates(updates).Error
 }
 
+// GetPaginatedSummaries returns podcast items that have available LLM summaries,
+// with optional search, podcast filtering, sorting, and pagination.
+func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorting string) (*[]PodcastItem, int64, error) {
+	var items []PodcastItem
+	var total int64
+
+	query := podcastItemsWithPodcast(DB).Where("llm_summary_status = ?", "available")
+
+	if q != "" {
+		like := "%" + strings.TrimSpace(strings.ToUpper(q)) + "%"
+		query = query.Where("UPPER(title) LIKE ? OR UPPER(llm_summary) LIKE ?", like, like)
+	}
+
+	if len(podcastIds) > 0 {
+		query = query.Where("podcast_id IN ?", podcastIds)
+	}
+
+	query.Count(&total)
+
+	var order string
+	switch sorting {
+	case "oldest":
+		order = "llm_summary_date asc"
+	case "title_asc":
+		order = "title asc"
+	case "title_desc":
+		order = "title desc"
+	case "shortest":
+		order = "duration asc"
+	case "longest":
+		order = "duration desc"
+	default:
+		order = "llm_summary_date desc"
+	}
+
+	result := query.Limit(count).Offset((page-1)*count).Order(order).Find(&items)
+	return &items, total, result.Error
+}
+
 // GetPodcastEpisodeStats handles the corresponding operation.
 func GetPodcastEpisodeStats() (*[]PodcastItemStatsModel, error) {
 	var stats []PodcastItemStatsModel

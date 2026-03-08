@@ -155,3 +155,41 @@ export interface RuntimeVersionInfo {
   version: string;
   repoUrl: string;
 }
+
+export type SummarySorting =
+  | "newest"
+  | "oldest"
+  | "title_asc"
+  | "title_desc"
+  | "shortest"
+  | "longest";
+
+export interface SummaryListItem {
+  id: string;
+  episodeTitle: string;
+  podcastId: string;
+  podcastTitle: string;
+  podcastImage: string;
+  duration: number;
+  pubDate: string;
+  generatedAt: string;
+  model: string;
+  excerpt: string;
+  readTime: number;
+  isPlayed: boolean;
+  hasSummary: boolean;
+}
+
+export interface SummariesFilter {
+  page: number;
+  count: number;
+  totalCount: number;
+  totalPages: number;
+  nextPage: number;
+  previousPage: number;
+}
+
+export interface SummariesResponse {
+  summaries: SummaryListItem[];
+  filter: SummariesFilter;
+}

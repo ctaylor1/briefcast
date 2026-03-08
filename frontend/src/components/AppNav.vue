@@ -18,7 +18,7 @@ import type { LocalSearchResult } from "../types/api";
 import UiDropdown from "./ui/UiDropdown.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
 
-type NavIcon = "podcasts" | "episodes" | "downloads" | "add" | "player" | "settings" | "about";
+type NavIcon = "podcasts" | "episodes" | "summaries" | "downloads" | "add" | "player" | "settings" | "about";
 
 interface NavItem {
   to: string;
@@ -68,6 +68,14 @@ const primaryNavItems: NavItem[] = [
     section: "Library",
     meta: "Chapters, transcripts, filters",
     keywords: "episodes search chapters transcript filters",
+  },
+  {
+    to: "/summaries",
+    label: "Summaries",
+    icon: "summaries",
+    section: "Library",
+    meta: "Browse AI summaries",
+    keywords: "summaries ai llm read browse library",
   },
   {
     to: "/downloads",
@@ -227,6 +235,8 @@ function iconStrokes(name: NavIcon | "search" | "user" | "panel"): string[] {
       return ["M4 6h16", "M4 12h16", "M4 18h10"];
     case "episodes":
       return ["M5 5h14v14H5z", "M10 9l5 3-5 3z"];
+    case "summaries":
+      return ["M6 3h8l4 4v14H6z", "M14 3v4h4", "M9 13h6", "M9 17h4"];
     case "downloads":
       return ["M12 4v10", "M8 10l4 4 4-4", "M5 20h14"];
     case "add":
@@ -377,6 +387,13 @@ function localResultRoute(result: LocalSearchResult): { path: string; query?: Re
     }
     return result.podcastTitle || "";
   })();
+
+  if (result.type === "summary" && q) {
+    return {
+      path: "/summaries",
+      query: { q },
+    };
+  }
 
   if (q) {
     return {

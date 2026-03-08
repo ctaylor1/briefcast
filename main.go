@@ -127,6 +127,8 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.POST("/podcastitems/:id/resume", controllers.ResumePodcastItemDownload)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
 
+	router.GET("/summaries", controllers.GetSummaries)
+
 	router.GET("/downloads/queue", controllers.GetDownloadQueue)
 	router.POST("/downloads/pause", controllers.PauseDownloads)
 	router.POST("/downloads/resume", controllers.ResumeDownloads)

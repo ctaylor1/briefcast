@@ -5,3 +5,4 @@ export { getErrorMessage } from "./http";
 export { podcastsApi } from "./podcasts";
 export { settingsApi } from "./settings";
 export { searchApi } from "./search";
+export { summariesApi } from "./summaries";
