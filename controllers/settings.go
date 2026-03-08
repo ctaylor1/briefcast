@@ -90,6 +90,26 @@ func PatchSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settingsFromModel(setting))
 }
 
+// BackfillSummaries kicks off background summarization of all episodes that
+// have a transcript but no summary yet. Returns 409 if already running.
+func BackfillSummaries(c *gin.Context) {
+	if service.GetSummaryBackfillRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "backfill is already running"})
+		return
+	}
+
+	go func() {
+		service.BackfillSummaries(nil)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "summary backfill started"})
+}
+
+// GetBackfillSummariesStatus returns whether a backfill is currently running.
+func GetBackfillSummariesStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
+}
+
 func settingsFromModel(setting *db.Setting) SettingsResponse {
 	cfg := service.LoadLLMConfig()
 	return SettingsResponse{

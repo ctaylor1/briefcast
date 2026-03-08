@@ -144,6 +144,8 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.GET("/search/local", controllers.SearchLocalRecords)
 	router.GET("/settings", controllers.GetSettings)
 	router.PATCH("/settings", controllers.PatchSettings)
+	router.POST("/settings/backfill-summaries", controllers.BackfillSummaries)
+	router.GET("/settings/backfill-summaries", controllers.GetBackfillSummariesStatus)
 	router.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, versionResponse{
 			Version: resolveRunningVersion(),
