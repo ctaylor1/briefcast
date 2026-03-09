@@ -128,6 +128,8 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
 
 	router.GET("/summaries", controllers.GetSummaries)
+	router.POST("/summaries/:id/favorite", controllers.FavoriteSummary)
+	router.POST("/summaries/:id/unfavorite", controllers.UnfavoriteSummary)
 
 	router.GET("/downloads/queue", controllers.GetDownloadQueue)
 	router.POST("/downloads/pause", controllers.PauseDownloads)

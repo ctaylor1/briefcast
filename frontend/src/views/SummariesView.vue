@@ -11,7 +11,7 @@ import UiInput from "../components/ui/UiInput.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
 import { summariesApi } from "../lib/api/summaries";
-import { formatDate, formatDuration } from "../lib/format";
+import { formatDate } from "../lib/format";
 import type { Podcast, SummaryListItem, SummarySorting } from "../types/api";
 
 const isLoading = ref(true);
@@ -25,6 +25,7 @@ const filter = reactive<{
   page: number;
   count: number;
   sorting: SummarySorting;
+  favoritesOnly: boolean;
   nextPage: number;
   previousPage: number;
   totalPages: number;
@@ -35,6 +36,7 @@ const filter = reactive<{
   page: 1,
   count: 20,
   sorting: "newest",
+  favoritesOnly: false,
   nextPage: 0,
   previousPage: 0,
   totalPages: 0,
@@ -58,7 +60,8 @@ const hasActiveFilters = computed(
     filter.q.trim().length > 0 ||
     filter.podcastIds.length > 0 ||
     filter.sorting !== "newest" ||
-    filter.count !== 20,
+    filter.count !== 20 ||
+    filter.favoritesOnly,
 );
 
 async function loadPodcastOptions(): Promise<void> {
@@ -79,6 +82,7 @@ async function fetchSummaries(): Promise<void> {
       sorting: filter.sorting,
       q: filter.q.trim() || undefined,
       podcastIds: filter.podcastIds.length > 0 ? filter.podcastIds : undefined,
+      favoritesOnly: filter.favoritesOnly || undefined,
     });
 
     items.value = response.summaries;
@@ -102,7 +106,27 @@ function resetFilters(): void {
   filter.page = 1;
   filter.count = 20;
   filter.sorting = "newest";
+  filter.favoritesOnly = false;
   void fetchSummaries();
+}
+
+async function toggleFavorite(item: SummaryListItem, event: Event): Promise<void> {
+  event.stopPropagation();
+  try {
+    if (item.isFavorited) {
+      await summariesApi.unfavorite(item.id);
+      item.isFavorited = false;
+    } else {
+      await summariesApi.favorite(item.id);
+      item.isFavorited = true;
+    }
+    // Also update reader item if it's the same
+    if (readerItem.value && readerItem.value.id === item.id) {
+      readerItem.value.isFavorited = item.isFavorited;
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, "Failed to update favorite.");
+  }
 }
 
 async function openReader(item: SummaryListItem): Promise<void> {
@@ -137,6 +161,21 @@ function closeReader(): void {
   readerItem.value = null;
 }
 
+/** Strip markdown formatting from plain text (for TOC entries, etc.) */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")  // **bold**
+    .replace(/__(.+?)__/g, "$1")       // __bold__
+    .replace(/\*(.+?)\*/g, "$1")       // *italic*
+    .replace(/_(.+?)_/g, "$1")         // _italic_
+    .replace(/~~(.+?)~~/g, "$1")       // ~~strikethrough~~
+    .replace(/`(.+?)`/g, "$1")         // `code`
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url)
+    .replace(/^#{1,6}\s+/gm, "")       // leading # headings
+    .replace(/---+/g, "")              // horizontal rules
+    .trim();
+}
+
 function renderMarkdown(text: string): void {
   const toc: Array<{ id: string; text: string; level: number }> = [];
   let headingIndex = 0;
@@ -145,8 +184,9 @@ function renderMarkdown(text: string): void {
   renderer.heading = function ({ text, depth }: { text: string; depth: number }) {
     headingIndex++;
     const id = `summary-heading-${headingIndex}`;
-    toc.push({ id, text, level: depth });
-    return `<h${depth} id="${id}">${text}</h${depth}>`;
+    const cleanText = stripMarkdown(text);
+    toc.push({ id, text: cleanText, level: depth });
+    return `<h${depth} id="${id}">${cleanText}</h${depth}>`;
   };
 
   const html = marked.parse(text, { renderer, async: false }) as string;
@@ -170,8 +210,36 @@ function podcastFilterLabel(): string {
   return `${filter.podcastIds.length} podcasts`;
 }
 
+function sendToObsidian(): void {
+  if (!readerItem.value || !readerSummaryRaw.value) return;
+
+  const title = readerItem.value.episodeTitle;
+  const podcast = readerItem.value.podcastTitle;
+  const pubDate = readerItem.value.pubDate ? formatDate(readerItem.value.pubDate) : "";
+  const model = readerItem.value.model || "";
+
+  const frontmatter = [
+    "---",
+    `title: "${title.replace(/"/g, '\\"')}"`,
+    `podcast: "${podcast.replace(/"/g, '\\"')}"`,
+    pubDate ? `date: ${readerItem.value.pubDate.split("T")[0]}` : "",
+    model ? `model: ${model}` : "",
+    "tags: [briefcast, podcast-summary]",
+    "---",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const content = `${frontmatter}\n\n# ${title}\n\n${readerSummaryRaw.value}`;
+
+  // Obsidian URI protocol: obsidian://new?name=NAME&content=CONTENT
+  const name = encodeURIComponent(`${podcast} - ${title}`);
+  const encodedContent = encodeURIComponent(content);
+  window.location.href = `obsidian://new?name=${name}&content=${encodedContent}`;
+}
+
 watch(
-  () => [filter.count, filter.sorting, filter.podcastIds.join(",")],
+  () => [filter.count, filter.sorting, filter.podcastIds.join(","), filter.favoritesOnly],
   () => {
     filter.page = 1;
     void fetchSummaries();
@@ -235,6 +303,22 @@ onMounted(() => {
               </li>
             </ul>
           </nav>
+          <div class="summary-reader__toc-actions">
+            <button
+              type="button"
+              class="summary-reader__obsidian-btn"
+              title="Send to Obsidian"
+              @click="sendToObsidian"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+              <span>Send to Obsidian</span>
+            </button>
+          </div>
         </aside>
 
         <!-- Main content -->
@@ -244,15 +328,26 @@ onMounted(() => {
             <div class="summary-reader__meta surface-row">
               <span class="meta-text">{{ readerItem.podcastTitle }}</span>
               <UiBadge tone="neutral">{{ readerItem.readTime }} min read</UiBadge>
-              <span v-if="readerItem.duration > 0" class="meta-text">
-                Episode: {{ formatDuration(readerItem.duration) }}
+              <span v-if="readerItem.pubDate" class="meta-text">
+                {{ formatDate(readerItem.pubDate) }}
               </span>
               <span v-if="readerItem.generatedAt" class="meta-text">
-                Generated {{ formatDate(readerItem.generatedAt) }}
+                Summary: {{ formatDate(readerItem.generatedAt) }}
               </span>
               <span v-if="readerItem.model" class="meta-text">
-                Model: {{ readerItem.model }}
+                Summary: {{ readerItem.model }}
               </span>
+              <button
+                type="button"
+                class="summary-reader__fav-btn"
+                :class="{ 'summary-reader__fav-btn--active': readerItem.isFavorited }"
+                :title="readerItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'"
+                @click="toggleFavorite(readerItem, $event)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </button>
             </div>
           </header>
 
@@ -343,9 +438,22 @@ onMounted(() => {
           <span v-if="!isLoading" class="meta-text">
             {{ filter.totalCount }} {{ filter.totalCount === 1 ? "summary" : "summaries" }}
           </span>
-          <UiButton v-if="hasActiveFilters" size="sm" variant="ghost" @click="resetFilters">
-            Reset filters
-          </UiButton>
+          <div class="summaries-filters__footer-actions">
+            <label class="summaries-filters__favorites-toggle">
+              <input
+                type="checkbox"
+                :checked="filter.favoritesOnly"
+                @change="filter.favoritesOnly = !filter.favoritesOnly"
+              />
+              <svg width="14" height="14" viewBox="0 0 24 24" :fill="filter.favoritesOnly ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span>Favorites only</span>
+            </label>
+            <UiButton v-if="hasActiveFilters" size="sm" variant="ghost" @click="resetFilters">
+              Reset filters
+            </UiButton>
+          </div>
         </div>
       </UiCard>
 
@@ -358,10 +466,17 @@ onMounted(() => {
       </UiCard>
 
       <UiCard v-else-if="items.length === 0" padding="lg" class="empty-state">
-        <p class="empty-state__title">No summaries available</p>
+        <p class="empty-state__title">
+          {{ filter.favoritesOnly ? "No favorite summaries" : "No summaries available" }}
+        </p>
         <p class="empty-state__copy">
-          Summaries are generated automatically after episodes are transcribed. Check your
-          <RouterLink to="/settings">summarization settings</RouterLink> to enable AI summaries.
+          <template v-if="filter.favoritesOnly">
+            Star summaries you want to revisit and they will appear here.
+          </template>
+          <template v-else>
+            Summaries are generated automatically after episodes are transcribed. Check your
+            <RouterLink to="/settings">summarization settings</RouterLink> to enable AI summaries.
+          </template>
         </p>
         <UiButton v-if="hasActiveFilters" variant="secondary" size="sm" @click="resetFilters">
           Reset filters
@@ -369,14 +484,27 @@ onMounted(() => {
       </UiCard>
 
       <div v-else class="summaries-list">
-        <button
+        <div
           v-for="item in items"
           :key="item.id"
-          type="button"
           class="summaries-list__row"
-          @click="openReader(item)"
         >
-          <div class="summaries-list__content">
+          <button
+            type="button"
+            class="summaries-list__fav-btn"
+            :class="{ 'summaries-list__fav-btn--active': item.isFavorited }"
+            :title="item.isFavorited ? 'Remove from favorites' : 'Add to favorites'"
+            @click="toggleFavorite(item, $event)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" :fill="item.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="summaries-list__content"
+            @click="openReader(item)"
+          >
             <div class="summaries-list__header">
               <h3 class="summaries-list__title">{{ item.episodeTitle }}</h3>
               <div class="summaries-list__badges">
@@ -386,13 +514,13 @@ onMounted(() => {
             </div>
             <div class="summaries-list__meta">
               <span>{{ item.podcastTitle }}</span>
-              <span v-if="item.duration > 0"> &middot; {{ formatDuration(item.duration) }}</span>
-              <span v-if="item.generatedAt"> &middot; {{ formatDate(item.generatedAt) }}</span>
-              <span v-if="item.model"> &middot; {{ item.model }}</span>
+              <span v-if="item.pubDate"> &middot; {{ formatDate(item.pubDate) }}</span>
+              <span v-if="item.generatedAt"> &middot; Summary: {{ formatDate(item.generatedAt) }}</span>
+              <span v-if="item.model"> &middot; Summary: {{ item.model }}</span>
             </div>
             <p v-if="item.excerpt" class="summaries-list__excerpt">{{ item.excerpt }}</p>
-          </div>
-        </button>
+          </button>
+        </div>
       </div>
 
       <EpisodesPagination
@@ -427,6 +555,40 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.summaries-filters__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.summaries-filters__favorites-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  white-space: nowrap;
+}
+
+.summaries-filters__favorites-toggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.summaries-filters__favorites-toggle svg {
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--ease-enter);
+}
+
+.summaries-filters__favorites-toggle:has(input:checked) svg {
+  color: var(--color-warning, #e5a00d);
 }
 
 .summaries-filters__podcast-filter {
@@ -554,14 +716,13 @@ onMounted(() => {
 }
 
 .summaries-list__row {
-  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3);
   background: var(--color-bg-primary);
-  color: inherit;
-  text-align: left;
-  padding: var(--space-4);
-  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
   transition: background-color var(--duration-fast) var(--ease-enter);
 }
 
@@ -569,7 +730,34 @@ onMounted(() => {
   background: var(--color-hover);
 }
 
+.summaries-list__fav-btn {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: var(--space-1);
+  margin-top: 2px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--ease-enter);
+}
+
+.summaries-list__fav-btn:hover {
+  color: var(--color-warning, #e5a00d);
+}
+
+.summaries-list__fav-btn--active {
+  color: var(--color-warning, #e5a00d);
+}
+
 .summaries-list__content {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
   display: grid;
   gap: var(--space-2);
 }
@@ -628,6 +816,33 @@ onMounted(() => {
   display: none;
 }
 
+.summary-reader__toc-actions {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.summary-reader__obsidian-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-enter), color var(--duration-fast) var(--ease-enter);
+}
+
+.summary-reader__obsidian-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-text-primary);
+}
+
 .summary-reader__header {
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-border);
@@ -643,6 +858,24 @@ onMounted(() => {
 
 .summary-reader__meta {
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.summary-reader__fav-btn {
+  border: 0;
+  background: transparent;
+  padding: var(--space-1);
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--ease-enter);
+}
+
+.summary-reader__fav-btn:hover {
+  color: var(--color-warning, #e5a00d);
+}
+
+.summary-reader__fav-btn--active {
+  color: var(--color-warning, #e5a00d);
 }
 
 /* ── Prose Typography ────────────────────────────────────── */

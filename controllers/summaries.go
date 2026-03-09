@@ -12,19 +12,20 @@ import (
 
 // SummaryListItem is the JSON shape returned for each summary in the list.
 type SummaryListItem struct {
-	ID           string  `json:"id"`
-	EpisodeTitle string  `json:"episodeTitle"`
-	PodcastID    string  `json:"podcastId"`
-	PodcastTitle string  `json:"podcastTitle"`
-	PodcastImage string  `json:"podcastImage"`
-	Duration     int     `json:"duration"`
-	PubDate      string  `json:"pubDate"`
-	GeneratedAt  string  `json:"generatedAt"`
-	Model        string  `json:"model"`
-	Excerpt      string  `json:"excerpt"`
-	ReadTime     int     `json:"readTime"`
-	IsPlayed     bool    `json:"isPlayed"`
-	HasSummary   bool    `json:"hasSummary"`
+	ID           string `json:"id"`
+	EpisodeTitle string `json:"episodeTitle"`
+	PodcastID    string `json:"podcastId"`
+	PodcastTitle string `json:"podcastTitle"`
+	PodcastImage string `json:"podcastImage"`
+	Duration     int    `json:"duration"`
+	PubDate      string `json:"pubDate"`
+	GeneratedAt  string `json:"generatedAt"`
+	Model        string `json:"model"`
+	Excerpt      string `json:"excerpt"`
+	ReadTime     int    `json:"readTime"`
+	IsPlayed     bool   `json:"isPlayed"`
+	HasSummary   bool   `json:"hasSummary"`
+	IsFavorited  bool   `json:"isFavorited"`
 }
 
 // GetSummaries returns a paginated list of episodes that have available AI summaries.
@@ -34,6 +35,7 @@ func GetSummaries(c *gin.Context) {
 	q := c.Query("q")
 	sorting := c.DefaultQuery("sorting", "newest")
 	podcastIds := c.QueryArray("podcastIds[]")
+	favoritesOnly := c.Query("favoritesOnly") == "true"
 
 	if page < 1 {
 		page = 1
@@ -42,7 +44,7 @@ func GetSummaries(c *gin.Context) {
 		count = 20
 	}
 
-	items, totalCount, err := db.GetPaginatedSummaries(page, count, q, podcastIds, sorting)
+	items, totalCount, err := db.GetPaginatedSummaries(page, count, q, podcastIds, sorting, favoritesOnly)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load summaries"})
 		return
@@ -82,6 +84,7 @@ func GetSummaries(c *gin.Context) {
 			ReadTime:     readTime,
 			IsPlayed:     item.IsPlayed,
 			HasSummary:   true,
+			IsFavorited:  item.IsSummaryFavorited,
 		})
 	}
 
@@ -96,6 +99,34 @@ func GetSummaries(c *gin.Context) {
 			"previousPage": previousPage,
 		},
 	})
+}
+
+// FavoriteSummary marks a summary as favorited.
+func FavoriteSummary(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing id"})
+		return
+	}
+	if err := db.SetSummaryFavorited(id, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+// UnfavoriteSummary removes the favorite mark from a summary.
+func UnfavoriteSummary(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing id"})
+		return
+	}
+	if err := db.SetSummaryFavorited(id, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{})
 }
 
 func extractExcerpt(text string, maxLen int) string {

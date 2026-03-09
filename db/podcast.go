@@ -112,6 +112,8 @@ type PodcastItem struct {
 	LLMSummaryPrompt string `gorm:"type:text" json:"-"`
 
 	HasSummary bool `gorm:"-"`
+
+	IsSummaryFavorited bool `gorm:"default:false"`
 }
 
 // DownloadStatus represents a public type.

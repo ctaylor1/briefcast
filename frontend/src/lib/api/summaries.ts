@@ -7,6 +7,7 @@ export interface SummaryListQuery {
   sorting: SummarySorting;
   q?: string;
   podcastIds?: string[];
+  favoritesOnly?: boolean;
 }
 
 export const summariesApi = {
@@ -22,6 +23,17 @@ export const summariesApi = {
     if (query.podcastIds && query.podcastIds.length > 0) {
       params["podcastIds[]"] = query.podcastIds;
     }
+    if (query.favoritesOnly) {
+      params.favoritesOnly = "true";
+    }
     return httpClient.get<SummariesResponse>("/summaries", { params });
+  },
+
+  favorite(id: string): Promise<void> {
+    return httpClient.post(`/summaries/${id}/favorite`);
+  },
+
+  unfavorite(id: string): Promise<void> {
+    return httpClient.post(`/summaries/${id}/unfavorite`);
   },
 };

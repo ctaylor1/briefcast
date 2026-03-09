@@ -178,6 +178,7 @@ export interface SummaryListItem {
   readTime: number;
   isPlayed: boolean;
   hasSummary: boolean;
+  isFavorited: boolean;
 }
 
 export interface SummariesFilter {

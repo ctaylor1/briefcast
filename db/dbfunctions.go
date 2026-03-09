@@ -306,7 +306,7 @@ func UpdatePodcastItemDownloadProgress(podcastItemID string, downloadedBytes int
 
 // GetPaginatedSummaries returns podcast items that have available LLM summaries,
 // with optional search, podcast filtering, sorting, and pagination.
-func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorting string) (*[]PodcastItem, int64, error) {
+func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorting string, favoritesOnly bool) (*[]PodcastItem, int64, error) {
 	var items []PodcastItem
 	var total int64
 
@@ -321,7 +321,9 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 		query = query.Where("podcast_id IN ?", podcastIds)
 	}
 
-	query.Count(&total)
+	if favoritesOnly {
+		query = query.Where("is_summary_favorited = ?", true)
+	}
 
 	var order string
 	switch sorting {
@@ -339,8 +341,16 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 		order = "llm_summary_date desc"
 	}
 
-	result := query.Limit(count).Offset((page-1)*count).Order(order).Find(&items)
+	totalsQuery := query.Order(order).Find(&items)
+	totalsQuery.Count(&total)
+
+	result := query.Limit(count).Offset((page - 1) * count).Order(order).Find(&items)
 	return &items, total, result.Error
+}
+
+// SetSummaryFavorited toggles the is_summary_favorited flag on a podcast item.
+func SetSummaryFavorited(id string, favorited bool) error {
+	return DB.Model(&PodcastItem{}).Where("id = ?", id).Update("is_summary_favorited", favorited).Error
 }
 
 // GetPodcastEpisodeStats handles the corresponding operation.

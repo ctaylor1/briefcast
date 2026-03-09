@@ -168,6 +168,14 @@ where id in (
 		Name:  "2026_03_05_01_09_BackfillSummarizationEnabled",
 		Query: "update settings set summarization_enabled = false where summarization_enabled is null",
 	},
+	{
+		Name:  "2026_03_08_01_00_AddIsSummaryFavorited",
+		Query: "alter table podcast_items add column if not exists is_summary_favorited boolean default false",
+	},
+	{
+		Name:  "2026_03_08_01_01_BackfillIsSummaryFavorited",
+		Query: "update podcast_items set is_summary_favorited = false where is_summary_favorited is null",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
