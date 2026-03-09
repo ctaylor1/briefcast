@@ -328,7 +328,7 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 	var order string
 	switch sorting {
 	case "oldest":
-		order = "llm_summary_date asc"
+		order = "pub_date asc"
 	case "title_asc":
 		order = "title asc"
 	case "title_desc":
@@ -338,7 +338,7 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 	case "longest":
 		order = "duration desc"
 	default:
-		order = "llm_summary_date desc"
+		order = "pub_date desc"
 	}
 
 	totalsQuery := query.Order(order).Find(&items)
