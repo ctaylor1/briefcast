@@ -232,8 +232,13 @@ function sendToObsidian(): void {
 
   const content = `${frontmatter}\n\n# ${title}\n\n${readerSummaryRaw.value}`;
 
-  // Obsidian URI protocol: obsidian://new?name=NAME&content=CONTENT
-  const name = encodeURIComponent(`${podcast} - ${title}`);
+  // Obsidian note names are filenames — strip characters illegal on Windows/macOS/Linux.
+  const sanitizeName = (s: string) =>
+    s
+      .replace(/[\\/:*?"<>|#^[\]]/g, "") // forbidden filename & Obsidian chars
+      .replace(/\s+/g, " ") // collapse whitespace
+      .trim();
+  const name = encodeURIComponent(sanitizeName(`${podcast} - ${title}`));
   const encodedContent = encodeURIComponent(content);
   window.location.href = `obsidian://new?name=${name}&content=${encodedContent}`;
 }
