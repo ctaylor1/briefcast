@@ -3,33 +3,41 @@
 A single PowerShell script (`RELEASE.ps1`) driven by a JSON config file (`release.config.json`).
 Replaces the previous `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1`, `RELEASE_RESET.ps1`, and `build_tar.ps1` scripts.
 
+Use the root `justfile` as the recommended interface. `just` recipes call `RELEASE.ps1` under the hood.
+
 ## Quick Start
 
 ```powershell
 # Show all stages, options, and examples
-.\RELEASE.ps1
+just release-help
 
 # Run all quality checks
-.\RELEASE.ps1 test
+just release-test
 
 # Full release pipeline (patch bump)
-.\RELEASE.ps1 ship -Bump patch
+just ship -Bump patch
 
 # Build images only (no commit/deploy)
-.\RELEASE.ps1 build
+just release-build
 
 # Deploy the latest build
-.\RELEASE.ps1 deploy
+just release-deploy
 
 # Roll back to previous deployment
-.\RELEASE.ps1 rollback
+just release-rollback
+```
+
+Direct script invocation remains available:
+
+```powershell
+.\RELEASE.ps1 test
 ```
 
 ## Stages
 
 | Stage       | Description |
 |-------------|-------------|
-| `test`      | Runs all quality checks defined in `release.config.json` (Go tests, frontend build, Python lint/typecheck/tests). |
+| `test`      | Runs all quality checks defined in `release.config.json` (Go tests, integration regression, frontend build, Python lint/typecheck/tests). |
 | `build`     | Builds Docker images, runs smoke tests, exports `.tar` artifacts to `builds/`, writes `checksums.sha256`. |
 | `publish`   | Bumps version in source files, commits all changes, creates git tag (`vX.Y.Z`), pushes to remote. |
 | `deploy`    | Loads `.tar` artifacts into Docker, saves rollback state, runs `docker compose down/up`, then verifies health. |

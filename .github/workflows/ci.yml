@@ -22,20 +22,8 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install dependencies (locked)
-        run: uv sync --locked --group dev
+      - name: Setup just
+        uses: taiki-e/install-action@just
 
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Format check
-        run: uv run ruff format --check .
-
-      - name: Type check
-        run: uv run mypy src
-
-      - name: Unit tests
-        run: uv run pytest
-
-      - name: Dependency audit
-        run: uv run pip-audit
+      - name: Python quality gate (just)
+        run: just ci-python

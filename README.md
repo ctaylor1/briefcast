@@ -16,6 +16,9 @@ Podcast downloader and library manager with a modern web UI.
   - [Table of contents](#table-of-contents)
   - [Features](#features)
   - [Repo layout](#repo-layout)
+  - [Task runner (just)](#task-runner-just)
+    - [Install just](#install-just)
+    - [Common workflows](#common-workflows)
   - [Quick start (local)](#quick-start-local)
     - [Prerequisites](#prerequisites)
     - [1) Install dependencies](#1-install-dependencies)
@@ -71,6 +74,56 @@ Podcast downloader and library manager with a modern web UI.
 
 ---
 
+## Task runner (just)
+
+Use the repository `justfile` as the primary command surface for local development, Docker operations, testing, version-control helpers, and release/deploy flows.
+
+### Install just
+
+```bash
+# Windows
+winget install Casey.Just
+
+# macOS
+brew install just
+
+# Any platform with Rust
+cargo install just
+```
+
+### Common workflows
+
+```bash
+# Discover commands
+just --list
+
+# Install dependencies
+just bootstrap
+
+# Docker lifecycle
+just up
+just ps
+just logs
+just down
+
+# Full quality suite
+just test-full
+
+# Release/deploy wrappers
+just release-help
+just release-test
+just release-build
+just ship -Bump patch
+```
+
+`ENV_FILE`, `COMPOSE_FILE`, and `BUILD_DIR` can be overridden per invocation, for example:
+
+```bash
+ENV_FILE=.env just up
+```
+
+---
+
 ## Quick start (local)
 
 ### Prerequisites
@@ -90,14 +143,13 @@ Podcast downloader and library manager with a modern web UI.
 ### 1) Install dependencies
 
 ```bash
-go mod download
-npm --prefix frontend install
+just bootstrap
 ```
 
 If you plan to run Python checks locally:
 
 ```bash
-uv sync --group dev
+just bootstrap-python
 ```
 
 ### 2) Configure environment
@@ -150,7 +202,7 @@ go run ./main.go
 ### docker compose (recommended)
 
 ```bash
-docker compose up -d
+just up
 ```
 
 - Copy `.env.example` to `.env`, then edit only the values you care about (password, logs, check frequency, paths, image tag).
@@ -476,9 +528,17 @@ npm --prefix frontend run build
 ## Testing
 
 ```bash
-go test ./...
-npm --prefix frontend run test
-uv run pytest
+just test-full
+```
+
+Targeted suites:
+
+```bash
+just test-go
+just test-python
+just test-frontend
+just test-integration
+just test-whisperx-real
 ```
 
 ---
@@ -486,20 +546,19 @@ uv run pytest
 ## Linting / formatting
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
+just lint
 ```
 
 Fix formatting:
 
 ```bash
-uv run ruff format .
+just format
 ```
 
 Type check:
 
 ```bash
-uv run mypy src
+just typecheck
 ```
 
 ---
@@ -509,25 +568,25 @@ uv run mypy src
 Go tests:
 
 ```bash
-go test ./...
+just test-go
 ```
 
 Frontend regression (build + typecheck):
 
 ```bash
-npm --prefix frontend run test
+just test-frontend
 ```
 
 Integration flow (feed parse → download → transcript stub):
 
 ```bash
-BRIEFCAST_INTEGRATION=1 go test ./service -run TestIntegrationFeedDownloadWhisperX
+just test-integration
 ```
 
 Real WhisperX regression:
 
 ```bash
-BRIEFCAST_WHISPERX_REAL=1 go test ./service -run TestWhisperXRealTranscription
+just test-whisperx-real
 ```
 
 `WHISPERX_TEST_AUDIO` is optional. If omitted, the test generates a short local WAV fixture.
@@ -579,6 +638,18 @@ Secret hygiene:
 - Keep release notes in `CHANGELOG.md` (update `Unreleased` before tagging).
 - Recommended tag format: `vX.Y.Z`.
 - For `v1.2.2`, publish container tags `ghcr.io/ctaylor1/briefcast:1.2.2` and `ghcr.io/ctaylor1/briefcast:latest` from the same image digest.
+- Local release/deploy tasks are exposed through `just` wrappers around `RELEASE.ps1`.
+
+```bash
+just release-help
+just release-test
+just release-build
+just release-publish -Bump patch
+just release-deploy
+just release-verify
+just release-rollback
+just ship -Bump patch
+```
 
 ## One-command release
 

@@ -15,6 +15,11 @@
       "dir": "."
     },
     {
+      "name": "Integration regression",
+      "run": "go test ./service -run TestIntegrationFeedDownloadWhisperX",
+      "dir": "."
+    },
+    {
       "name": "Frontend typecheck + build",
       "run": "npm run build",
       "dir": "frontend"

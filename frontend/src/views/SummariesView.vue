@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch, nextTick } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { marked } from "marked";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
@@ -50,6 +50,16 @@ const readerSummaryHtml = ref("");
 const readerSummaryRaw = ref("");
 const readerLoadingSummary = ref(false);
 const readerTocItems = ref<Array<{ id: string; text: string; level: number }>>([]);
+
+const readerItemIndex = computed(() => {
+  if (!readerItem.value) return -1;
+  return items.value.findIndex((item) => item.id === readerItem.value?.id);
+});
+
+const readerHasPrevious = computed(() => readerItemIndex.value > 0);
+const readerHasNext = computed(
+  () => readerItemIndex.value >= 0 && readerItemIndex.value < items.value.length - 1,
+);
 
 const sortedPodcastOptions = computed(() =>
   [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
@@ -161,6 +171,45 @@ function closeReader(): void {
   readerItem.value = null;
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tagName = target.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
+async function moveReader(delta: number): Promise<void> {
+  if (!readerOpen.value || readerLoadingSummary.value) return;
+  const currentIndex = readerItemIndex.value;
+  if (currentIndex < 0) return;
+  const nextIndex = currentIndex + delta;
+  if (nextIndex < 0 || nextIndex >= items.value.length) return;
+  const nextItem = items.value[nextIndex];
+  if (!nextItem) return;
+  await openReader(nextItem);
+}
+
+function onReaderKeydown(event: KeyboardEvent): void {
+  if (!readerOpen.value) return;
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (isEditableTarget(event.target)) return;
+
+  if (event.key === "ArrowDown" || event.key === "j" || event.key === "J") {
+    event.preventDefault();
+    void moveReader(1);
+    return;
+  }
+  if (event.key === "ArrowUp" || event.key === "k" || event.key === "K") {
+    event.preventDefault();
+    void moveReader(-1);
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeReader();
+  }
+}
+
 /** Strip markdown formatting from plain text (for TOC entries, etc.) */
 function stripMarkdown(text: string): string {
   return text
@@ -263,6 +312,11 @@ useDebouncedWatch(
 onMounted(() => {
   void fetchSummaries();
   void loadPodcastOptions();
+  window.addEventListener("keydown", onReaderKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onReaderKeydown);
 });
 </script>
 
@@ -285,9 +339,31 @@ onMounted(() => {
         <UiButton size="sm" variant="ghost" @click="closeReader">
           &larr; Back to list
         </UiButton>
+        <div class="summary-reader__nav-actions">
+          <span class="meta-text">Use ↑/↓ or J/K</span>
+          <UiButton
+            size="sm"
+            variant="ghost"
+            :disabled="!readerHasPrevious || readerLoadingSummary"
+            @click="moveReader(-1)"
+          >
+            Previous
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="ghost"
+            :disabled="!readerHasNext || readerLoadingSummary"
+            @click="moveReader(1)"
+          >
+            Next
+          </UiButton>
+        </div>
       </div>
 
-      <div class="summary-reader__layout">
+      <div
+        class="summary-reader__layout"
+        :class="{ 'summary-reader__layout--with-toc': readerTocItems.length > 2 }"
+      >
         <!-- TOC Sidebar -->
         <aside v-if="readerTocItems.length > 2" class="summary-reader__toc visually-scrollable">
           <p class="summary-reader__toc-title">Contents</p>
@@ -807,14 +883,39 @@ onMounted(() => {
 }
 
 /* ── Reader View ─────────────────────────────────────────── */
+.summary-reader {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  background: var(--color-bg-primary);
+  padding: var(--space-4);
+}
+
 .summary-reader__nav {
   margin-bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.summary-reader__nav-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .summary-reader__layout {
   display: grid;
   gap: var(--space-6);
   grid-template-columns: 1fr;
+}
+
+.summary-reader__content {
+  min-width: 0;
 }
 
 .summary-reader__toc {
@@ -1046,7 +1147,7 @@ onMounted(() => {
     grid-template-columns: 1.6fr 1fr 1fr 0.8fr;
   }
 
-  .summary-reader__layout {
+  .summary-reader__layout--with-toc {
     grid-template-columns: 200px 1fr;
   }
 

@@ -386,12 +386,32 @@ function Clear-DirectoryContents {
 
 # ─── Checksum helper ─────────────────────────────────────────────────────────
 
+function Get-Sha256Hex {
+    param([string]$LiteralPath)
+
+    $hashCmd = Get-Command Get-FileHash -ErrorAction SilentlyContinue
+    if ($hashCmd) {
+        return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash.ToLower()
+    }
+
+    # Fallback for environments where Get-FileHash is unavailable.
+    $stream = [System.IO.File]::OpenRead($LiteralPath)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha256.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($bytes) -replace "-", "").ToLower()
+    } finally {
+        $stream.Dispose()
+        $sha256.Dispose()
+    }
+}
+
 function Write-ChecksumsFile {
     param([string]$Directory)
     $checksumPath = Join-Path $Directory "checksums.sha256"
     $lines = @()
     foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter "*.tar" -File) {
-        $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLower()
+        $hash = Get-Sha256Hex -LiteralPath $file.FullName
         $lines += "$hash  $($file.Name)"
     }
     if ($lines.Count -gt 0) {
