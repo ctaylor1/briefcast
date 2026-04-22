@@ -49,7 +49,7 @@
       "build_args": {
         "APP_VERSION": "{version}"
       },
-      "smoke_test": "docker run --rm {image} ./app --version",
+      "smoke_test": "docker run --rm {image} --version",
       "services": ["briefcast"]
     }
   ],

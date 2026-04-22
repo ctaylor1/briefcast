@@ -31,6 +31,11 @@ type versionResponse struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(resolveRunningVersion())
+		return
+	}
+
 	defer logging.Sync()
 	appLogger := logging.Sugar()
 
