@@ -51,6 +51,15 @@ const readerSummaryRaw = ref("");
 const readerLoadingSummary = ref(false);
 const readerTocItems = ref<Array<{ id: string; text: string; level: number }>>([]);
 
+// Reader tab state
+const readerTab = ref<"summary" | "transcript">("summary");
+const readerTranscriptText = ref("");
+const readerLoadingTranscript = ref(false);
+const readerTranscriptStatus = ref("");
+
+// Scroll progress
+const scrollProgress = ref(0);
+
 const readerItemIndex = computed(() => {
   if (!readerItem.value) return -1;
   return items.value.findIndex((item) => item.id === readerItem.value?.id);
@@ -60,6 +69,11 @@ const readerHasPrevious = computed(() => readerItemIndex.value > 0);
 const readerHasNext = computed(
   () => readerItemIndex.value >= 0 && readerItemIndex.value < items.value.length - 1,
 );
+
+const readerPosition = computed(() => {
+  if (readerItemIndex.value < 0) return "";
+  return `${readerItemIndex.value + 1} of ${items.value.length}`;
+});
 
 const sortedPodcastOptions = computed(() =>
   [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
@@ -130,7 +144,6 @@ async function toggleFavorite(item: SummaryListItem, event: Event): Promise<void
       await summariesApi.favorite(item.id);
       item.isFavorited = true;
     }
-    // Also update reader item if it's the same
     if (readerItem.value && readerItem.value.id === item.id) {
       readerItem.value.isFavorited = item.isFavorited;
     }
@@ -142,10 +155,14 @@ async function toggleFavorite(item: SummaryListItem, event: Event): Promise<void
 async function openReader(item: SummaryListItem): Promise<void> {
   readerItem.value = item;
   readerOpen.value = true;
+  readerTab.value = "summary";
   readerLoadingSummary.value = true;
   readerSummaryHtml.value = "";
   readerSummaryRaw.value = "";
   readerTocItems.value = [];
+  readerTranscriptText.value = "";
+  readerTranscriptStatus.value = "";
+  scrollProgress.value = 0;
 
   try {
     const response = await episodesApi.getSummary(item.id);
@@ -160,9 +177,52 @@ async function openReader(item: SummaryListItem): Promise<void> {
   }
 
   await nextTick();
-  const el = document.getElementById("summary-reader-top");
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function fetchTranscript(): Promise<void> {
+  if (!readerItem.value) return;
+  if (readerTranscriptText.value || readerLoadingTranscript.value) return;
+
+  readerLoadingTranscript.value = true;
+  try {
+    const response = await episodesApi.getTranscript(readerItem.value.id);
+    readerTranscriptStatus.value = response.status || "missing";
+    const transcript = response.transcript;
+
+    if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
+      const maybeSegments = (transcript as { segments?: Array<Record<string, unknown>> }).segments;
+      if (Array.isArray(maybeSegments)) {
+        readerTranscriptText.value = maybeSegments
+          .map((seg) => String(seg.text ?? seg.transcript ?? "").trim())
+          .filter((t) => t.length > 0)
+          .join("\n\n");
+        return;
+      }
+    }
+    if (Array.isArray(transcript)) {
+      const contentAsset = transcript
+        .filter((a) => a && typeof a === "object")
+        .find((a) => typeof (a as Record<string, unknown>).content === "string");
+      if (contentAsset && typeof (contentAsset as Record<string, unknown>).content === "string") {
+        readerTranscriptText.value = (contentAsset as Record<string, unknown>).content as string;
+        return;
+      }
+    }
+    if (typeof transcript === "string") {
+      readerTranscriptText.value = transcript;
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, "Failed to load transcript.");
+  } finally {
+    readerLoadingTranscript.value = false;
+  }
+}
+
+function switchTab(tab: "summary" | "transcript"): void {
+  readerTab.value = tab;
+  if (tab === "transcript") {
+    void fetchTranscript();
   }
 }
 
@@ -210,6 +270,47 @@ function onReaderKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onScroll(): void {
+  if (!readerOpen.value) return;
+  const scrollTop = window.scrollY || document.documentElement.scrollTop;
+  const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  scrollProgress.value = docHeight > 0 ? Math.min(1, scrollTop / docHeight) : 0;
+}
+
+/**
+ * Convert the bullet-list summary format produced by the LLM into proper
+ * markdown with headings so that `marked` can render it with visual hierarchy.
+ */
+function normalizeSummaryMarkdown(raw: string): string {
+  if (/^#{1,3}\s+/m.test(raw)) return raw;
+
+  const sectionRe =
+    /^-\s+(Title|Core Thesis|Key Points|Notable Details|Actionable Takeaways|Open Questions(?:\s+or\s+Uncertainties)?)\s*:\s*(.*)/i;
+
+  const lines = raw.split("\n");
+  const out: string[] = [];
+
+  for (const line of lines) {
+    const m = line.match(sectionRe);
+    if (m && m[1] && m[2] !== undefined) {
+      const label = m[1].trim();
+      const rest = m[2].trim();
+      if (/^title$/i.test(label) && rest) {
+        out.push(`## ${rest}`);
+      } else {
+        out.push(`## ${label}`);
+        if (rest) {
+          out.push("");
+          out.push(rest);
+        }
+      }
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join("\n");
+}
+
 /** Strip markdown formatting from plain text (for TOC entries, etc.) */
 function stripMarkdown(text: string): string {
   return text
@@ -238,7 +339,7 @@ function renderMarkdown(text: string): void {
     return `<h${depth} id="${id}">${cleanText}</h${depth}>`;
   };
 
-  const html = marked.parse(text, { renderer, async: false }) as string;
+  const html = marked.parse(normalizeSummaryMarkdown(text), { renderer, async: false }) as string;
   readerSummaryHtml.value = html;
   readerTocItems.value = toc;
 }
@@ -281,11 +382,10 @@ function sendToObsidian(): void {
 
   const content = `${frontmatter}\n\n# ${title}\n\n${readerSummaryRaw.value}`;
 
-  // Obsidian note names are filenames — strip characters illegal on Windows/macOS/Linux.
   const sanitizeName = (s: string) =>
     s
-      .replace(/[\\/:*?"<>|#^[\]]/g, "") // forbidden filename & Obsidian chars
-      .replace(/\s+/g, " ") // collapse whitespace
+      .replace(/[\\/:*?"<>|#^[\]]/g, "")
+      .replace(/\s+/g, " ")
       .trim();
   const name = encodeURIComponent(sanitizeName(`${podcast} - ${title}`));
   const encodedContent = encodeURIComponent(content);
@@ -313,10 +413,12 @@ onMounted(() => {
   void fetchSummaries();
   void loadPodcastOptions();
   window.addEventListener("keydown", onReaderKeydown);
+  window.addEventListener("scroll", onScroll, { passive: true });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onReaderKeydown);
+  window.removeEventListener("scroll", onScroll);
 });
 </script>
 
@@ -333,117 +435,205 @@ onBeforeUnmount(() => {
       {{ errorMessage }}
     </UiAlert>
 
-    <!-- Reader View -->
-    <div v-if="readerOpen && readerItem" id="summary-reader-top" class="summary-reader stack-4">
-      <div class="summary-reader__nav">
-        <UiButton size="sm" variant="ghost" @click="closeReader">
-          &larr; Back to list
-        </UiButton>
-        <div class="summary-reader__nav-actions">
-          <span class="meta-text">Use ↑/↓ or J/K</span>
-          <UiButton
-            size="sm"
-            variant="ghost"
+    <!-- ═══ Reader View ═══════════════════════════════════════ -->
+    <div v-if="readerOpen && readerItem" class="reader">
+      <!-- Progress bar -->
+      <div class="reader__progress" :style="{ width: `${scrollProgress * 100}%` }"></div>
+
+      <!-- Sticky toolbar -->
+      <div class="reader__toolbar">
+        <button type="button" class="reader__toolbar-btn" @click="closeReader" title="Back to list">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          <span class="reader__toolbar-btn-label">Back</span>
+        </button>
+
+        <div class="reader__toolbar-center">
+          <span class="reader__toolbar-position">{{ readerPosition }}</span>
+        </div>
+
+        <div class="reader__toolbar-nav">
+          <span class="reader__toolbar-hint">J/K</span>
+          <button
+            type="button"
+            class="reader__toolbar-btn"
+            :class="{ 'reader__toolbar-btn--disabled': !readerHasPrevious }"
             :disabled="!readerHasPrevious || readerLoadingSummary"
+            title="Previous summary"
             @click="moveReader(-1)"
           >
-            Previous
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="ghost"
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="reader__toolbar-btn"
+            :class="{ 'reader__toolbar-btn--disabled': !readerHasNext }"
             :disabled="!readerHasNext || readerLoadingSummary"
+            title="Next summary"
             @click="moveReader(1)"
           >
-            Next
-          </UiButton>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      <div
-        class="summary-reader__layout"
-        :class="{ 'summary-reader__layout--with-toc': readerTocItems.length > 2 }"
-      >
-        <!-- TOC Sidebar -->
-        <aside v-if="readerTocItems.length > 2" class="summary-reader__toc visually-scrollable">
-          <p class="summary-reader__toc-title">Contents</p>
-          <nav aria-label="Table of contents">
-            <ul class="summary-reader__toc-list">
-              <li
-                v-for="heading in readerTocItems"
-                :key="heading.id"
-                :class="`summary-reader__toc-item summary-reader__toc-item--l${heading.level}`"
-              >
-                <button
-                  type="button"
-                  class="summary-reader__toc-link"
-                  @click="scrollToHeading(heading.id)"
+      <!-- Reader content area -->
+      <div class="reader__container">
+        <div class="reader__sidebar" v-if="readerTocItems.length > 2 && readerTab === 'summary'">
+          <div class="reader__toc visually-scrollable">
+            <p class="reader__toc-title">Contents</p>
+            <nav aria-label="Table of contents">
+              <ul class="reader__toc-list">
+                <li
+                  v-for="heading in readerTocItems"
+                  :key="heading.id"
+                  :class="`reader__toc-item reader__toc-item--l${heading.level}`"
                 >
-                  {{ heading.text }}
-                </button>
-              </li>
-            </ul>
-          </nav>
-          <div class="summary-reader__toc-actions">
-            <button
-              type="button"
-              class="summary-reader__obsidian-btn"
-              title="Send to Obsidian"
-              @click="sendToObsidian"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="12" y1="18" x2="12" y2="12" />
-                <line x1="9" y1="15" x2="15" y2="15" />
-              </svg>
-              <span>Send to Obsidian</span>
-            </button>
+                  <button
+                    type="button"
+                    class="reader__toc-link"
+                    @click="scrollToHeading(heading.id)"
+                  >
+                    {{ heading.text }}
+                  </button>
+                </li>
+              </ul>
+            </nav>
+            <div class="reader__toc-actions">
+              <button
+                type="button"
+                class="reader__obsidian-btn"
+                title="Send to Obsidian"
+                @click="sendToObsidian"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="12" y1="18" x2="12" y2="12" />
+                  <line x1="9" y1="15" x2="15" y2="15" />
+                </svg>
+                <span>Send to Obsidian</span>
+              </button>
+            </div>
           </div>
-        </aside>
+        </div>
 
-        <!-- Main content -->
-        <article class="summary-reader__content">
-          <header class="summary-reader__header stack-2">
-            <h2 class="summary-reader__title">{{ readerItem.episodeTitle }}</h2>
-            <div class="summary-reader__meta surface-row">
-              <span class="meta-text">{{ readerItem.podcastTitle }}</span>
+        <article class="reader__main">
+          <!-- Header -->
+          <header class="reader__header">
+            <h1 class="reader__title">{{ readerItem.episodeTitle }}</h1>
+            <p class="reader__podcast">{{ readerItem.podcastTitle }}</p>
+            <div class="reader__meta">
               <UiBadge tone="neutral">{{ readerItem.readTime }} min read</UiBadge>
               <span v-if="readerItem.pubDate" class="meta-text">
                 {{ formatDate(readerItem.pubDate) }}
               </span>
-              <span v-if="readerItem.generatedAt" class="meta-text">
-                Summary: {{ formatDate(readerItem.generatedAt) }}
-              </span>
               <span v-if="readerItem.model" class="meta-text">
-                Summary: {{ readerItem.model }}
+                {{ readerItem.model }}
               </span>
               <button
                 type="button"
-                class="summary-reader__fav-btn"
-                :class="{ 'summary-reader__fav-btn--active': readerItem.isFavorited }"
+                class="reader__fav-btn"
+                :class="{ 'reader__fav-btn--active': readerItem.isFavorited }"
                 :title="readerItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'"
                 @click="toggleFavorite(readerItem, $event)"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+                <svg width="18" height="18" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
               </button>
             </div>
           </header>
 
-          <p v-if="readerLoadingSummary" class="meta-text">Loading summary...</p>
-          <div
-            v-else-if="readerSummaryHtml"
-            class="summary-reader__body summary-prose"
-            v-html="readerSummaryHtml"
-          ></div>
-          <p v-else class="meta-text">No summary content available.</p>
+          <!-- Tabs -->
+          <div class="reader__tabs" role="tablist">
+            <button
+              role="tab"
+              type="button"
+              class="reader__tab"
+              :class="{ 'reader__tab--active': readerTab === 'summary' }"
+              :aria-selected="readerTab === 'summary'"
+              @click="switchTab('summary')"
+            >
+              Summary
+            </button>
+            <button
+              role="tab"
+              type="button"
+              class="reader__tab"
+              :class="{ 'reader__tab--active': readerTab === 'transcript' }"
+              :aria-selected="readerTab === 'transcript'"
+              @click="switchTab('transcript')"
+            >
+              Transcript
+            </button>
+          </div>
+
+          <!-- Tab: Summary -->
+          <div v-if="readerTab === 'summary'" class="reader__body">
+            <p v-if="readerLoadingSummary" class="meta-text">Loading summary...</p>
+            <div
+              v-else-if="readerSummaryHtml"
+              class="reader__prose"
+              v-html="readerSummaryHtml"
+            ></div>
+            <p v-else class="meta-text">No summary content available.</p>
+          </div>
+
+          <!-- Tab: Transcript -->
+          <div v-else-if="readerTab === 'transcript'" class="reader__body">
+            <p v-if="readerLoadingTranscript" class="meta-text">Loading transcript...</p>
+            <template v-else-if="readerTranscriptText">
+              <div class="reader__transcript">
+                <pre>{{ readerTranscriptText }}</pre>
+              </div>
+            </template>
+            <p v-else-if="readerTranscriptStatus === 'missing'" class="meta-text">
+              No transcript available for this episode.
+            </p>
+            <p v-else class="meta-text">
+              Transcript not yet available (status: {{ readerTranscriptStatus || "unknown" }}).
+            </p>
+          </div>
+
+          <!-- Bottom navigation -->
+          <footer class="reader__footer">
+            <button
+              type="button"
+              class="reader__footer-nav"
+              :class="{ 'reader__footer-nav--disabled': !readerHasPrevious }"
+              :disabled="!readerHasPrevious || readerLoadingSummary"
+              @click="moveReader(-1)"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <span>Previous</span>
+            </button>
+            <button
+              type="button"
+              class="reader__footer-nav"
+              :class="{ 'reader__footer-nav--disabled': !readerHasNext }"
+              :disabled="!readerHasNext || readerLoadingSummary"
+              @click="moveReader(1)"
+            >
+              <span>Next</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </footer>
         </article>
       </div>
     </div>
 
-    <!-- Library List View -->
+    <!-- ═══ Library List View ═════════════════════════════════ -->
     <template v-else>
       <UiCard padding="md" tone="subtle" class="summaries-filters">
         <div class="summaries-filters__row">
@@ -619,7 +809,420 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* ── Filters ─────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Reader View
+   Modelled after Pocket / Instapaper / Safari Reader:
+   - scroll progress bar
+   - sticky compact toolbar
+   - centered prose column that scales from phone → ultrawide
+   - TOC sidebar on wide screens
+   - bottom prev/next navigation
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Progress bar ───────────────────────────────────────── */
+.reader__progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: var(--color-accent);
+  z-index: 100;
+  transition: width 80ms linear;
+  pointer-events: none;
+}
+
+/* ── Sticky toolbar ─────────────────────────────────────── */
+.reader__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border);
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+}
+
+.reader__toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: var(--font-caption-size);
+  line-height: 1;
+  transition: color var(--duration-fast) var(--ease-enter),
+              background-color var(--duration-fast) var(--ease-enter);
+}
+
+.reader__toolbar-btn:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: var(--color-hover);
+}
+
+.reader__toolbar-btn:disabled,
+.reader__toolbar-btn--disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.reader__toolbar-center {
+  flex: 1;
+  text-align: center;
+}
+
+.reader__toolbar-position {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-caption-size);
+}
+
+.reader__toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.reader__toolbar-hint {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1);
+  margin-right: var(--space-2);
+}
+
+.reader__toolbar-btn-label {
+  display: none;
+}
+
+/* ── Container: sidebar + main ──────────────────────────── */
+.reader__container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  padding-top: var(--space-6);
+}
+
+.reader__sidebar {
+  display: none;
+}
+
+/* ── Main article ───────────────────────────────────────── */
+.reader__main {
+  min-width: 0;
+  max-width: 80ch;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.reader__header {
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
+.reader__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-primary);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.reader__podcast {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+}
+
+.reader__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.reader__fav-btn {
+  border: 0;
+  background: transparent;
+  padding: var(--space-1);
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--ease-enter);
+}
+
+.reader__fav-btn:hover {
+  color: var(--color-warning, #e5a00d);
+}
+
+.reader__fav-btn--active {
+  color: var(--color-warning, #e5a00d);
+}
+
+/* ── Tabs ───────────────────────────────────────────────── */
+.reader__tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--color-border);
+  margin-bottom: var(--space-5);
+}
+
+.reader__tab {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-body-size);
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color var(--duration-fast) var(--ease-enter),
+              border-color var(--duration-fast) var(--ease-enter);
+}
+
+.reader__tab:hover {
+  color: var(--color-text-primary);
+}
+
+.reader__tab--active {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Body ───────────────────────────────────────────────── */
+.reader__body {
+  min-height: 40vh;
+}
+
+/* ── Prose typography ───────────────────────────────────── */
+.reader__prose {
+  color: var(--color-text-primary);
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.reader__prose :deep(h1),
+.reader__prose :deep(h2),
+.reader__prose :deep(h3),
+.reader__prose :deep(h4) {
+  margin: 1.6em 0 0.6em;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.reader__prose :deep(h1) { font-size: 1.5em; }
+.reader__prose :deep(h2) { font-size: 1.3em; }
+.reader__prose :deep(h3) { font-size: 1.15em; }
+
+.reader__prose :deep(p) {
+  margin: 0.8em 0;
+}
+
+.reader__prose :deep(ul),
+.reader__prose :deep(ol) {
+  margin: 0.8em 0;
+  padding-left: 1.6em;
+}
+
+.reader__prose :deep(li) {
+  margin: 0.35em 0;
+}
+
+.reader__prose :deep(blockquote) {
+  margin: 1.2em 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-bg-secondary);
+  border-radius: 0 var(--radius-2) var(--radius-2) 0;
+  color: var(--color-text-secondary);
+}
+
+.reader__prose :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--color-bg-secondary);
+  padding: 0.15em 0.3em;
+  border-radius: var(--radius-1);
+}
+
+.reader__prose :deep(pre) {
+  margin: 1em 0;
+  padding: var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  overflow-x: auto;
+}
+
+.reader__prose :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+
+.reader__prose :deep(strong) {
+  font-weight: 600;
+}
+
+.reader__prose :deep(hr) {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.reader__prose :deep(a) {
+  color: var(--color-accent);
+}
+
+.reader__prose :deep(a:hover) {
+  color: var(--color-accent-hover);
+}
+
+/* ── Transcript ─────────────────────────────────────────── */
+.reader__transcript {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  padding: var(--space-4);
+}
+
+.reader__transcript pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-body-size);
+  line-height: 1.7;
+}
+
+/* ── Footer navigation ──────────────────────────────────── */
+.reader__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-5);
+  margin-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.reader__footer-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-body-size);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-enter),
+              background-color var(--duration-fast) var(--ease-enter),
+              border-color var(--duration-fast) var(--ease-enter);
+}
+
+.reader__footer-nav:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: var(--color-hover);
+  border-color: var(--color-text-tertiary);
+}
+
+.reader__footer-nav:disabled,
+.reader__footer-nav--disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ── TOC Sidebar ────────────────────────────────────────── */
+.reader__toc {
+  position: sticky;
+  top: calc(var(--topbar-height) + 60px);
+  max-height: calc(100vh - var(--topbar-height) - 80px);
+  overflow-y: auto;
+  padding-right: var(--space-3);
+}
+
+.reader__toc-title {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-caption-size);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reader__toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.reader__toc-item--l3 { padding-left: var(--space-3); }
+.reader__toc-item--l4 { padding-left: var(--space-6); }
+
+.reader__toc-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-2);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  cursor: pointer;
+}
+
+.reader__toc-link:hover {
+  background: var(--color-hover);
+  color: var(--color-text-primary);
+}
+
+.reader__toc-actions {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.reader__obsidian-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-enter),
+              color var(--duration-fast) var(--ease-enter);
+}
+
+.reader__obsidian-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Filters
+   ═══════════════════════════════════════════════════════════════ */
 .summaries-filters {
   display: grid;
   gap: var(--space-3);
@@ -766,7 +1369,9 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-/* ── Skeleton ────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Skeleton
+   ═══════════════════════════════════════════════════════════════ */
 .summaries-skeleton {
   display: grid;
   gap: var(--space-4);
@@ -790,7 +1395,9 @@ onBeforeUnmount(() => {
   width: 40%;
 }
 
-/* ── List View ───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   List View
+   ═══════════════════════════════════════════════════════════════ */
 .summaries-list {
   display: grid;
   gap: var(--space-2);
@@ -882,246 +1489,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* ── Reader View ─────────────────────────────────────────── */
-.summary-reader {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-primary);
-  padding: var(--space-4);
-}
-
-.summary-reader__nav {
-  margin-bottom: var(--space-2);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.summary-reader__nav-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.summary-reader__layout {
-  display: grid;
-  gap: var(--space-6);
-  grid-template-columns: 1fr;
-}
-
-.summary-reader__content {
-  min-width: 0;
-}
-
-.summary-reader__toc {
-  display: none;
-}
-
-.summary-reader__toc-actions {
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border);
-}
-
-.summary-reader__obsidian-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-enter), color var(--duration-fast) var(--ease-enter);
-}
-
-.summary-reader__obsidian-btn:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-}
-
-.summary-reader__header {
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.summary-reader__title {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-section-size);
-  font-weight: var(--font-section-weight);
-  line-height: var(--font-section-line-height);
-}
-
-.summary-reader__meta {
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.summary-reader__fav-btn {
-  border: 0;
-  background: transparent;
-  padding: var(--space-1);
-  cursor: pointer;
-  color: var(--color-text-tertiary);
-  transition: color var(--duration-fast) var(--ease-enter);
-}
-
-.summary-reader__fav-btn:hover {
-  color: var(--color-warning, #e5a00d);
-}
-
-.summary-reader__fav-btn--active {
-  color: var(--color-warning, #e5a00d);
-}
-
-/* ── Prose Typography ────────────────────────────────────── */
-.summary-prose {
-  max-width: 68ch;
-  color: var(--color-text-primary);
-  font-size: var(--font-body-size);
-  line-height: 1.7;
-}
-
-.summary-prose :deep(h1),
-.summary-prose :deep(h2),
-.summary-prose :deep(h3),
-.summary-prose :deep(h4) {
-  margin: 1.5em 0 0.5em;
-  color: var(--color-text-primary);
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.summary-prose :deep(h1) {
-  font-size: 1.5em;
-}
-
-.summary-prose :deep(h2) {
-  font-size: 1.25em;
-}
-
-.summary-prose :deep(h3) {
-  font-size: 1.1em;
-}
-
-.summary-prose :deep(p) {
-  margin: 0.75em 0;
-}
-
-.summary-prose :deep(ul),
-.summary-prose :deep(ol) {
-  margin: 0.75em 0;
-  padding-left: 1.5em;
-}
-
-.summary-prose :deep(li) {
-  margin: 0.25em 0;
-}
-
-.summary-prose :deep(blockquote) {
-  margin: 1em 0;
-  padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--color-accent);
-  background: var(--color-bg-secondary);
-  border-radius: 0 var(--radius-2) var(--radius-2) 0;
-  color: var(--color-text-secondary);
-}
-
-.summary-prose :deep(code) {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.9em;
-  background: var(--color-bg-secondary);
-  padding: 0.15em 0.3em;
-  border-radius: var(--radius-1);
-}
-
-.summary-prose :deep(pre) {
-  margin: 1em 0;
-  padding: var(--space-3);
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  overflow-x: auto;
-}
-
-.summary-prose :deep(pre code) {
-  padding: 0;
-  background: none;
-}
-
-.summary-prose :deep(strong) {
-  font-weight: 600;
-}
-
-.summary-prose :deep(hr) {
-  margin: 1.5em 0;
-  border: 0;
-  border-top: 1px solid var(--color-border);
-}
-
-.summary-prose :deep(a) {
-  color: var(--color-accent);
-}
-
-.summary-prose :deep(a:hover) {
-  color: var(--color-accent-hover);
-}
-
-/* ── TOC Sidebar ─────────────────────────────────────────── */
-.summary-reader__toc-title {
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-tertiary);
-  font-size: var(--font-caption-size);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.summary-reader__toc-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--space-1);
-}
-
-.summary-reader__toc-item--l3 {
-  padding-left: var(--space-3);
-}
-
-.summary-reader__toc-item--l4 {
-  padding-left: var(--space-6);
-}
-
-.summary-reader__toc-link {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  text-align: left;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-2);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-  cursor: pointer;
-}
-
-.summary-reader__toc-link:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-}
-
-/* ── Empty State ─────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Empty State
+   ═══════════════════════════════════════════════════════════════ */
 .empty-state__title {
   margin: 0;
   color: var(--color-text-primary);
@@ -1135,30 +1505,56 @@ onBeforeUnmount(() => {
   max-width: 46ch;
 }
 
-/* ── Responsive ──────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Responsive Breakpoints
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Tablet (≥ 768px) */
 @media (min-width: 768px) {
   .summaries-filters__row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .reader__toolbar-btn-label {
+    display: inline;
+  }
+
+  .reader__title {
+    font-size: 2rem;
+  }
 }
 
+/* Desktop (≥ 1024px) */
 @media (min-width: 1024px) {
   .summaries-filters__row {
     grid-template-columns: 1.6fr 1fr 1fr 0.8fr;
   }
 
-  .summary-reader__layout--with-toc {
+  .reader__container {
     grid-template-columns: 200px 1fr;
   }
 
-  .summary-reader__toc {
+  .reader__sidebar {
     display: block;
-    position: sticky;
-    top: calc(var(--topbar-height) + var(--space-4));
-    max-height: calc(100vh - var(--topbar-height) - var(--space-8));
-    overflow-y: auto;
-    padding-right: var(--space-3);
-    border-right: 1px solid var(--color-border);
+  }
+
+  .reader__main {
+    max-width: 80ch;
+  }
+
+  .reader__title {
+    font-size: 2.25rem;
+  }
+}
+
+/* Wide desktop (≥ 1440px) */
+@media (min-width: 1440px) {
+  .reader__container {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .reader__main {
+    max-width: 85ch;
   }
 }
 </style>
