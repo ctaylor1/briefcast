@@ -22,6 +22,11 @@ type SettingsResponse struct {
 	// Read-only defaults so the UI can show placeholders.
 	DefaultSystemPrompt string `json:"defaultSystemPrompt"`
 	DefaultUserPrompt   string `json:"defaultUserPrompt"`
+	// Appearance
+	ThemeMode      string `json:"themeMode"`
+	Timezone       string `json:"timezone"`
+	LightStartHour int    `json:"lightStartHour"`
+	DarkStartHour  int    `json:"darkStartHour"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -35,6 +40,11 @@ type SettingsPatch struct {
 	SummarizationEnabled    *bool   `json:"summarizationEnabled"`
 	SummarizationPrompt     *string `json:"summarizationPrompt"`
 	SummarizationUserPrompt *string `json:"summarizationUserPrompt"`
+	// Appearance
+	ThemeMode      *string `json:"themeMode"`
+	Timezone       *string `json:"timezone"`
+	LightStartHour *int    `json:"lightStartHour"`
+	DarkStartHour  *int    `json:"darkStartHour"`
 }
 
 // GetSettings handles the corresponding operation.
@@ -81,6 +91,18 @@ func PatchSettings(c *gin.Context) {
 	if patch.SummarizationUserPrompt != nil {
 		setting.SummarizationUserPrompt = *patch.SummarizationUserPrompt
 	}
+	if patch.ThemeMode != nil {
+		setting.ThemeMode = *patch.ThemeMode
+	}
+	if patch.Timezone != nil {
+		setting.Timezone = *patch.Timezone
+	}
+	if patch.LightStartHour != nil {
+		setting.LightStartHour = *patch.LightStartHour
+	}
+	if patch.DarkStartHour != nil {
+		setting.DarkStartHour = *patch.DarkStartHour
+	}
 
 	if err := db.UpdateSettings(setting); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -122,5 +144,9 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		SummarizationUserPrompt: setting.SummarizationUserPrompt,
 		DefaultSystemPrompt:     cfg.DefaultPrompt,
 		DefaultUserPrompt:       cfg.DefaultUserPrompt,
+		ThemeMode:               setting.ThemeMode,
+		Timezone:                setting.Timezone,
+		LightStartHour:          setting.LightStartHour,
+		DarkStartHour:           setting.DarkStartHour,
 	}
 }

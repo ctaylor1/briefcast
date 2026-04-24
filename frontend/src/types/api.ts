@@ -149,6 +149,10 @@ export interface AppSettings {
   summarizationUserPrompt: string;
   defaultSystemPrompt: string;
   defaultUserPrompt: string;
+  themeMode: string;
+  timezone: string;
+  lightStartHour: number;
+  darkStartHour: number;
 }
 
 export interface RuntimeVersionInfo {

@@ -5,6 +5,7 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
+import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import type { AppSettings } from "../types/api";
 
@@ -21,9 +22,21 @@ type SummarizationForm = {
   summarizationUserPrompt: string;
 };
 
+const {
+  themeMode,
+  timezone,
+  lightStartHour,
+  darkStartHour,
+  setThemeMode,
+  setTimezone,
+  setLightStartHour,
+  setDarkStartHour,
+} = useTheme();
+
 const isLoading = ref(true);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
+const isSavingAppearance = ref(false);
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
 const {
@@ -128,6 +141,58 @@ async function saveSummarizationSettings(): Promise<void> {
   }
 }
 
+const commonTimezones = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Toronto",
+  "America/Vancouver",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Amsterdam",
+  "Europe/Rome",
+  "Europe/Madrid",
+  "Europe/Moscow",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Australia/Melbourne",
+  "Pacific/Auckland",
+];
+
+function formatHour(hour: number): string {
+  if (hour === 0) return "12:00 AM";
+  if (hour === 12) return "12:00 PM";
+  if (hour < 12) return `${hour}:00 AM`;
+  return `${hour - 12}:00 PM`;
+}
+
+async function saveAppearanceSettings(): Promise<void> {
+  isSavingAppearance.value = true;
+  clearAll();
+  try {
+    await settingsApi.update({
+      themeMode: themeMode.value,
+      timezone: timezone.value,
+      lightStartHour: lightStartHour.value,
+      darkStartHour: darkStartHour.value,
+    });
+    setSuccess("Appearance settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update appearance settings."));
+  } finally {
+    isSavingAppearance.value = false;
+  }
+}
+
 onMounted(loadSettings);
 </script>
 
@@ -152,6 +217,81 @@ onMounted(loadSettings);
       <span class="skeleton settings-skeleton-line"></span>
       <span class="skeleton settings-skeleton-line"></span>
       <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
+    </UiCard>
+
+    <!-- Appearance settings -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Appearance</h3>
+        <p class="section-subtitle">
+          Control the theme and schedule automatic light/dark switching.
+        </p>
+      </div>
+
+      <div class="surface-grid surface-grid--3">
+        <div class="stack-1">
+          <label class="settings-label" for="settings-theme-mode">Theme</label>
+          <select
+            id="settings-theme-mode"
+            class="ui-select"
+            :value="themeMode"
+            @change="setThemeMode(($event.target as HTMLSelectElement).value as 'light' | 'dark' | 'auto')"
+          >
+            <option value="auto">Auto (schedule)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+
+        <div class="stack-1">
+          <label class="settings-label" for="settings-timezone">Timezone</label>
+          <select
+            id="settings-timezone"
+            class="ui-select"
+            :value="timezone"
+            @change="setTimezone(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="surface-grid surface-grid--3">
+        <div class="stack-1">
+          <label class="settings-label" for="settings-light-start">Light mode starts at</label>
+          <select
+            id="settings-light-start"
+            class="ui-select"
+            :disabled="themeMode !== 'auto'"
+            :value="lightStartHour"
+            @change="setLightStartHour(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+          </select>
+        </div>
+
+        <div class="stack-1">
+          <label class="settings-label" for="settings-dark-start">Dark mode starts at</label>
+          <select
+            id="settings-dark-start"
+            class="ui-select"
+            :disabled="themeMode !== 'auto'"
+            :value="darkStartHour"
+            @change="setDarkStartHour(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingAppearance" @click="saveAppearanceSettings">
+          {{ isSavingAppearance ? "Saving..." : "Save appearance settings" }}
+        </UiButton>
+        <p class="meta-text">
+          In Auto mode, the app switches between light and dark at the configured times.
+        </p>
+      </div>
     </UiCard>
 
     <!-- Retention settings -->

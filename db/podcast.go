@@ -157,6 +157,12 @@ type Setting struct {
 	SummarizationEnabled    bool   `gorm:"default:false"`
 	SummarizationPrompt     string `gorm:"type:text"`
 	SummarizationUserPrompt string `gorm:"type:text"`
+
+	// Appearance / schedule settings.
+	ThemeMode      string `gorm:"default:auto"`
+	Timezone       string `gorm:"default:America/New_York"`
+	LightStartHour int    `gorm:"default:6"`
+	DarkStartHour  int    `gorm:"default:20"`
 }
 
 // Migration represents a public type.

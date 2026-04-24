@@ -14,6 +14,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useGlobalSearch } from "../composables/useGlobalSearch";
+import { useTheme } from "../composables/useTheme";
 import type { LocalSearchResult } from "../types/api";
 import UiDropdown from "./ui/UiDropdown.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
@@ -51,6 +52,7 @@ type CommandItem = CommandRouteItem | CommandLocalItem;
 
 const route = useRoute();
 const router = useRouter();
+const { cycleTheme, themeModeLabel, initTheme } = useTheme();
 
 const primaryNavItems: NavItem[] = [
   {
@@ -504,6 +506,7 @@ useDebouncedWatch(
 onMounted(() => {
   restoreSidebarPreference();
   refreshViewport();
+  initTheme();
   window.addEventListener("resize", refreshViewport);
   window.addEventListener("keydown", handleWindowKeydown);
 });
@@ -651,6 +654,20 @@ onBeforeUnmount(() => {
             </template>
             <nav class="app-user-menu" aria-label="User menu">
               <p class="app-user-menu__heading">Quick actions</p>
+              <button type="button" class="app-user-menu__item app-user-menu__theme-btn" @click="cycleTheme">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+                <span>Theme: {{ themeModeLabel() }}</span>
+              </button>
               <button type="button" class="app-user-menu__item" @click="goToSettings">Open settings</button>
               <button type="button" class="app-user-menu__item" @click="goToPlayer">Open player</button>
               <button type="button" class="app-user-menu__item" @click="goToAbout">About</button>
@@ -733,7 +750,7 @@ onBeforeUnmount(() => {
                 :display-value="() => commandQuery"
                 class="ui-input command-input"
                 autocomplete="off"
-                placeholder="Search routes, podcasts, episodes, chapters, transcripts"
+                placeholder="Search podcasts, episodes, chapters, transcripts, summaries"
                 @input="commandQuery = ($event.target as HTMLInputElement).value"
               />
               <ComboboxOptions as="ul" class="command-list visually-scrollable">

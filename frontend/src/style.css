@@ -71,19 +71,17 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg-primary: #191919;
-    --color-bg-secondary: #111111;
-    --color-text-primary: #e0e0e0;
-    --color-text-secondary: #bcbcbc;
-    --color-text-tertiary: #8a8a8a;
-    --color-accent-subtle: rgba(35, 131, 226, 0.2);
-    --color-border: #2a2a2a;
-    --color-hover: #242424;
-    --color-overlay: rgba(0, 0, 0, 0.6);
-    --shadow-focus: 0 0 0 2px rgba(35, 131, 226, 0.5);
-  }
+[data-theme="dark"] {
+  --color-bg-primary: #191919;
+  --color-bg-secondary: #111111;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #bcbcbc;
+  --color-text-tertiary: #8a8a8a;
+  --color-accent-subtle: rgba(35, 131, 226, 0.2);
+  --color-border: #2a2a2a;
+  --color-hover: #242424;
+  --color-overlay: rgba(0, 0, 0, 0.6);
+  --shadow-focus: 0 0 0 2px rgba(35, 131, 226, 0.5);
 }
 
 @media (min-width: 1024px) {
@@ -355,6 +353,10 @@ img {
 }
 
 .surface-grid--2 {
+  grid-template-columns: 1fr;
+}
+
+.surface-grid--3 {
   grid-template-columns: 1fr;
 }
 
@@ -1204,31 +1206,29 @@ img {
   color: #be185d;
 }
 
-@media (prefers-color-scheme: dark) {
-  .command-pill--podcast {
-    background: rgba(35, 131, 226, 0.2);
-    color: #7cb8f7;
-  }
+[data-theme="dark"] .command-pill--podcast {
+  background: rgba(35, 131, 226, 0.2);
+  color: #7cb8f7;
+}
 
-  .command-pill--episode {
-    background: rgba(22, 163, 74, 0.2);
-    color: #6ee7a0;
-  }
+[data-theme="dark"] .command-pill--episode {
+  background: rgba(22, 163, 74, 0.2);
+  color: #6ee7a0;
+}
 
-  .command-pill--chapter {
-    background: rgba(180, 83, 9, 0.2);
-    color: #fbbf24;
-  }
+[data-theme="dark"] .command-pill--chapter {
+  background: rgba(180, 83, 9, 0.2);
+  color: #fbbf24;
+}
 
-  .command-pill--transcript {
-    background: rgba(124, 58, 237, 0.2);
-    color: #c4b5fd;
-  }
+[data-theme="dark"] .command-pill--transcript {
+  background: rgba(124, 58, 237, 0.2);
+  color: #c4b5fd;
+}
 
-  .command-pill--summary {
-    background: rgba(190, 24, 93, 0.2);
-    color: #f9a8d4;
-  }
+[data-theme="dark"] .command-pill--summary {
+  background: rgba(190, 24, 93, 0.2);
+  color: #f9a8d4;
 }
 
 .app-user-trigger {
@@ -1266,6 +1266,12 @@ img {
 
 .app-user-menu__item:hover {
   background: var(--color-hover);
+}
+
+.app-user-menu__theme-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .app-user-menu__meta {
@@ -1391,6 +1397,10 @@ img {
 
   .surface-grid--2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surface-grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .app-layout {

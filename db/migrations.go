@@ -176,6 +176,22 @@ where id in (
 		Name:  "2026_03_08_01_01_BackfillIsSummaryFavorited",
 		Query: "update podcast_items set is_summary_favorited = false where is_summary_favorited is null",
 	},
+	{
+		Name:  "2026_04_23_01_00_AddThemeMode",
+		Query: "alter table settings add column if not exists theme_mode text default 'auto'",
+	},
+	{
+		Name:  "2026_04_23_01_01_AddTimezone",
+		Query: "alter table settings add column if not exists timezone text default 'America/New_York'",
+	},
+	{
+		Name:  "2026_04_23_01_02_AddLightStartHour",
+		Query: "alter table settings add column if not exists light_start_hour integer default 6",
+	},
+	{
+		Name:  "2026_04_23_01_03_AddDarkStartHour",
+		Query: "alter table settings add column if not exists dark_start_hour integer default 20",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
