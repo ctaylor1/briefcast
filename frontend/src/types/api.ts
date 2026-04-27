@@ -88,6 +88,7 @@ export interface ChaptersResponse {
 export interface TranscriptResponse {
   status: string;
   transcript?: unknown;
+  canonicalTranscript?: string;
 }
 
 export interface SummaryResponse {

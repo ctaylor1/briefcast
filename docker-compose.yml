@@ -43,6 +43,8 @@ services:
       # For local postgres service below use:
       # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
       # - DB_DRIVER=postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${HOST_CONFIG_DIR:-./config}:/config
       - ${HOST_ASSETS_DIR:-./assets}:/assets

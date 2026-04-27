@@ -48,6 +48,10 @@ const {
   transcriptLines,
   filteredTranscriptLines,
   transcriptDisplayText,
+  drawerCanonicalTranscript,
+  downloadCanonicalTranscript,
+  sendToChatGPT,
+  sendToClaude,
   drawerSummaryStatus,
   drawerSummaryText,
   drawerSummaryDate,
@@ -503,6 +507,17 @@ onMounted(() => {
               Showing {{ filteredTranscriptLines.length }} of {{ transcriptLines.length }} lines
             </span>
           </div>
+          <div v-if="drawerCanonicalTranscript && drawerTranscriptStatus === 'available'" class="drawer-transcript-actions">
+            <button type="button" class="drawer-action-link" @click="downloadCanonicalTranscript">
+              Download .txt
+            </button>
+            <button type="button" class="drawer-action-link" @click="sendToChatGPT">
+              Open in ChatGPT
+            </button>
+            <button type="button" class="drawer-action-link" @click="sendToClaude">
+              Open in Claude
+            </button>
+          </div>
           <p v-if="drawerLoadingTranscript" class="meta-text">Loading transcript...</p>
           <p v-else-if="drawerTranscriptStatus !== 'available'" class="meta-text">{{ drawerTranscriptSummary() }}</p>
           <div v-else-if="drawerTranscriptSegments.length > 0" class="drawer-list">
@@ -661,6 +676,27 @@ onMounted(() => {
 }
 
 .drawer-transcript-row:hover {
+  background: var(--color-hover);
+}
+
+.drawer-transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.drawer-action-link {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text-link, var(--color-text-primary));
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.drawer-action-link:hover {
   background: var(--color-hover);
 }
 

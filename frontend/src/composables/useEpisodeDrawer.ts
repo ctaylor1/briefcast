@@ -28,6 +28,8 @@ export function useEpisodeDrawer() {
   const chaptersSearch = ref("");
   const transcriptSearch = ref("");
 
+  const drawerCanonicalTranscript = ref("");
+
   // Summary state
   const drawerSummaryStatus = ref("not_attempted");
   const drawerSummaryText = ref("");
@@ -103,6 +105,7 @@ export function useEpisodeDrawer() {
     drawerTranscriptSegments.value = [];
     drawerTranscriptText.value = "";
     drawerTranscriptAssets.value = [];
+    drawerCanonicalTranscript.value = "";
     drawerSummaryStatus.value = "not_attempted";
     drawerSummaryText.value = "";
     drawerSummaryDate.value = "";
@@ -161,6 +164,7 @@ export function useEpisodeDrawer() {
 
   function applyTranscriptResponse(response: TranscriptResponse): void {
     drawerTranscriptStatus.value = response.status || "missing";
+    drawerCanonicalTranscript.value = response.canonicalTranscript ?? "";
     const transcript = response.transcript;
     if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
       const maybeSegments = (transcript as { segments?: Array<Record<string, unknown>> }).segments;
@@ -240,6 +244,76 @@ export function useEpisodeDrawer() {
     return `${drawerChapters.value.length} chapters available.`;
   }
 
+  function transcriptFileName(): string {
+    const title = drawerItem.value?.Title ?? "transcript";
+    const safe = title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_");
+    return `${safe || "transcript"}.txt`;
+  }
+
+  function transcriptBlob(): Blob {
+    return new Blob([drawerCanonicalTranscript.value], { type: "text/plain" });
+  }
+
+  function downloadCanonicalTranscript(): void {
+    const url = URL.createObjectURL(transcriptBlob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = transcriptFileName();
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function sendToApp(scheme: string, appName: string): Promise<void> {
+    const file = new File([drawerCanonicalTranscript.value], transcriptFileName(), { type: "text/plain" });
+    if (navigator.share) {
+      try {
+        await navigator.share({ files: [file], title: transcriptFileName() });
+        return;
+      } catch {
+        // share cancelled or unsupported — fall through to custom-scheme attempt
+      }
+    }
+    const url = `${scheme}`;
+    const w = window.open(url, "_blank");
+    if (!w) {
+      alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+    } else {
+      setTimeout(() => {
+        try {
+          if (w.closed) return;
+          w.close();
+          alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+        } catch {
+          // cross-origin — app likely opened
+        }
+      }, 2000);
+    }
+  }
+
+  function sendToChatGPT(): void {
+    const text = drawerCanonicalTranscript.value;
+    const encoded = encodeURIComponent(text);
+    const maxURLLen = 8000;
+    if (encoded.length > maxURLLen) {
+      downloadCanonicalTranscript();
+      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to ChatGPT manually.");
+      return;
+    }
+    void sendToApp(`chatgpt://chat?prompt=${encoded}`, "ChatGPT");
+  }
+
+  function sendToClaude(): void {
+    const text = drawerCanonicalTranscript.value;
+    const encoded = encodeURIComponent(text);
+    const maxURLLen = 8000;
+    if (encoded.length > maxURLLen) {
+      downloadCanonicalTranscript();
+      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to Claude manually.");
+      return;
+    }
+    void sendToApp(`claude://chat?prompt=${encoded}`, "Claude");
+  }
+
   function drawerSummarySummary(): string {
     if (drawerSummaryStatus.value === "available") {
       return "AI summary is ready.";
@@ -276,6 +350,10 @@ export function useEpisodeDrawer() {
     transcriptLines,
     filteredTranscriptLines,
     transcriptDisplayText,
+    drawerCanonicalTranscript,
+    downloadCanonicalTranscript,
+    sendToChatGPT,
+    sendToClaude,
     // Summary
     drawerSummaryStatus,
     drawerSummaryText,

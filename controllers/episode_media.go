@@ -52,6 +52,10 @@ func GetPodcastItemTranscript(c *gin.Context) {
 		"status": status,
 	}
 
+	if strings.TrimSpace(item.CanonicalTranscript) != "" {
+		payload["canonicalTranscript"] = item.CanonicalTranscript
+	}
+
 	if strings.TrimSpace(item.TranscriptJSON) == "" {
 		c.JSON(http.StatusOK, payload)
 		return
