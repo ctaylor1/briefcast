@@ -60,7 +60,10 @@ func createPodcast(t *testing.T, title string, keepAll bool) db.Podcast {
 
 func createDownloadedItem(t *testing.T, podcast db.Podcast, title string, pubDate time.Time, played bool, dir string) db.PodcastItem {
 	t.Helper()
-	filePath := filepath.Join(dir, title+".mp3")
+	filePath := filepath.Join(dir, assetAudioDir, sanitizeAssetName(podcast.Title), sanitizeAssetName(title)+".mp3")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("failed to create audio dir: %v", err)
+	}
 	if err := os.WriteFile(filePath, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("failed to write audio file: %v", err)
 	}

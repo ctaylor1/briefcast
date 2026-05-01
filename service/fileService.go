@@ -51,7 +51,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	if prefix != "" {
 		fileName = fmt.Sprintf("%s-%s", prefix, fileName)
 	}
-	folder := createDataFolderIfNotExists(podcastName)
+	folder := createAudioFolderIfNotExists(podcastName)
 	finalPath := path.Join(folder, fileName)
 
 	var resumeOffset int64
@@ -519,7 +519,7 @@ func getRequestWithMethod(method string, targetURL string) (*http.Request, error
 }
 
 func createFolder(folder string, parent string) string {
-	folder = cleanFileName(folder)
+	folder = sanitizeAssetName(folder)
 	//str := stringy.New(folder)
 	folderPath := path.Join(parent, folder)
 	// #nosec G703 -- folderPath is composed from sanitized folder names and configured parent roots.
@@ -544,7 +544,19 @@ func createConfigFolderIfNotExists(folder string) string {
 }
 
 func deletePodcastFolder(folder string) error {
-	return os.RemoveAll(createDataFolderIfNotExists(folder))
+	var firstErr error
+	paths := []string{
+		dataPodcastFolderPath(folder),
+		dataCategoryPodcastFolderPath(assetAudioDir, folder),
+		dataCategoryPodcastFolderPath(assetTranscriptDir, folder),
+		dataCategoryPodcastFolderPath(assetSummariesDir, folder),
+	}
+	for _, folderPath := range paths {
+		if err := os.RemoveAll(folderPath); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func getFileName(link string, title string, defaultExtension string) string {
@@ -563,7 +575,7 @@ func getFileName(link string, title string, defaultExtension string) string {
 		ext = defaultExtension
 	}
 	//str := stringy.New(title)
-	str := stringy.New(cleanFileName(title))
+	str := stringy.New(sanitizeAssetName(title))
 	return str.KebabCase().Get() + ext
 
 }

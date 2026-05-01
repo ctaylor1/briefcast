@@ -364,7 +364,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 	}
 
 	missingPathItem := createServicePodcastItem(t, podcast, "delete-missing-path", db.Downloaded)
-	missingPath := filepath.Join(dataDir, cleanFileName(podcast.Title), "not-present.mp3")
+	missingPath := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcast.Title), "not-present.mp3")
 	missingPathItem.DownloadPath = missingPath
 	missingPathItem.DownloadStatus = db.Downloaded
 	if err := db.UpdatePodcastItem(&missingPathItem); err != nil {

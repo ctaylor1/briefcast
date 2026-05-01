@@ -319,7 +319,7 @@ docker run -d \
 | Path       | Required | Purpose                                  | Sizing guidance |
 |-----------|----------|-------------------------------------------|-----------------|
 | `/config` | ✅       | SQLite DB, app config, backups            | start 5–20 GB   |
-| `/assets` | ✅       | downloaded media + episode/podcast images | often 100+ GB   |
+| `/assets` | ✅       | audio, transcript, summary, and image files | often 100+ GB   |
 | `/logs`   | ✅       | rotating application log files            | start 1–5 GB    |
 
 Recommendations:
@@ -351,6 +351,9 @@ For Docker Compose end users, most setups only need:
 - `CONFIG`: config directory
   - default behavior may fall back to `.`, but set explicitly in real deployments
 - `DATA`: media/assets directory
+  - episode audio is stored under `audio/<podcast>/`
+  - transcripts are stored under `transcripts/<podcast>/`
+  - summaries are stored under `summaries/<podcast>/`
 - `CHECK_FREQUENCY`: base interval in minutes (defaults to `30` if invalid)
 - `PASSWORD`: enables HTTP basic auth (username `briefcast`)
 - `GIN_MODE`: set `release` for production

@@ -541,10 +541,13 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 
 	podcast := createPodcast(t, "delete-episodes-coverage", false)
 	item := createServicePodcastItem(t, podcast, "delete-episodes-item", db.Downloaded)
-	mediaPath := filepath.Join(dataDir, cleanFileName(podcast.Title), "episode.mp3")
+	mediaPath := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcast.Title), "episode.mp3")
 	imagePath := filepath.Join(dataDir, cleanFileName(podcast.Title), "episode.jpg")
 	if err := os.MkdirAll(filepath.Dir(mediaPath), 0o755); err != nil {
 		t.Fatalf("failed to create episode file dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("failed to create episode image dir: %v", err)
 	}
 	if err := os.WriteFile(mediaPath, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("failed to create episode media file: %v", err)
@@ -577,10 +580,13 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 
 	podcastForDelete := createPodcast(t, "delete-podcast-coverage", false)
 	deleteItem := createServicePodcastItem(t, podcastForDelete, "delete-podcast-item", db.Downloaded)
-	deleteMedia := filepath.Join(dataDir, cleanFileName(podcastForDelete.Title), "delete.mp3")
+	deleteMedia := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcastForDelete.Title), "delete.mp3")
 	deleteImage := filepath.Join(dataDir, cleanFileName(podcastForDelete.Title), "delete.jpg")
 	if err := os.MkdirAll(filepath.Dir(deleteMedia), 0o755); err != nil {
 		t.Fatalf("failed to create delete podcast dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(deleteImage), 0o755); err != nil {
+		t.Fatalf("failed to create delete podcast image dir: %v", err)
 	}
 	if err := os.WriteFile(deleteMedia, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("failed to create delete podcast media file: %v", err)

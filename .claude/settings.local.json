@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "model": "claude-opus-4-6",
   "permissions": {
     "allow": [
       "Bash(git status)",
@@ -16,7 +15,10 @@
       "Bash(pnpm lint)",
       "Bash(pnpm build)",
       "Bash(pytest)",
-      "Bash(pytest *)"
+      "Bash(pytest *)",
+      "Bash(just test-go *)",
+      "Bash(just docker-build *)",
+      "Bash(just ship *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -25,10 +27,10 @@
       "Bash(curl *)"
     ]
   },
+  "model": "claude-opus-4-6",
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
-    "excludedCommands": ["git", "docker"],
     "network": {
       "allowedDomains": [
         "github.com",
@@ -37,6 +39,10 @@
         "pypi.org",
         "files.pythonhosted.org"
       ]
-    }
+    },
+    "excludedCommands": [
+      "git",
+      "docker"
+    ]
   }
 }

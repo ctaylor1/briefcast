@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
@@ -14,20 +14,8 @@ import (
 
 var exportAllRunning atomic.Bool
 
-var unsafeFileNameChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
-
 func resolveExportDir() string {
-	return strings.TrimSpace(os.Getenv("EXPORT_DIR"))
-}
-
-func sanitizeName(name string) string {
-	safe := unsafeFileNameChars.ReplaceAllString(name, "")
-	safe = strings.TrimSpace(safe)
-	safe = strings.ReplaceAll(safe, "  ", " ")
-	if safe == "" {
-		safe = "_"
-	}
-	return safe
+	return resolveAssetsDir()
 }
 
 func lookupPodcastTitle(podcastID string) string {
@@ -62,9 +50,9 @@ func ExportTranscript(item *db.PodcastItem) {
 		return
 	}
 
-	podcast := sanitizeName(podcastTitle(item))
-	episode := sanitizeName(item.Title)
-	path := filepath.Join(exportDir, podcast, "transcripts", episode+".txt")
+	podcast := sanitizeAssetName(podcastTitle(item))
+	episode := sanitizeAssetName(item.Title)
+	path := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
 
 	if err := writeExportFile(path, transcript); err != nil {
 		logger := logging.Sugar()
@@ -87,9 +75,9 @@ func exportCanonicalBackfillBatch(updates []canonicalBackfillUpdate) {
 			logger.Warnw("failed to load item for transcript export", "podcast_item_id", update.ID, "error", err)
 			continue
 		}
-		podcast := sanitizeName(podcastTitle(&item))
-		episode := sanitizeName(item.Title)
-		path := filepath.Join(exportDir, podcast, "transcripts", episode+".txt")
+		podcast := sanitizeAssetName(podcastTitle(&item))
+		episode := sanitizeAssetName(item.Title)
+		path := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
 		if err := writeExportFile(path, update.CanonicalTranscript); err != nil {
 			logger.Warnw("failed to export backfill transcript", "podcast_item_id", update.ID, "path", path, "error", err)
 		}
@@ -103,7 +91,7 @@ func GetExportAllRunning() bool {
 func ExportAll() (transcripts int, summaries int, err error) {
 	exportDir := resolveExportDir()
 	if exportDir == "" {
-		return 0, 0, fmt.Errorf("EXPORT_DIR is not configured")
+		return 0, 0, fmt.Errorf("DATA is not configured")
 	}
 	if !exportAllRunning.CompareAndSwap(false, true) {
 		return 0, 0, fmt.Errorf("export is already running")
@@ -125,31 +113,40 @@ func ExportAll() (transcripts int, summaries int, err error) {
 
 	var items []db.PodcastItem
 	result := db.DB.
-		Where("(canonical_transcript IS NOT NULL AND canonical_transcript <> '') OR (llm_summary IS NOT NULL AND llm_summary <> '')").
+		Where("(canonical_transcript IS NOT NULL AND canonical_transcript <> '') OR (transcript_json IS NOT NULL AND transcript_json <> '') OR (llm_summary IS NOT NULL AND llm_summary <> '')").
 		Find(&items)
 	if result.Error != nil {
 		return 0, 0, result.Error
 	}
 
+	canonicalBackfilled := 0
 	for i := range items {
 		item := &items[i]
 		name := podcastNames[item.PodcastID]
 		if name == "" {
 			name = "Unknown Podcast"
 		}
-		podcast := sanitizeName(name)
-		episode := sanitizeName(item.Title)
+		podcast := sanitizeAssetName(name)
+		episode := sanitizeAssetName(item.Title)
 
-		if ct := strings.TrimSpace(item.CanonicalTranscript); ct != "" {
-			p := filepath.Join(exportDir, podcast, "transcripts", episode+".txt")
+		ct := exportableCanonicalTranscript(item)
+		if ct != "" {
+			p := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
 			if writeErr := writeExportFile(p, ct); writeErr != nil {
 				logger.Warnw("export_all transcript failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
 				transcripts++
 			}
+			if strings.TrimSpace(item.CanonicalTranscript) != ct || item.CanonicalTranscriptVersion < canonicalTranscriptVersionCurrent {
+				if err := persistCanonicalTranscript(item.ID, ct); err != nil {
+					logger.Warnw("export_all canonical transcript backfill failed", "podcast_item_id", item.ID, "error", err)
+				} else {
+					canonicalBackfilled++
+				}
+			}
 		}
 		if s := strings.TrimSpace(item.LLMSummary); s != "" {
-			p := filepath.Join(exportDir, podcast, "summaries", episode+".txt")
+			p := filepath.Join(exportDir, assetSummariesDir, podcast, episode+".txt")
 			if writeErr := writeExportFile(p, s); writeErr != nil {
 				logger.Warnw("export_all summary failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
@@ -158,8 +155,31 @@ func ExportAll() (transcripts int, summaries int, err error) {
 		}
 	}
 
-	logger.Infow("export_all finished", "transcripts", transcripts, "summaries", summaries)
+	logger.Infow("export_all finished", "transcripts", transcripts, "summaries", summaries, "canonical_transcripts_backfilled", canonicalBackfilled)
 	return transcripts, summaries, nil
+}
+
+func exportableCanonicalTranscript(item *db.PodcastItem) string {
+	canonical := strings.TrimSpace(item.CanonicalTranscript)
+	if canonical != "" && item.CanonicalTranscriptVersion >= canonicalTranscriptVersionCurrent {
+		return canonical
+	}
+	generated := strings.TrimSpace(buildCanonicalTranscriptFromTranscriptJSON(item.TranscriptJSON))
+	if generated != "" {
+		return generated
+	}
+	return canonical
+}
+
+func persistCanonicalTranscript(itemID string, transcript string) error {
+	now := time.Now().UTC()
+	return db.DB.Model(&db.PodcastItem{}).
+		Where("id = ?", itemID).
+		Updates(map[string]interface{}{
+			"canonical_transcript":         transcript,
+			"canonical_transcript_version": canonicalTranscriptVersionCurrent,
+			"canonical_updated_at":         now,
+		}).Error
 }
 
 func ExportSummary(item *db.PodcastItem) {
@@ -172,9 +192,9 @@ func ExportSummary(item *db.PodcastItem) {
 		return
 	}
 
-	podcast := sanitizeName(podcastTitle(item))
-	episode := sanitizeName(item.Title)
-	path := filepath.Join(exportDir, podcast, "summaries", episode+".txt")
+	podcast := sanitizeAssetName(podcastTitle(item))
+	episode := sanitizeAssetName(item.Title)
+	path := filepath.Join(exportDir, assetSummariesDir, podcast, episode+".txt")
 
 	if err := writeExportFile(path, summary); err != nil {
 		logger := logging.Sugar()

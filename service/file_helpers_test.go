@@ -98,7 +98,7 @@ func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
 		episodeName = "Range Retry Episode"
 	)
 	link := server.URL + "/audio.mp3"
-	folder := createDataFolderIfNotExists(podcastName)
+	folder := createAudioFolderIfNotExists(podcastName)
 	targetPath := path.Join(folder, getFileName(link, episodeName, ".mp3"))
 	if err := os.WriteFile(targetPath, []byte("stale-partial"), 0o644); err != nil {
 		t.Fatalf("failed to seed partial file: %v", err)
