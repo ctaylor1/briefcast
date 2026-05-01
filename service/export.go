@@ -1,14 +1,18 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
 )
+
+var exportAllRunning atomic.Bool
 
 var unsafeFileNameChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 
@@ -90,6 +94,72 @@ func exportCanonicalBackfillBatch(updates []canonicalBackfillUpdate) {
 			logger.Warnw("failed to export backfill transcript", "podcast_item_id", update.ID, "path", path, "error", err)
 		}
 	}
+}
+
+func GetExportAllRunning() bool {
+	return exportAllRunning.Load()
+}
+
+func ExportAll() (transcripts int, summaries int, err error) {
+	exportDir := resolveExportDir()
+	if exportDir == "" {
+		return 0, 0, fmt.Errorf("EXPORT_DIR is not configured")
+	}
+	if !exportAllRunning.CompareAndSwap(false, true) {
+		return 0, 0, fmt.Errorf("export is already running")
+	}
+	defer exportAllRunning.Store(false)
+
+	logger := logging.Sugar()
+	logger.Infow("export_all started", "export_dir", exportDir)
+
+	var podcasts []db.Podcast
+	if result := db.DB.Find(&podcasts); result.Error != nil {
+		return 0, 0, result.Error
+	}
+
+	podcastNames := make(map[string]string, len(podcasts))
+	for _, p := range podcasts {
+		podcastNames[p.ID] = p.Title
+	}
+
+	var items []db.PodcastItem
+	result := db.DB.
+		Where("(canonical_transcript IS NOT NULL AND canonical_transcript <> '') OR (llm_summary IS NOT NULL AND llm_summary <> '')").
+		Find(&items)
+	if result.Error != nil {
+		return 0, 0, result.Error
+	}
+
+	for i := range items {
+		item := &items[i]
+		name := podcastNames[item.PodcastID]
+		if name == "" {
+			name = "Unknown Podcast"
+		}
+		podcast := sanitizeName(name)
+		episode := sanitizeName(item.Title)
+
+		if ct := strings.TrimSpace(item.CanonicalTranscript); ct != "" {
+			p := filepath.Join(exportDir, podcast, "transcripts", episode+".txt")
+			if writeErr := writeExportFile(p, ct); writeErr != nil {
+				logger.Warnw("export_all transcript failed", "podcast_item_id", item.ID, "error", writeErr)
+			} else {
+				transcripts++
+			}
+		}
+		if s := strings.TrimSpace(item.LLMSummary); s != "" {
+			p := filepath.Join(exportDir, podcast, "summaries", episode+".txt")
+			if writeErr := writeExportFile(p, s); writeErr != nil {
+				logger.Warnw("export_all summary failed", "podcast_item_id", item.ID, "error", writeErr)
+			} else {
+				summaries++
+			}
+		}
+	}
+
+	logger.Infow("export_all finished", "transcripts", transcripts, "summaries", summaries)
+	return transcripts, summaries, nil
 }
 
 func ExportSummary(item *db.PodcastItem) {

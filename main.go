@@ -155,6 +155,8 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.PATCH("/settings", controllers.PatchSettings)
 	router.POST("/settings/backfill-summaries", controllers.BackfillSummaries)
 	router.GET("/settings/backfill-summaries", controllers.GetBackfillSummariesStatus)
+	router.POST("/settings/export-all", controllers.ExportAll)
+	router.GET("/settings/export-all", controllers.GetExportAllStatus)
 	router.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, versionResponse{
 			Version: resolveRunningVersion(),

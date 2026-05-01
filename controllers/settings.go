@@ -132,6 +132,25 @@ func GetBackfillSummariesStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
 }
 
+// ExportAll exports all existing transcripts and summaries to text files.
+func ExportAll(c *gin.Context) {
+	if service.GetExportAllRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "export is already running"})
+		return
+	}
+
+	go func() {
+		service.ExportAll()
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "export started"})
+}
+
+// GetExportAllStatus returns whether an export is currently running.
+func GetExportAllStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"running": service.GetExportAllRunning()})
+}
+
 func settingsFromModel(setting *db.Setting) SettingsResponse {
 	cfg := service.LoadLLMConfig()
 	return SettingsResponse{
