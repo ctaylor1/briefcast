@@ -141,6 +141,11 @@ export interface LocalSearchResult {
 }
 
 export interface AppSettings {
+  autoDownload: boolean;
+  downloadOnAdd: boolean;
+  initialDownloadCount: number;
+  initialDownloadMode: "count" | "months" | "all";
+  initialDownloadMonths: number;
   keepAllEpisodes: boolean;
   keepLatestEpisodes: number;
   deleteAfterDays: number;

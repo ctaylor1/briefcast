@@ -458,7 +458,7 @@ json.dump(payload, sys.stdout)
 		t.Fatalf("expected fallback image from raw xml body, got %q", podcast.Image)
 	}
 
-	nfoPath := filepath.Join(createDataFolderIfNotExists(podcast.Title), "album.nfo")
+	nfoPath := filepath.Join(os.Getenv("DATA"), assetAudioDir, sanitizeAssetName(podcast.Title), "album.nfo")
 	if _, err := os.Stat(nfoPath); err != nil {
 		t.Fatalf("expected generated nfo file, got %v", err)
 	}
@@ -506,11 +506,19 @@ json.dump(payload, sys.stdout)
 	if ep1.TranscriptStatus != "available" || !strings.Contains(ep1.TranscriptJSON, "hello transcript") {
 		t.Fatalf("expected ep-1 transcript to be available with fetched content, got status=%q json=%s", ep1.TranscriptStatus, ep1.TranscriptJSON)
 	}
+	transcriptPath := filepath.Join(os.Getenv("DATA"), "transcripts", "Coverage Feed", "Episode 1.txt")
+	if got, err := os.ReadFile(transcriptPath); err != nil || string(got) != "hello transcript" {
+		t.Fatalf("expected transcript export at %q, got content=%q err=%v", transcriptPath, string(got), err)
+	}
 	if ep1.LLMSummaryStatus != "available" {
 		t.Fatalf("expected ep-1 summary status available, got %q", ep1.LLMSummaryStatus)
 	}
 	if ep1.LLMSummary != "Executive summary from feed transcript" {
 		t.Fatalf("expected ep-1 LLM summary from stub response, got %q", ep1.LLMSummary)
+	}
+	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", "Episode 1.txt")
+	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != "Executive summary from feed transcript" {
+		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}
 	if ep1.LLMSummaryModel != "test-model" {
 		t.Fatalf("expected ep-1 LLM summary model to be recorded, got %q", ep1.LLMSummaryModel)
@@ -542,7 +550,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	podcast := createPodcast(t, "delete-episodes-coverage", false)
 	item := createServicePodcastItem(t, podcast, "delete-episodes-item", db.Downloaded)
 	mediaPath := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcast.Title), "episode.mp3")
-	imagePath := filepath.Join(dataDir, cleanFileName(podcast.Title), "episode.jpg")
+	imagePath := filepath.Join(dataDir, assetImagesDir, sanitizeAssetName(podcast.Title), "episode.jpg")
 	if err := os.MkdirAll(filepath.Dir(mediaPath), 0o755); err != nil {
 		t.Fatalf("failed to create episode file dir: %v", err)
 	}
@@ -581,7 +589,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	podcastForDelete := createPodcast(t, "delete-podcast-coverage", false)
 	deleteItem := createServicePodcastItem(t, podcastForDelete, "delete-podcast-item", db.Downloaded)
 	deleteMedia := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcastForDelete.Title), "delete.mp3")
-	deleteImage := filepath.Join(dataDir, cleanFileName(podcastForDelete.Title), "delete.jpg")
+	deleteImage := filepath.Join(dataDir, assetImagesDir, sanitizeAssetName(podcastForDelete.Title), "delete.jpg")
 	if err := os.MkdirAll(filepath.Dir(deleteMedia), 0o755); err != nil {
 		t.Fatalf("failed to create delete podcast dir: %v", err)
 	}

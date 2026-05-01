@@ -26,6 +26,8 @@ type SearchGPodderData struct {
 type SettingModel struct {
 	DownloadOnAdd                 bool   `form:"downloadOnAdd" json:"downloadOnAdd" query:"downloadOnAdd"`
 	InitialDownloadCount          int    `form:"initialDownloadCount" json:"initialDownloadCount" query:"initialDownloadCount"`
+	InitialDownloadMode           string `form:"initialDownloadMode" json:"initialDownloadMode" query:"initialDownloadMode"`
+	InitialDownloadMonths         int    `form:"initialDownloadMonths" json:"initialDownloadMonths" query:"initialDownloadMonths"`
 	AutoDownload                  bool   `form:"autoDownload" json:"autoDownload" query:"autoDownload"`
 	AppendDateToFileName          bool   `form:"appendDateToFileName" json:"appendDateToFileName" query:"appendDateToFileName"`
 	AppendEpisodeNumberToFileName bool   `form:"appendEpisodeNumberToFileName" json:"appendEpisodeNumberToFileName" query:"appendEpisodeNumberToFileName"`

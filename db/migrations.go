@@ -192,6 +192,18 @@ where id in (
 		Name:  "2026_04_23_01_03_AddDarkStartHour",
 		Query: "alter table settings add column if not exists dark_start_hour integer default 20",
 	},
+	{
+		Name:  "2026_05_01_01_00_AddInitialDownloadMode",
+		Query: "alter table settings add column if not exists initial_download_mode text default 'count'",
+	},
+	{
+		Name:  "2026_05_01_01_01_AddInitialDownloadMonths",
+		Query: "alter table settings add column if not exists initial_download_months integer default 0",
+	},
+	{
+		Name:  "2026_05_01_01_02_BackfillInitialDownloadMode",
+		Query: "update settings set initial_download_mode = 'count' where initial_download_mode is null or initial_download_mode = ''",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

@@ -103,9 +103,9 @@ type PodcastItem struct {
 	TranscriptModel string `gorm:"type:text"`
 
 	// LLM-generated summary fields (populated after successful transcription).
-	LLMSummary       string     `gorm:"type:text" json:"-"`
-	LLMSummaryStatus string     `gorm:"type:text"`
-	LLMSummaryError  string     `gorm:"type:text" json:"-"`
+	LLMSummary       string `gorm:"type:text" json:"-"`
+	LLMSummaryStatus string `gorm:"type:text"`
+	LLMSummaryError  string `gorm:"type:text" json:"-"`
 	LLMSummaryDate   *time.Time
 	// Lineage: which LLM model and prompt produced the summary.
 	LLMSummaryModel  string `gorm:"type:text"`
@@ -135,15 +135,17 @@ const (
 // Setting represents a public type.
 type Setting struct {
 	Base
-	DownloadOnAdd                 bool `gorm:"default:true"`
-	InitialDownloadCount          int  `gorm:"default:5"`
-	AutoDownload                  bool `gorm:"default:true"`
-	AppendDateToFileName          bool `gorm:"default:false"`
-	AppendEpisodeNumberToFileName bool `gorm:"default:false"`
-	DarkMode                      bool `gorm:"default:false"`
-	DownloadEpisodeImages         bool `gorm:"default:false"`
-	GenerateNFOFile               bool `gorm:"default:false"`
-	DontDownloadDeletedFromDisk   bool `gorm:"default:false"`
+	DownloadOnAdd                 bool   `gorm:"default:true"`
+	InitialDownloadCount          int    `gorm:"default:5"`
+	InitialDownloadMode           string `gorm:"type:text;default:count"`
+	InitialDownloadMonths         int    `gorm:"default:0"`
+	AutoDownload                  bool   `gorm:"default:true"`
+	AppendDateToFileName          bool   `gorm:"default:false"`
+	AppendEpisodeNumberToFileName bool   `gorm:"default:false"`
+	DarkMode                      bool   `gorm:"default:false"`
+	DownloadEpisodeImages         bool   `gorm:"default:false"`
+	GenerateNFOFile               bool   `gorm:"default:false"`
+	DontDownloadDeletedFromDisk   bool   `gorm:"default:false"`
 	BaseURL                       string
 	MaxDownloadConcurrency        int `gorm:"default:5"`
 	UserAgent                     string

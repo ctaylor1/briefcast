@@ -16,6 +16,16 @@ type RetentionForm = {
   deleteOnlyPlayed: boolean;
 };
 
+type InitialDownloadMode = "count" | "months" | "all";
+
+type BackCatalogForm = {
+  autoDownload: boolean;
+  downloadOnAdd: boolean;
+  initialDownloadMode: InitialDownloadMode;
+  initialDownloadCount: string;
+  initialDownloadMonths: string;
+};
+
 type SummarizationForm = {
   summarizationEnabled: boolean;
   summarizationPrompt: string;
@@ -34,6 +44,7 @@ const {
 } = useTheme();
 
 const isLoading = ref(true);
+const isSavingBackCatalog = ref(false);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
@@ -55,6 +66,14 @@ const retentionForm = ref<RetentionForm>({
   deleteOnlyPlayed: true,
 });
 
+const backCatalogForm = ref<BackCatalogForm>({
+  autoDownload: true,
+  downloadOnAdd: true,
+  initialDownloadMode: "count",
+  initialDownloadCount: "5",
+  initialDownloadMonths: "6",
+});
+
 const summarizationForm = ref<SummarizationForm>({
   summarizationEnabled: false,
   summarizationPrompt: "",
@@ -62,6 +81,8 @@ const summarizationForm = ref<SummarizationForm>({
 });
 
 const retentionEnabled = computed(() => !retentionForm.value.keepAllEpisodes);
+const usesInitialDownloadCount = computed(() => backCatalogForm.value.initialDownloadMode === "count");
+const usesInitialDownloadMonths = computed(() => backCatalogForm.value.initialDownloadMode === "months");
 
 function mapToRetentionForm(settings: AppSettings): RetentionForm {
   return {
@@ -69,6 +90,17 @@ function mapToRetentionForm(settings: AppSettings): RetentionForm {
     keepLatestEpisodes: String(settings.keepLatestEpisodes ?? 0),
     deleteAfterDays: String(settings.deleteAfterDays ?? 0),
     deleteOnlyPlayed: settings.deleteOnlyPlayed,
+  };
+}
+
+function mapToBackCatalogForm(settings: AppSettings): BackCatalogForm {
+  const mode = settings.initialDownloadMode || "count";
+  return {
+    autoDownload: settings.autoDownload,
+    downloadOnAdd: settings.downloadOnAdd,
+    initialDownloadMode: mode,
+    initialDownloadCount: String(settings.initialDownloadCount ?? 5),
+    initialDownloadMonths: String(settings.initialDownloadMonths ?? 6),
   };
 }
 
@@ -86,6 +118,7 @@ async function loadSettings(): Promise<void> {
   try {
     const settings = await settingsApi.get();
     retentionForm.value = mapToRetentionForm(settings);
+    backCatalogForm.value = mapToBackCatalogForm(settings);
     summarizationForm.value = {
       summarizationEnabled: settings.summarizationEnabled,
       summarizationPrompt: settings.summarizationPrompt ?? "",
@@ -97,6 +130,26 @@ async function loadSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function saveBackCatalogSettings(): Promise<void> {
+  isSavingBackCatalog.value = true;
+  clearAll();
+  try {
+    const updated = await settingsApi.update({
+      autoDownload: backCatalogForm.value.autoDownload,
+      downloadOnAdd: backCatalogForm.value.downloadOnAdd,
+      initialDownloadMode: backCatalogForm.value.initialDownloadMode,
+      initialDownloadCount: sanitizeNumber(backCatalogForm.value.initialDownloadCount),
+      initialDownloadMonths: sanitizeNumber(backCatalogForm.value.initialDownloadMonths),
+    });
+    backCatalogForm.value = mapToBackCatalogForm(updated);
+    setSuccess("Back catalog settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update back catalog settings."));
+  } finally {
+    isSavingBackCatalog.value = false;
   }
 }
 
@@ -290,6 +343,83 @@ onMounted(loadSettings);
         </UiButton>
         <p class="meta-text">
           In Auto mode, the app switches between light and dark at the configured times.
+        </p>
+      </div>
+    </UiCard>
+
+    <!-- Back catalog download settings -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Back Catalog Downloads</h3>
+        <p class="section-subtitle">
+          Choose which episodes are queued when a podcast is first added. Feed entries are still saved when the provider exposes them.
+        </p>
+      </div>
+
+      <label class="settings-checkbox-row">
+        <input
+          v-model="backCatalogForm.autoDownload"
+          type="checkbox"
+          class="settings-checkbox"
+        />
+        <div>
+          <p class="settings-checkbox-title">Automatically download new episodes</p>
+          <p class="meta-text">When enabled, refreshes queue newly published episodes after the podcast is subscribed.</p>
+        </div>
+      </label>
+
+      <label class="settings-checkbox-row">
+        <input
+          v-model="backCatalogForm.downloadOnAdd"
+          type="checkbox"
+          class="settings-checkbox"
+          :disabled="!backCatalogForm.autoDownload"
+        />
+        <div>
+          <p class="settings-checkbox-title">Queue episodes when adding a podcast</p>
+          <p class="meta-text">If disabled, imported episodes are saved but not queued for download.</p>
+        </div>
+      </label>
+
+      <div class="surface-grid surface-grid--3">
+        <label class="stack-1">
+          <span class="ui-label">Initial back catalog</span>
+          <select
+            v-model="backCatalogForm.initialDownloadMode"
+            class="ui-input"
+            :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd"
+          >
+            <option value="count">Latest episode count</option>
+            <option value="months">Past N months</option>
+            <option value="all">All feed episodes</option>
+          </select>
+        </label>
+
+        <UiInput
+          v-model="backCatalogForm.initialDownloadCount"
+          type="number"
+          min="0"
+          :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd || !usesInitialDownloadCount"
+          label="Episode count"
+          placeholder="5"
+        />
+
+        <UiInput
+          v-model="backCatalogForm.initialDownloadMonths"
+          type="number"
+          min="0"
+          :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd || !usesInitialDownloadMonths"
+          label="Months"
+          placeholder="6"
+        />
+      </div>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingBackCatalog" @click="saveBackCatalogSettings">
+          {{ isSavingBackCatalog ? "Saving..." : "Save back catalog settings" }}
+        </UiButton>
+        <p class="meta-text">
+          Set count or months to 0 to queue all episodes returned by the feed.
         </p>
       </div>
     </UiCard>

@@ -9,6 +9,7 @@ import (
 
 const (
 	assetAudioDir      = "audio"
+	assetImagesDir     = "images"
 	assetTranscriptDir = "transcripts"
 	assetSummariesDir  = "summaries"
 )
@@ -48,4 +49,8 @@ func createDataCategoryPodcastFolderIfNotExists(category string, podcastName str
 
 func createAudioFolderIfNotExists(podcastName string) string {
 	return createDataCategoryPodcastFolderIfNotExists(assetAudioDir, podcastName)
+}
+
+func createImagesFolderIfNotExists(podcastName string) string {
+	return createDataCategoryPodcastFolderIfNotExists(assetImagesDir, podcastName)
 }

@@ -200,7 +200,7 @@ func parseContentRangeTotal(contentRange string) int64 {
 // GetPodcastLocalImagePath handles the corresponding operation.
 func GetPodcastLocalImagePath(link string, podcastName string) string {
 	fileName := getFileName(link, "folder", ".jpg")
-	folder := createDataFolderIfNotExists(podcastName)
+	folder := createImagesFolderIfNotExists(podcastName)
 
 	finalPath := path.Join(folder, fileName)
 	return finalPath
@@ -209,7 +209,7 @@ func GetPodcastLocalImagePath(link string, podcastName string) string {
 // CreateNfoFile handles the corresponding operation.
 func CreateNfoFile(podcast *db.Podcast) error {
 	fileName := "album.nfo"
-	folder := createDataFolderIfNotExists(podcast.Title)
+	folder := createAudioFolderIfNotExists(podcast.Title)
 
 	finalPath := path.Join(folder, fileName)
 
@@ -252,7 +252,7 @@ func DownloadPodcastCoverImage(link string, podcastName string) (string, error) 
 	}
 
 	fileName := getFileName(link, "folder", ".jpg")
-	folder := createDataFolderIfNotExists(podcastName)
+	folder := createImagesFolderIfNotExists(podcastName)
 
 	finalPath := path.Join(folder, fileName)
 	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
@@ -296,8 +296,7 @@ func DownloadImage(link string, episodeID string, podcastName string) (string, e
 	}
 
 	fileName := getFileName(link, episodeID, ".jpg")
-	folder := createDataFolderIfNotExists(podcastName)
-	imageFolder := createFolder("images", folder)
+	imageFolder := createImagesFolderIfNotExists(podcastName)
 	finalPath := path.Join(imageFolder, fileName)
 
 	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
@@ -548,6 +547,7 @@ func deletePodcastFolder(folder string) error {
 	paths := []string{
 		dataPodcastFolderPath(folder),
 		dataCategoryPodcastFolderPath(assetAudioDir, folder),
+		dataCategoryPodcastFolderPath(assetImagesDir, folder),
 		dataCategoryPodcastFolderPath(assetTranscriptDir, folder),
 		dataCategoryPodcastFolderPath(assetSummariesDir, folder),
 	}

@@ -70,3 +70,14 @@ func TestPodcastItemCanonicalTranscriptColumnsExistAfterMigrate(t *testing.T) {
 		t.Fatalf("expected canonical_updated_at column to exist after migrate")
 	}
 }
+
+func TestInitialDownloadPolicyColumnsExistAfterMigrate(t *testing.T) {
+	setupDBForTest(t)
+
+	if !DB.Migrator().HasColumn(&Setting{}, "initial_download_mode") {
+		t.Fatalf("expected initial_download_mode column to exist after migrate")
+	}
+	if !DB.Migrator().HasColumn(&Setting{}, "initial_download_months") {
+		t.Fatalf("expected initial_download_months column to exist after migrate")
+	}
+}

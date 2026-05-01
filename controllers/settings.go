@@ -15,6 +15,12 @@ type SettingsResponse struct {
 	KeepLatestEpisodes int  `json:"keepLatestEpisodes"`
 	DeleteAfterDays    int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   bool `json:"deleteOnlyPlayed"`
+	// Initial back catalog download policy
+	DownloadOnAdd         bool   `json:"downloadOnAdd"`
+	InitialDownloadCount  int    `json:"initialDownloadCount"`
+	InitialDownloadMode   string `json:"initialDownloadMode"`
+	InitialDownloadMonths int    `json:"initialDownloadMonths"`
+	AutoDownload          bool   `json:"autoDownload"`
 	// Summarization
 	SummarizationEnabled    bool   `json:"summarizationEnabled"`
 	SummarizationPrompt     string `json:"summarizationPrompt"`
@@ -36,6 +42,12 @@ type SettingsPatch struct {
 	KeepLatestEpisodes *int  `json:"keepLatestEpisodes"`
 	DeleteAfterDays    *int  `json:"deleteAfterDays"`
 	DeleteOnlyPlayed   *bool `json:"deleteOnlyPlayed"`
+	// Initial back catalog download policy
+	DownloadOnAdd         *bool   `json:"downloadOnAdd"`
+	InitialDownloadCount  *int    `json:"initialDownloadCount"`
+	InitialDownloadMode   *string `json:"initialDownloadMode"`
+	InitialDownloadMonths *int    `json:"initialDownloadMonths"`
+	AutoDownload          *bool   `json:"autoDownload"`
 	// Summarization
 	SummarizationEnabled    *bool   `json:"summarizationEnabled"`
 	SummarizationPrompt     *string `json:"summarizationPrompt"`
@@ -81,6 +93,34 @@ func PatchSettings(c *gin.Context) {
 	}
 	if patch.DeleteOnlyPlayed != nil {
 		setting.RetentionDeleteOnlyPlayed = *patch.DeleteOnlyPlayed
+	}
+	if patch.DownloadOnAdd != nil {
+		setting.DownloadOnAdd = *patch.DownloadOnAdd
+	}
+	if patch.InitialDownloadCount != nil {
+		if *patch.InitialDownloadCount < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "initialDownloadCount must be 0 or greater"})
+			return
+		}
+		setting.InitialDownloadCount = *patch.InitialDownloadCount
+	}
+	if patch.InitialDownloadMode != nil {
+		mode := service.NormalizeInitialDownloadMode(*patch.InitialDownloadMode)
+		if mode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "initialDownloadMode must be count, months, or all"})
+			return
+		}
+		setting.InitialDownloadMode = mode
+	}
+	if patch.InitialDownloadMonths != nil {
+		if *patch.InitialDownloadMonths < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "initialDownloadMonths must be 0 or greater"})
+			return
+		}
+		setting.InitialDownloadMonths = *patch.InitialDownloadMonths
+	}
+	if patch.AutoDownload != nil {
+		setting.AutoDownload = *patch.AutoDownload
 	}
 	if patch.SummarizationEnabled != nil {
 		setting.SummarizationEnabled = *patch.SummarizationEnabled
@@ -158,6 +198,11 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		KeepLatestEpisodes:      setting.RetentionKeepLatest,
 		DeleteAfterDays:         setting.RetentionDeleteAfterDays,
 		DeleteOnlyPlayed:        setting.RetentionDeleteOnlyPlayed,
+		DownloadOnAdd:           setting.DownloadOnAdd,
+		InitialDownloadCount:    setting.InitialDownloadCount,
+		InitialDownloadMode:     service.NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode),
+		InitialDownloadMonths:   setting.InitialDownloadMonths,
+		AutoDownload:            setting.AutoDownload,
 		SummarizationEnabled:    setting.SummarizationEnabled,
 		SummarizationPrompt:     setting.SummarizationPrompt,
 		SummarizationUserPrompt: setting.SummarizationUserPrompt,

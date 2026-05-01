@@ -472,6 +472,7 @@ func GetOrCreateSetting() *Setting {
 		setting = Setting{
 			RetentionKeepAll:          true,
 			RetentionDeleteOnlyPlayed: true,
+			InitialDownloadMode:       "count",
 		}
 		DB.Save(&setting)
 		DB.First(&setting)
@@ -480,6 +481,10 @@ func GetOrCreateSetting() *Setting {
 	if !setting.RetentionKeepAll && setting.RetentionKeepLatest == 0 && setting.RetentionDeleteAfterDays == 0 && !setting.RetentionDeleteOnlyPlayed {
 		setting.RetentionKeepAll = true
 		setting.RetentionDeleteOnlyPlayed = true
+		DB.Save(&setting)
+	}
+	if strings.TrimSpace(setting.InitialDownloadMode) == "" {
+		setting.InitialDownloadMode = "count"
 		DB.Save(&setting)
 	}
 	return &setting

@@ -64,7 +64,7 @@ func TestFileServiceErrorAndExistingFileBranches(t *testing.T) {
 
 	imageURL := contentServer.URL + "/episode.jpg"
 	imageFileName := getFileName(imageURL, "episode-id", ".jpg")
-	imagePath := path.Join(createFolder("images", createDataFolderIfNotExists(podcast.Title)), imageFileName)
+	imagePath := path.Join(createImagesFolderIfNotExists(podcast.Title), imageFileName)
 	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
 		t.Fatalf("failed to create image dir: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 	}
 
 	toDelete := createDownloadedItem(t, podcast, "delete-episode-file", time.Now().Add(-45*time.Minute), false, dataDir)
-	localImagePath := filepath.Join(dataDir, cleanFileName(podcast.Title), "delete-episode-file.jpg")
+	localImagePath := filepath.Join(dataDir, assetImagesDir, sanitizeAssetName(podcast.Title), "delete-episode-file.jpg")
 	if err := os.MkdirAll(filepath.Dir(localImagePath), 0o755); err != nil {
 		t.Fatalf("failed to create local image dir: %v", err)
 	}

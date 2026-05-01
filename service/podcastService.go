@@ -25,6 +25,35 @@ import (
 // Logger is a public variable.
 var Logger = logging.Sugar()
 
+const (
+	InitialDownloadModeCount  = "count"
+	InitialDownloadModeMonths = "months"
+	InitialDownloadModeAll    = "all"
+)
+
+// NormalizeInitialDownloadMode returns a supported initial back-catalog mode, or
+// an empty string when the input is invalid.
+func NormalizeInitialDownloadMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case InitialDownloadModeCount:
+		return InitialDownloadModeCount
+	case InitialDownloadModeMonths:
+		return InitialDownloadModeMonths
+	case InitialDownloadModeAll:
+		return InitialDownloadModeAll
+	default:
+		return ""
+	}
+}
+
+func NormalizeInitialDownloadModeWithDefault(mode string) string {
+	normalized := NormalizeInitialDownloadMode(mode)
+	if normalized == "" {
+		return InitialDownloadModeCount
+	}
+	return normalized
+}
+
 // ParseOpml handles the corresponding operation.
 func ParseOpml(content string) (model.OpmlModel, error) {
 	var response model.OpmlModel
@@ -294,7 +323,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 		summarizationPrompt = ResolveSummarizationPrompt(setting, llmCfg)
 		summarizationUserPrompt = ResolveSummarizationUserPrompt(setting, llmCfg)
 	}
-	limit := setting.InitialDownloadCount
+	initialDownloadMode := NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode)
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
 		entry := parsed.Entries[i]
@@ -339,7 +368,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				if !newPodcast {
 					downloadStatus = db.NotDownloaded
 				} else {
-					if i < limit {
+					if shouldQueueInitialBackCatalogEpisode(setting, initialDownloadMode, i, pubDate, time.Now().UTC()) {
 						downloadStatus = db.NotDownloaded
 					} else {
 						downloadStatus = db.Deleted
@@ -434,6 +463,9 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				}
 				continue
 			}
+			if transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
+				ExportTranscript(&podcastItem)
+			}
 			if summarizationEnabled && transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
 				if sumErr := SummarizeEpisode(&podcastItem, llmCfg, summarizationPrompt, summarizationUserPrompt); sumErr != nil {
 					Logger.Warnw(
@@ -455,6 +487,28 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 		}
 	}
 	return firstItemErr
+}
+
+func shouldQueueInitialBackCatalogEpisode(setting *db.Setting, mode string, index int, pubDate time.Time, now time.Time) bool {
+	switch NormalizeInitialDownloadModeWithDefault(mode) {
+	case InitialDownloadModeAll:
+		return true
+	case InitialDownloadModeMonths:
+		months := setting.InitialDownloadMonths
+		if months <= 0 {
+			return true
+		}
+		if pubDate.IsZero() {
+			return false
+		}
+		return !pubDate.Before(now.AddDate(0, -months, 0))
+	default:
+		count := setting.InitialDownloadCount
+		if count <= 0 {
+			return true
+		}
+		return index < count
+	}
 }
 
 // UpdateAllFileSizes handles the corresponding operation.
@@ -1127,7 +1181,7 @@ func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchRes
 }
 
 // UpdateSettings handles the corresponding operation.
-func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload bool,
+func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, initialDownloadMode string, initialDownloadMonths int, autoDownload bool,
 	appendDateToFileName bool, appendEpisodeNumberToFileName bool, darkMode bool, downloadEpisodeImages bool,
 	generateNFOFile bool, dontDownloadDeletedFromDisk bool, baseURL string, maxDownloadConcurrency int, userAgent string) error {
 	setting := db.GetOrCreateSetting()
@@ -1135,6 +1189,11 @@ func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload b
 	setting.AutoDownload = autoDownload
 	setting.DownloadOnAdd = downloadOnAdd
 	setting.InitialDownloadCount = initialDownloadCount
+	setting.InitialDownloadMode = NormalizeInitialDownloadModeWithDefault(initialDownloadMode)
+	if initialDownloadMonths < 0 {
+		initialDownloadMonths = 0
+	}
+	setting.InitialDownloadMonths = initialDownloadMonths
 	setting.AppendDateToFileName = appendDateToFileName
 	setting.AppendEpisodeNumberToFileName = appendEpisodeNumberToFileName
 	setting.DarkMode = darkMode

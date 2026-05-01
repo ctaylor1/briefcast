@@ -245,9 +245,16 @@ func TestFileServiceBackupAndFolderHelpers(t *testing.T) {
 	if !strings.Contains(imagePath, "backup-podcast") {
 		t.Fatalf("expected podcast image path to include podcast folder, got %q", imagePath)
 	}
+	if !strings.Contains(filepath.ToSlash(imagePath), "/images/backup-podcast/") {
+		t.Fatalf("expected podcast image path to use images category, got %q", imagePath)
+	}
 
 	if err := CreateNfoFile(&podcast); err != nil {
 		t.Fatalf("create NFO failed: %v", err)
+	}
+	rootPodcastFolder := filepath.Join(dataDir, sanitizeAssetName(podcast.Title))
+	if _, err := os.Stat(rootPodcastFolder); !os.IsNotExist(err) {
+		t.Fatalf("expected root podcast folder not to be created, got err=%v", err)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +313,9 @@ func TestFileServiceBackupAndFolderHelpers(t *testing.T) {
 	}
 
 	podcastFolder := filepath.Join(dataDir, cleanFileName(podcast.Title))
+	if err := os.MkdirAll(podcastFolder, 0o755); err != nil {
+		t.Fatalf("failed to seed legacy podcast folder: %v", err)
+	}
 	if _, err := os.Stat(podcastFolder); err != nil {
 		t.Fatalf("expected podcast folder to exist before delete: %v", err)
 	}
@@ -378,7 +388,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 		t.Fatalf("unexpected podcastindex mapping: %+v", got)
 	}
 
-	if err := UpdateSettings(true, 4, true, true, true, false, false, false, false, "http://localhost", 3, "agent"); err != nil {
+	if err := UpdateSettings(true, 4, InitialDownloadModeCount, 0, true, true, true, false, false, false, false, "http://localhost", 3, "agent"); err != nil {
 		t.Fatalf("update settings failed: %v", err)
 	}
 
