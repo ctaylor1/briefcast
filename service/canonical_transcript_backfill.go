@@ -60,6 +60,7 @@ func BackfillCanonicalTranscripts(batchSize int, targetVersion int) (int64, erro
 				return totalUpdated, err
 			}
 			totalUpdated += updatedCount
+			exportCanonicalBackfillBatch(updates)
 		}
 
 		lastID = rows[len(rows)-1].ID

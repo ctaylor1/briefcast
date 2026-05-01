@@ -244,10 +244,15 @@ export function useEpisodeDrawer() {
     return `${drawerChapters.value.length} chapters available.`;
   }
 
+  function sanitizeFileNamePart(value: string): string {
+    return value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().replace(/\s+/g, "_");
+  }
+
   function transcriptFileName(): string {
-    const title = drawerItem.value?.Title ?? "transcript";
-    const safe = title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_");
-    return `${safe || "transcript"}.txt`;
+    const podcast = sanitizeFileNamePart(drawerItem.value?.Podcast?.Title ?? "");
+    const episode = sanitizeFileNamePart(drawerItem.value?.Title ?? "transcript");
+    const parts = [podcast, episode].filter(Boolean);
+    return `${parts.join("_-_") || "transcript"}.txt`;
   }
 
   function transcriptBlob(): Blob {

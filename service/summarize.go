@@ -246,5 +246,9 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	// Lineage: record which model and prompt produced this summary.
 	item.LLMSummaryModel = cfg.Model
 	item.LLMSummaryPrompt = prompt
-	return db.UpdatePodcastItem(item)
+	if err := db.UpdatePodcastItem(item); err != nil {
+		return err
+	}
+	ExportSummary(item)
+	return nil
 }

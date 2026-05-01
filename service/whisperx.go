@@ -431,6 +431,8 @@ func TranscribePendingEpisodes() error {
 			setError(err)
 		}
 
+		ExportTranscript(&item)
+
 		// Summarize the transcript if LLM summarization is enabled.
 		llmCfg := LoadLLMConfig()
 		setting := db.GetOrCreateSetting()
