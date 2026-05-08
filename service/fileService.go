@@ -550,6 +550,8 @@ func deletePodcastFolder(folder string) error {
 		dataCategoryPodcastFolderPath(assetImagesDir, folder),
 		dataCategoryPodcastFolderPath(assetTranscriptDir, folder),
 		dataCategoryPodcastFolderPath(assetSummariesDir, folder),
+		dataCategoryPodcastFolderPath(assetMarkdownTranscriptDir, folder),
+		dataCategoryPodcastFolderPath(assetMarkdownSummariesDir, folder),
 	}
 	for _, folderPath := range paths {
 		if err := os.RemoveAll(folderPath); err != nil && firstErr == nil {

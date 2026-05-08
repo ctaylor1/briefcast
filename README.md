@@ -299,7 +299,7 @@ Briefcast now uses `/assets` for all generated library output. There is no separ
 | Container Path | Required | Purpose |
 | --- | --- | --- |
 | `/config` | yes | SQLite database, app config, backups, caches |
-| `/assets` | yes | audio, images, transcript text files, summary text files |
+| `/assets` | yes | audio, images, transcript exports, summary exports |
 | `/logs` | yes | application logs |
 
 Asset subfolders:
@@ -310,9 +310,11 @@ Asset subfolders:
   images/<podcast>/
   transcripts/<podcast>/
   summaries/<podcast>/
+  markdown/transcripts/<podcast>/
+  markdown/summaries/<podcast>/
 ```
 
-Audio files should be under `audio/<podcast>/`. Podcast and episode artwork should be under `images/<podcast>/`. Transcript and summary text exports are written to their respective folders.
+Audio files should be under `audio/<podcast>/`. Podcast and episode artwork should be under `images/<podcast>/`. Transcript and summary text exports are written to their respective folders, with markdown copies under `markdown/`.
 
 To move assets to another drive or host path:
 
@@ -484,8 +486,10 @@ Newly generated transcripts and summaries are exported automatically:
 
 - transcripts: `/assets/transcripts/<podcast>/<episode>.txt`
 - summaries: `/assets/summaries/<podcast>/<episode>.txt`
+- transcript markdown: `/assets/markdown/transcripts/<podcast>/<episode>.md`
+- summary markdown: `/assets/markdown/summaries/<podcast>/<episode>.md`
 
-Feed-provided transcripts, WhisperX transcripts, and LLM summaries all write text files into `/assets` when they are saved.
+Feed-provided transcripts, WhisperX transcripts, and LLM summaries all write text and markdown files into `/assets` when they are saved.
 
 The `export-all` API writes existing database transcripts and summaries back into the assets tree:
 
@@ -646,9 +650,11 @@ Older deployments may have audio, artwork, transcripts, or summaries directly un
 /assets/images/<podcast>/
 /assets/transcripts/<podcast>/
 /assets/summaries/<podcast>/
+/assets/markdown/transcripts/<podcast>/
+/assets/markdown/summaries/<podcast>/
 ```
 
-After moving files into the current layout, run `export-all` once to regenerate transcript and summary text files from the database.
+After moving files into the current layout, run `export-all` once to regenerate transcript and summary text and markdown files from the database.
 
 For a clean publish state:
 

@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	assetAudioDir      = "audio"
-	assetImagesDir     = "images"
-	assetTranscriptDir = "transcripts"
-	assetSummariesDir  = "summaries"
+	assetAudioDir              = "audio"
+	assetImagesDir             = "images"
+	assetTranscriptDir         = "transcripts"
+	assetSummariesDir          = "summaries"
+	assetMarkdownTranscriptDir = "markdown/transcripts"
+	assetMarkdownSummariesDir  = "markdown/summaries"
 )
 
 var (

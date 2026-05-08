@@ -39,6 +39,8 @@ export interface PodcastItemPodcast {
 
 export interface PodcastItem {
   ID: string;
+  CreatedAt?: string;
+  UpdatedAt?: string;
   PodcastID: string;
   Podcast: PodcastItemPodcast;
   Title: string;
@@ -48,6 +50,7 @@ export interface PodcastItem {
   FileURL: string;
   Image: string;
   LocalImage: string;
+  DownloadDate: string;
   DownloadPath: string;
   DownloadStatus: number;
   DownloadedBytes: number;

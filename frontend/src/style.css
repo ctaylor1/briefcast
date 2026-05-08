@@ -1373,7 +1373,7 @@ img {
   }
 
   .skeleton,
-  .queue-list__progress-fill--unknown,
+  .downloads-table__progress-fill--unknown,
   .episode-list-item__progress-fill--unknown,
   .episodes-table__progress-fill--unknown,
   .track-control__spinner {

@@ -49,7 +49,7 @@ func GetDownloadQueue(c *gin.Context) {
 		"downloaded":  0,
 		"paused":      0,
 	}
-	if stats, err := db.GetPodcastEpisodeStats(); err == nil {
+	if stats, err := db.GetPodcastItemStatusCounts(); err == nil {
 		for _, stat := range *stats {
 			switch stat.DownloadStatus {
 			case db.NotDownloaded:

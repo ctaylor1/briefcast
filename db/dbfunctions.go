@@ -66,7 +66,7 @@ func getSortOrder(sorting model.EpisodeSort) string {
 func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastItem, int64, error) {
 	var podcasts []PodcastItem
 	var total int64
-	query := podcastItemsWithPodcast(DB)
+	query := DB.Model(&PodcastItem{})
 	if queryModel.IsDownloaded != nil {
 		isDownloaded, err := strconv.ParseBool(*queryModel.IsDownloaded)
 		if err == nil {
@@ -92,26 +92,36 @@ func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastIte
 		query = query.Where("podcast_id in ?", queryModel.PodcastIds)
 	}
 
-	totalsQuery := query.Order(getSortOrder(queryModel.Sorting)).Find(&podcasts)
-	totalsQuery.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return &podcasts, 0, err
+	}
 
-	result := query.Limit(queryModel.Count).Offset((queryModel.Page - 1) * queryModel.Count).Order("pub_date desc").Find(&podcasts)
+	result := podcastItemsWithPodcast(query).
+		Limit(queryModel.Count).
+		Offset((queryModel.Page - 1) * queryModel.Count).
+		Order(getSortOrder(queryModel.Sorting)).
+		Find(&podcasts)
 	return &podcasts, total, result.Error
 }
 
 // GetPaginatedPodcastItems handles the corresponding operation.
 func GetPaginatedPodcastItems(page int, count int, downloadedOnly *bool, playedOnly *bool, fromDate time.Time, podcasts *[]PodcastItem, total *int64) error {
-	query := podcastItemsWithPodcast(DB)
+	query := DB.Model(&PodcastItem{})
 	query = applyDownloadStatusFilter(query, downloadedOnly)
 	query = applyPlayedStatusFilter(query, playedOnly)
 	if (fromDate != time.Time{}) {
 		query = query.Where("pub_date>=?", fromDate)
 	}
 
-	totalsQuery := query.Order("pub_date desc").Find(&podcasts)
-	totalsQuery.Count(total)
+	if err := query.Count(total).Error; err != nil {
+		return err
+	}
 
-	result := query.Limit(count).Offset((page - 1) * count).Order("pub_date desc").Find(&podcasts)
+	result := podcastItemsWithPodcast(query).
+		Limit(count).
+		Offset((page - 1) * count).
+		Order("pub_date desc").
+		Find(&podcasts)
 	return result.Error
 }
 
@@ -281,7 +291,7 @@ func GetPodcastItemsByDownloadStatuses(statuses []DownloadStatus, limit int) ([]
 		SQL:  "CASE download_status WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 2 WHEN ? THEN 3 ELSE 4 END",
 		Vars: []interface{}{Downloading, NotDownloaded, Paused, Downloaded},
 	}
-	query := podcastItemsWithAssociations(DB).
+	query := podcastItemsWithPodcast(DB).
 		Where("download_status IN ?", statuses).
 		Order(statusPriority).
 		Order("download_date desc").
@@ -310,7 +320,7 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 	var items []PodcastItem
 	var total int64
 
-	query := podcastItemsWithPodcast(DB).Where("llm_summary_status = ?", "available")
+	query := DB.Model(&PodcastItem{}).Where("llm_summary_status = ?", "available")
 
 	if q != "" {
 		like := "%" + strings.TrimSpace(strings.ToUpper(q)) + "%"
@@ -341,10 +351,15 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 		order = "pub_date desc"
 	}
 
-	totalsQuery := query.Order(order).Find(&items)
-	totalsQuery.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return &items, 0, err
+	}
 
-	result := query.Limit(count).Offset((page - 1) * count).Order(order).Find(&items)
+	result := podcastItemsWithPodcast(query).
+		Limit(count).
+		Offset((page - 1) * count).
+		Order(order).
+		Find(&items)
 	return &items, total, result.Error
 }
 
@@ -357,6 +372,16 @@ func SetSummaryFavorited(id string, favorited bool) error {
 func GetPodcastEpisodeStats() (*[]PodcastItemStatsModel, error) {
 	var stats []PodcastItemStatsModel
 	result := DB.Model(&PodcastItem{}).Select("download_status,podcast_id, count(1) as count,sum(file_size) as size").Group("podcast_id,download_status").Find(&stats)
+	return &stats, result.Error
+}
+
+// GetPodcastItemStatusCounts returns download-state counts across the whole library.
+func GetPodcastItemStatusCounts() (*[]PodcastItemStatusCountModel, error) {
+	var stats []PodcastItemStatusCountModel
+	result := DB.Model(&PodcastItem{}).
+		Select("download_status, count(1) as count").
+		Group("download_status").
+		Find(&stats)
 	return &stats, result.Error
 }
 

@@ -9,18 +9,31 @@ import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
+import UiSelect from "../components/ui/UiSelect.vue";
+import { formatDateTime } from "../lib/format";
 
 const infoMessage = ref("");
 const actionError = ref("");
 const confirmStopAllOpen = ref(false);
 const stoppingAllBusy = ref(false);
 const undoCancelItem = ref<PodcastItem | null>(null);
+const queueSort = ref<DownloadQueueSort>("download_date_desc");
 let undoCancelTimer: number | undefined;
 const DOWNLOAD_STATUS_QUEUED = 0;
 const DOWNLOAD_STATUS_DOWNLOADING = 1;
 const DOWNLOAD_STATUS_DOWNLOADED = 2;
 const DOWNLOAD_STATUS_PAUSED = 4;
+const QUEUE_REFRESH_MS = 15000;
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
+type DownloadQueueSort =
+  | "download_date_desc"
+  | "download_date_asc"
+  | "title_asc"
+  | "title_desc"
+  | "podcast_asc"
+  | "status"
+  | "progress_desc"
+  | "progress_asc";
 const router = useRouter();
 
 const {
@@ -107,18 +120,110 @@ function queueSortPriority(item: PodcastItem): number {
   return 3;
 }
 
+function parseQueueDate(value?: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime()) || parsed.getUTCFullYear() <= 1) {
+    return null;
+  }
+  return parsed.getTime();
+}
+
+function queueActivityDate(item: PodcastItem): number | null {
+  return (
+    parseQueueDate(item.DownloadDate) ??
+    parseQueueDate(item.UpdatedAt) ??
+    parseQueueDate(item.CreatedAt) ??
+    parseQueueDate(item.PubDate)
+  );
+}
+
+function compareDates(left: PodcastItem, right: PodcastItem, direction: "asc" | "desc"): number {
+  const leftDate = queueActivityDate(left);
+  const rightDate = queueActivityDate(right);
+  if (leftDate === null && rightDate === null) {
+    return 0;
+  }
+  if (leftDate === null) {
+    return 1;
+  }
+  if (rightDate === null) {
+    return -1;
+  }
+  return direction === "asc" ? leftDate - rightDate : rightDate - leftDate;
+}
+
+function compareStrings(left: string | undefined, right: string | undefined, direction: "asc" | "desc"): number {
+  const result = (left || "").localeCompare(right || "", undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+  return direction === "asc" ? result : -result;
+}
+
+function compareProgress(left: PodcastItem, right: PodcastItem, direction: "asc" | "desc"): number {
+  const leftProgress = queueHasKnownTotal(left) ? queueProgressPercent(left) : 0;
+  const rightProgress = queueHasKnownTotal(right) ? queueProgressPercent(right) : 0;
+  return direction === "asc" ? leftProgress - rightProgress : rightProgress - leftProgress;
+}
+
+function tieBreakQueueSort(left: PodcastItem, right: PodcastItem): number {
+  return (
+    queueSortPriority(left) - queueSortPriority(right) ||
+    compareDates(left, right, "desc") ||
+    compareStrings(left.Title, right.Title, "asc")
+  );
+}
+
 const sortedQueueItems = computed(() =>
   [...queueItems.value].sort((left, right) => {
-    const byPriority = queueSortPriority(left) - queueSortPriority(right);
-    if (byPriority !== 0) {
-      return byPriority;
+    let result = 0;
+    switch (queueSort.value) {
+      case "download_date_asc":
+        result = compareDates(left, right, "asc");
+        break;
+      case "title_asc":
+        result = compareStrings(left.Title, right.Title, "asc");
+        break;
+      case "title_desc":
+        result = compareStrings(left.Title, right.Title, "desc");
+        break;
+      case "podcast_asc":
+        result = compareStrings(left.Podcast?.Title, right.Podcast?.Title, "asc");
+        break;
+      case "status":
+        result = queueSortPriority(left) - queueSortPriority(right);
+        break;
+      case "progress_desc":
+        result = compareProgress(left, right, "desc");
+        break;
+      case "progress_asc":
+        result = compareProgress(left, right, "asc");
+        break;
+      case "download_date_desc":
+      default:
+        result = compareDates(left, right, "desc");
+        break;
     }
-    if (isDownloading(left) && isDownloading(right)) {
-      return right.DownloadedBytes - left.DownloadedBytes;
+    if (result !== 0) {
+      return result;
     }
-    return 0;
+    return tieBreakQueueSort(left, right);
   }),
 );
+
+function downloadDateLabel(item: PodcastItem): string {
+  if (parseQueueDate(item.DownloadDate) !== null) {
+    return formatDateTime(item.DownloadDate);
+  }
+  const activityDate = queueActivityDate(item);
+  if (activityDate !== null) {
+    return formatDateTime(new Date(activityDate).toISOString());
+  }
+  return "Unknown";
+}
 
 async function pauseAllDownloads(): Promise<void> {
   infoMessage.value = "";
@@ -256,7 +361,7 @@ onMounted(() => {
   void fetchQueue();
   queueInterval = window.setInterval(() => {
     void fetchQueue();
-  }, 5000);
+  }, QUEUE_REFRESH_MS);
 });
 
 onUnmounted(() => {
@@ -291,15 +396,34 @@ onUnmounted(() => {
       </div>
     </UiAlert>
 
-    <UiCard padding="lg" class="stack-3">
-      <div class="surface-row surface-row--between">
-        <div class="stack-1">
-          <h3 class="section-title">Queue status</h3>
+    <UiCard padding="md" tone="subtle" class="downloads-filters">
+      <div class="downloads-filters__row">
+        <UiSelect
+          :model-value="queueSort"
+          label="Sort"
+          @update:model-value="queueSort = $event as DownloadQueueSort"
+        >
+          <option value="download_date_desc">Download Date (Desc)</option>
+          <option value="download_date_asc">Download Date (Asc)</option>
+          <option value="title_asc">Alphabetical (A-Z)</option>
+          <option value="title_desc">Alphabetical Z-A</option>
+          <option value="podcast_asc">Podcast (A-Z)</option>
+          <option value="status">Status (Active First)</option>
+          <option value="progress_desc">Progress (High-Low)</option>
+          <option value="progress_asc">Progress (Low-High)</option>
+        </UiSelect>
+        <div class="downloads-filters__status">
+          <span class="ui-label">Queue status</span>
           <p class="meta-text">
             Queued {{ queueCounts.queued }} • Downloading {{ queueCounts.downloading }} • Paused {{ queueCounts.paused }} • Downloaded {{ queueCounts.downloaded }}
           </p>
         </div>
-        <div class="queue-toolbar">
+      </div>
+
+      <div class="downloads-filters__footer">
+        <span v-if="queueLoading" class="meta-text">Refreshing downloads...</span>
+        <span v-else class="meta-text">{{ queueItems.length }} {{ queueItems.length === 1 ? "download" : "downloads" }}</span>
+        <div class="downloads-filters__actions">
           <UiButton
             size="sm"
             variant="outline"
@@ -322,7 +446,7 @@ onUnmounted(() => {
           <UiButton
             size="sm"
             variant="ghost"
-            class="queue-toolbar__refresh"
+            class="downloads-filters__refresh"
             aria-label="Refresh queue"
             title="Refresh queue"
             @click="refreshQueue"
@@ -331,88 +455,116 @@ onUnmounted(() => {
           </UiButton>
         </div>
       </div>
+    </UiCard>
 
-      <UiAlert v-if="queueError" tone="danger">
-        {{ queueError }}
-      </UiAlert>
+    <UiAlert v-if="queueError" tone="danger">
+      {{ queueError }}
+    </UiAlert>
 
-      <div v-if="queueLoading && queueItems.length === 0" class="queue-skeleton">
+    <UiCard v-if="queueLoading && queueItems.length === 0" padding="md">
+      <div class="queue-skeleton">
         <div v-for="index in 4" :key="index" class="queue-skeleton__row">
           <span class="skeleton queue-skeleton__line queue-skeleton__line--title"></span>
           <span class="skeleton queue-skeleton__line"></span>
           <span class="skeleton queue-skeleton__line queue-skeleton__line--short"></span>
         </div>
       </div>
+    </UiCard>
 
-      <UiCard v-else-if="queueItems.length === 0" padding="md" tone="subtle" class="empty-state">
-        <p class="empty-state__title">No queued downloads</p>
-        <p class="empty-state__copy">
-          Queue episodes from the Episodes page and progress will appear here.
-        </p>
-      </UiCard>
+    <UiCard v-else-if="queueItems.length === 0" padding="md" tone="subtle" class="empty-state">
+      <p class="empty-state__title">No queued downloads</p>
+      <p class="empty-state__copy">
+        Queue episodes from the Episodes page and progress will appear here.
+      </p>
+    </UiCard>
 
-      <ul v-else class="queue-list">
-        <li
-          v-for="item in sortedQueueItems"
-          :key="item.ID"
-          class="queue-list__row"
-          :class="{
-            'queue-list__row--downloading': isDownloading(item),
-            'queue-list__row--paused': isPaused(item),
-          }"
-        >
-          <div class="queue-list__main">
-            <p class="queue-list__title">{{ item.Title }}</p>
-            <p class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</p>
-            <div v-if="!isPaused(item) && !isDownloaded(item)">
-              <div
-                class="queue-list__progress-track"
-                role="progressbar"
-                :aria-label="`Download progress for ${item.Title}`"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                :aria-valuenow="queueProgressAriaValue(item)"
-                :aria-valuetext="queueProgressAriaText(item)"
-              >
-                <div
-                  class="queue-list__progress-fill"
-                  :class="!queueHasKnownTotal(item) && 'queue-list__progress-fill--unknown'"
-                  :style="queueHasKnownTotal(item) ? { width: `${queueProgressPercent(item)}%` } : undefined"
-                />
-              </div>
-              <p class="meta-text">{{ queueProgressLabel(item) }}</p>
-              <p class="meta-text">{{ queueProgressRemainingLabel(item) }}</p>
-            </div>
-            <p v-else-if="isDownloaded(item)" class="queue-list__completed-note">Download completed.</p>
-            <p v-else class="queue-list__paused-note">Paused. Resume downloads to continue.</p>
-          </div>
-          <div class="queue-list__actions">
-            <UiButton
-              v-if="isPaused(item)"
-              size="sm"
-              variant="success"
-              @click="resumeDownload(item)"
+    <UiCard v-else padding="none">
+      <div class="table-wrap visually-scrollable">
+        <table class="data-table downloads-table">
+          <thead>
+            <tr>
+              <th>Episode</th>
+              <th>Podcast</th>
+              <th>Download Date</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="item in sortedQueueItems"
+              :key="item.ID"
+              :class="{
+                'downloads-table__row--downloading': isDownloading(item),
+                'downloads-table__row--paused': isPaused(item),
+              }"
             >
-              Resume Download
-            </UiButton>
-            <UiBadge v-else :tone="queueStatusTone(item)">
-              {{ queueStatusLabel(item) }}
-            </UiBadge>
-            <UiBadge
-              v-if="transcriptQueueBadge(item).visible"
-              :tone="transcriptQueueBadge(item).tone"
-            >
-              {{ transcriptQueueBadge(item).label }}
-            </UiBadge>
-            <UiButton size="sm" variant="outline" @click="openPlayer(item)">
-              Play
-            </UiButton>
-            <UiButton v-if="!isDownloaded(item)" size="sm" variant="danger" @click="cancelDownload(item)">
-              Stop
-            </UiButton>
-          </div>
-        </li>
-      </ul>
+              <td>
+                <div class="downloads-table__episode">
+                  <p class="downloads-table__title">{{ item.Title }}</p>
+                </div>
+              </td>
+              <td class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
+              <td class="meta-text">{{ downloadDateLabel(item) }}</td>
+              <td>
+                <div class="downloads-table__badges">
+                  <UiBadge :tone="queueStatusTone(item)">
+                    {{ queueStatusLabel(item) }}
+                  </UiBadge>
+                  <UiBadge
+                    v-if="transcriptQueueBadge(item).visible"
+                    :tone="transcriptQueueBadge(item).tone"
+                  >
+                    {{ transcriptQueueBadge(item).label }}
+                  </UiBadge>
+                </div>
+              </td>
+              <td>
+                <div v-if="!isPaused(item) && !isDownloaded(item)" class="downloads-table__progress">
+                  <div
+                    class="downloads-table__progress-track"
+                    role="progressbar"
+                    :aria-label="`Download progress for ${item.Title}`"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    :aria-valuenow="queueProgressAriaValue(item)"
+                    :aria-valuetext="queueProgressAriaText(item)"
+                  >
+                    <div
+                      class="downloads-table__progress-fill"
+                      :class="!queueHasKnownTotal(item) && 'downloads-table__progress-fill--unknown'"
+                      :style="queueHasKnownTotal(item) ? { width: `${queueProgressPercent(item)}%` } : undefined"
+                    />
+                  </div>
+                  <p class="meta-text">{{ queueProgressLabel(item) }}</p>
+                  <p class="meta-text">{{ queueProgressRemainingLabel(item) }}</p>
+                </div>
+                <p v-else-if="isDownloaded(item)" class="downloads-table__completed-note">Download completed.</p>
+                <p v-else class="downloads-table__paused-note">Paused. Resume downloads to continue.</p>
+              </td>
+              <td>
+                <div class="downloads-table__actions">
+                  <UiButton
+                    v-if="isPaused(item)"
+                    size="sm"
+                    variant="success"
+                    @click="resumeDownload(item)"
+                  >
+                    Resume Download
+                  </UiButton>
+                  <UiButton size="sm" variant="outline" @click="openPlayer(item)">
+                    Play
+                  </UiButton>
+                  <UiButton v-if="!isDownloaded(item)" size="sm" variant="danger" @click="cancelDownload(item)">
+                    Stop
+                  </UiButton>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </UiCard>
 
     <UiDialog
@@ -438,13 +590,44 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 
-.queue-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+.downloads-filters {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.downloads-filters__row {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.downloads-filters__status {
+  display: grid;
+  align-content: end;
   gap: var(--space-2);
 }
 
-.queue-toolbar__refresh {
+.downloads-filters__status .meta-text {
+  margin: 0;
+}
+
+.downloads-filters__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.downloads-filters__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.downloads-filters__refresh {
   min-width: 40px;
   padding-inline: var(--space-2);
   font-size: 18px;
@@ -474,86 +657,76 @@ onUnmounted(() => {
   width: 42%;
 }
 
-.queue-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--space-2);
+.downloads-table {
+  min-width: 1120px;
 }
 
-.queue-list__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
+.downloads-table__row--downloading {
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 
-.queue-list__row--downloading {
-  border-left: 3px solid var(--color-accent);
+.downloads-table__row--paused {
+  background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-primary));
 }
 
-.queue-list__row--paused {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-secondary));
+.downloads-table__episode {
+  min-width: 320px;
 }
 
-.queue-list__main {
-  min-width: min(100%, 240px);
-  flex: 1;
-}
-
-.queue-list__title {
+.downloads-table__title {
   margin: 0;
   color: var(--color-text-primary);
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-line-height);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.queue-list__actions {
+.downloads-table__badges,
+.downloads-table__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
 
-.queue-list__progress-track {
-  margin-top: var(--space-2);
-  width: 100%;
+.downloads-table__actions {
+  min-width: 220px;
+}
+
+.downloads-table__progress {
+  min-width: 180px;
+}
+
+.downloads-table__progress-track {
+  width: 180px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-hover);
   overflow: hidden;
 }
 
-.queue-list__progress-fill {
+.downloads-table__progress-fill {
   height: 100%;
   border-radius: inherit;
   background: var(--color-accent);
 }
 
-.queue-list__progress-fill--unknown {
+.downloads-table__progress-fill--unknown {
   width: 50%;
   animation: pulse-track 1.2s infinite ease-in-out;
 }
 
-.queue-list__paused-note {
-  margin: var(--space-2) 0 0;
+.downloads-table__paused-note {
+  margin: 0;
   color: var(--color-warning);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line-height);
   font-weight: 600;
 }
 
-.queue-list__completed-note {
-  margin: var(--space-2) 0 0;
+.downloads-table__completed-note {
+  margin: 0;
   color: var(--color-success);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line-height);
@@ -580,6 +753,12 @@ onUnmounted(() => {
   }
   50% {
     opacity: 0.85;
+  }
+}
+
+@media (min-width: 768px) {
+  .downloads-filters__row {
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
   }
 }
 </style>

@@ -172,7 +172,7 @@ func GetBackfillSummariesStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
 }
 
-// ExportAll exports all existing transcripts and summaries to text files.
+// ExportAll exports all existing transcripts and summaries to text and markdown files.
 func ExportAll(c *gin.Context) {
 	if service.GetExportAllRunning() {
 		c.JSON(http.StatusConflict, gin.H{"error": "export is already running"})

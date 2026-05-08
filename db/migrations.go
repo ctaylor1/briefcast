@@ -204,6 +204,18 @@ where id in (
 		Name:  "2026_05_01_01_02_BackfillInitialDownloadMode",
 		Query: "update settings set initial_download_mode = 'count' where initial_download_mode is null or initial_download_mode = ''",
 	},
+	{
+		Name:  "2026_05_03_01_00_AddPodcastItemsSummaryListIndex",
+		Query: "create index if not exists idx_podcast_items_summary_list on podcast_items(llm_summary_status, pub_date)",
+	},
+	{
+		Name:  "2026_05_03_01_01_AddPodcastItemsDownloadQueueIndex",
+		Query: "create index if not exists idx_podcast_items_download_queue on podcast_items(download_status, download_date, created_at)",
+	},
+	{
+		Name:  "2026_05_03_01_02_AddPodcastItemsPodcastPubDateIndex",
+		Query: "create index if not exists idx_podcast_items_podcast_pub_date on podcast_items(podcast_id, pub_date)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

@@ -506,7 +506,7 @@ json.dump(payload, sys.stdout)
 	if ep1.TranscriptStatus != "available" || !strings.Contains(ep1.TranscriptJSON, "hello transcript") {
 		t.Fatalf("expected ep-1 transcript to be available with fetched content, got status=%q json=%s", ep1.TranscriptStatus, ep1.TranscriptJSON)
 	}
-	transcriptPath := filepath.Join(os.Getenv("DATA"), "transcripts", "Coverage Feed", "Episode 1.txt")
+	transcriptPath := filepath.Join(os.Getenv("DATA"), "transcripts", "Coverage Feed", "2024-01-01-2-Episode 1.txt")
 	if got, err := os.ReadFile(transcriptPath); err != nil || string(got) != "hello transcript" {
 		t.Fatalf("expected transcript export at %q, got content=%q err=%v", transcriptPath, string(got), err)
 	}
@@ -516,7 +516,7 @@ json.dump(payload, sys.stdout)
 	if ep1.LLMSummary != "Executive summary from feed transcript" {
 		t.Fatalf("expected ep-1 LLM summary from stub response, got %q", ep1.LLMSummary)
 	}
-	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", "Episode 1.txt")
+	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", "2024-01-01-2-Episode 1.txt")
 	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != "Executive summary from feed transcript" {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}

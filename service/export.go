@@ -1,9 +1,11 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -13,6 +15,22 @@ import (
 )
 
 var exportAllRunning atomic.Bool
+
+type exportVariant struct {
+	dir       string
+	extension string
+}
+
+var (
+	transcriptExportVariants = []exportVariant{
+		{dir: assetTranscriptDir, extension: ".txt"},
+		{dir: assetMarkdownTranscriptDir, extension: ".md"},
+	}
+	summaryExportVariants = []exportVariant{
+		{dir: assetSummariesDir, extension: ".txt"},
+		{dir: assetMarkdownSummariesDir, extension: ".md"},
+	}
+)
 
 func resolveExportDir() string {
 	return resolveAssetsDir()
@@ -40,6 +58,31 @@ func writeExportFile(dir, content string) error {
 	return os.WriteFile(dir, []byte(content), 0o644)
 }
 
+func writeExportVariantFiles(exportDir string, variants []exportVariant, podcast string, episode string, content string) error {
+	var errs []error
+	for _, variant := range variants {
+		path := filepath.Join(exportDir, variant.dir, podcast, episode+variant.extension)
+		if err := writeExportFile(path, content); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func exportEpisodeFileName(item *db.PodcastItem) string {
+	parts := make([]string, 0, 3)
+	if !item.PubDate.IsZero() {
+		parts = append(parts, item.PubDate.Format("2006-01-02"))
+	}
+	if item.ID != "" && item.PodcastID != "" {
+		if seq, err := db.GetEpisodeNumber(item.ID, item.PodcastID); err == nil && seq > 0 {
+			parts = append(parts, strconv.Itoa(seq))
+		}
+	}
+	parts = append(parts, item.Title)
+	return sanitizeAssetName(strings.Join(parts, "-"))
+}
+
 func ExportTranscript(item *db.PodcastItem) {
 	exportDir := resolveExportDir()
 	if exportDir == "" {
@@ -51,12 +94,11 @@ func ExportTranscript(item *db.PodcastItem) {
 	}
 
 	podcast := sanitizeAssetName(podcastTitle(item))
-	episode := sanitizeAssetName(item.Title)
-	path := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
+	episode := exportEpisodeFileName(item)
 
-	if err := writeExportFile(path, transcript); err != nil {
+	if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, transcript); err != nil {
 		logger := logging.Sugar()
-		logger.Warnw("failed to export transcript", "podcast_item_id", item.ID, "path", path, "error", err)
+		logger.Warnw("failed to export transcript", "podcast_item_id", item.ID, "error", err)
 	}
 }
 
@@ -76,10 +118,9 @@ func exportCanonicalBackfillBatch(updates []canonicalBackfillUpdate) {
 			continue
 		}
 		podcast := sanitizeAssetName(podcastTitle(&item))
-		episode := sanitizeAssetName(item.Title)
-		path := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
-		if err := writeExportFile(path, update.CanonicalTranscript); err != nil {
-			logger.Warnw("failed to export backfill transcript", "podcast_item_id", update.ID, "path", path, "error", err)
+		episode := exportEpisodeFileName(&item)
+		if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, update.CanonicalTranscript); err != nil {
+			logger.Warnw("failed to export backfill transcript", "podcast_item_id", update.ID, "error", err)
 		}
 	}
 }
@@ -127,12 +168,11 @@ func ExportAll() (transcripts int, summaries int, err error) {
 			name = "Unknown Podcast"
 		}
 		podcast := sanitizeAssetName(name)
-		episode := sanitizeAssetName(item.Title)
+		episode := exportEpisodeFileName(item)
 
 		ct := exportableCanonicalTranscript(item)
 		if ct != "" {
-			p := filepath.Join(exportDir, assetTranscriptDir, podcast, episode+".txt")
-			if writeErr := writeExportFile(p, ct); writeErr != nil {
+			if writeErr := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, ct); writeErr != nil {
 				logger.Warnw("export_all transcript failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
 				transcripts++
@@ -146,8 +186,7 @@ func ExportAll() (transcripts int, summaries int, err error) {
 			}
 		}
 		if s := strings.TrimSpace(item.LLMSummary); s != "" {
-			p := filepath.Join(exportDir, assetSummariesDir, podcast, episode+".txt")
-			if writeErr := writeExportFile(p, s); writeErr != nil {
+			if writeErr := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, episode, s); writeErr != nil {
 				logger.Warnw("export_all summary failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
 				summaries++
@@ -193,11 +232,10 @@ func ExportSummary(item *db.PodcastItem) {
 	}
 
 	podcast := sanitizeAssetName(podcastTitle(item))
-	episode := sanitizeAssetName(item.Title)
-	path := filepath.Join(exportDir, assetSummariesDir, podcast, episode+".txt")
+	episode := exportEpisodeFileName(item)
 
-	if err := writeExportFile(path, summary); err != nil {
+	if err := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, episode, summary); err != nil {
 		logger := logging.Sugar()
-		logger.Warnw("failed to export summary", "podcast_item_id", item.ID, "path", path, "error", err)
+		logger.Warnw("failed to export summary", "podcast_item_id", item.ID, "error", err)
 	}
 }

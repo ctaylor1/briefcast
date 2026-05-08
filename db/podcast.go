@@ -221,6 +221,12 @@ type PodcastItemDiskStatsModel struct {
 	Size           int64
 }
 
+// PodcastItemStatusCountModel represents counts grouped only by download status.
+type PodcastItemStatusCountModel struct {
+	DownloadStatus DownloadStatus
+	Count          int
+}
+
 // PodcastItemConsolidateDiskStatsModel represents a public type.
 type PodcastItemConsolidateDiskStatsModel struct {
 	Downloaded      int64
