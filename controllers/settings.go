@@ -178,6 +178,16 @@ func GetBackfillSummariesStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
 }
 
+// GetSummaryModels returns the distinct LLM models that have been used to generate summaries.
+func GetSummaryModels(c *gin.Context) {
+	models, err := db.GetDistinctSummaryModels()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load summary models"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
 // ResummarizeSummaries regenerates summaries for episodes matching filter criteria.
 func ResummarizeSummaries(c *gin.Context) {
 	if service.GetSummaryBackfillRunning() {

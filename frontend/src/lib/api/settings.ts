@@ -17,4 +17,7 @@ export const settingsApi = {
   resummarize(filter: ResummarizeFilter): Promise<ResummarizeResult> {
     return httpClient.post("/settings/resummarize", filter);
   },
+  getSummaryModels(): Promise<{ models: string[] }> {
+    return httpClient.get("/settings/summary-models");
+  },
 };

@@ -58,10 +58,17 @@ func writeExportFile(dir, content string) error {
 	return os.WriteFile(dir, []byte(content), 0o644)
 }
 
-func writeExportVariantFiles(exportDir string, variants []exportVariant, podcast string, episode string, content string) error {
+func pubDateSubdir(pubDate time.Time) string {
+	if pubDate.IsZero() {
+		return ""
+	}
+	return filepath.Join(pubDate.Format("2006"), pubDate.Format("2006-01"))
+}
+
+func writeExportVariantFiles(exportDir string, variants []exportVariant, podcast string, dateSub string, episode string, content string) error {
 	var errs []error
 	for _, variant := range variants {
-		path := filepath.Join(exportDir, variant.dir, podcast, episode+variant.extension)
+		path := filepath.Join(exportDir, variant.dir, podcast, dateSub, episode+variant.extension)
 		if err := writeExportFile(path, content); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", path, err))
 		}
@@ -96,7 +103,7 @@ func ExportTranscript(item *db.PodcastItem) {
 	podcast := sanitizeAssetName(podcastTitle(item))
 	episode := exportEpisodeFileName(item)
 
-	if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, transcript); err != nil {
+	if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, pubDateSubdir(item.PubDate), episode, transcript); err != nil {
 		logger := logging.Sugar()
 		logger.Warnw("failed to export transcript", "podcast_item_id", item.ID, "error", err)
 	}
@@ -119,7 +126,7 @@ func exportCanonicalBackfillBatch(updates []canonicalBackfillUpdate) {
 		}
 		podcast := sanitizeAssetName(podcastTitle(&item))
 		episode := exportEpisodeFileName(&item)
-		if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, update.CanonicalTranscript); err != nil {
+		if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, pubDateSubdir(item.PubDate), episode, update.CanonicalTranscript); err != nil {
 			logger.Warnw("failed to export backfill transcript", "podcast_item_id", update.ID, "error", err)
 		}
 	}
@@ -171,8 +178,9 @@ func ExportAll() (transcripts int, summaries int, err error) {
 		episode := exportEpisodeFileName(item)
 
 		ct := exportableCanonicalTranscript(item)
+		dateSub := pubDateSubdir(item.PubDate)
 		if ct != "" {
-			if writeErr := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, episode, ct); writeErr != nil {
+			if writeErr := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, dateSub, episode, ct); writeErr != nil {
 				logger.Warnw("export_all transcript failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
 				transcripts++
@@ -186,7 +194,7 @@ func ExportAll() (transcripts int, summaries int, err error) {
 			}
 		}
 		if s := strings.TrimSpace(item.LLMSummary); s != "" {
-			if writeErr := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, episode, s); writeErr != nil {
+			if writeErr := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, dateSub, episode, s); writeErr != nil {
 				logger.Warnw("export_all summary failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
 				summaries++
@@ -234,7 +242,7 @@ func ExportSummary(item *db.PodcastItem) {
 	podcast := sanitizeAssetName(podcastTitle(item))
 	episode := exportEpisodeFileName(item)
 
-	if err := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, episode, summary); err != nil {
+	if err := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, pubDateSubdir(item.PubDate), episode, summary); err != nil {
 		logger := logging.Sugar()
 		logger.Warnw("failed to export summary", "podcast_item_id", item.ID, "error", err)
 	}

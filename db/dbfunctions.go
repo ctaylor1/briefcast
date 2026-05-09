@@ -363,6 +363,17 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 	return &items, total, result.Error
 }
 
+// GetDistinctSummaryModels returns the unique LLM model names used across all summaries.
+func GetDistinctSummaryModels() ([]string, error) {
+	var models []string
+	result := DB.Model(&PodcastItem{}).
+		Where("llm_summary_model IS NOT NULL AND llm_summary_model <> ''").
+		Distinct("llm_summary_model").
+		Order("llm_summary_model").
+		Pluck("llm_summary_model", &models)
+	return models, result.Error
+}
+
 // SetSummaryFavorited toggles the is_summary_favorited flag on a podcast item.
 func SetSummaryFavorited(id string, favorited bool) error {
 	return DB.Model(&PodcastItem{}).Where("id = ?", id).Update("is_summary_favorited", favorited).Error
