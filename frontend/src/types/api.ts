@@ -154,8 +154,10 @@ export interface AppSettings {
   deleteAfterDays: number;
   deleteOnlyPlayed: boolean;
   summarizationEnabled: boolean;
+  summarizationModel: string;
   summarizationPrompt: string;
   summarizationUserPrompt: string;
+  defaultModel: string;
   defaultSystemPrompt: string;
   defaultUserPrompt: string;
   themeMode: string;
@@ -192,6 +194,19 @@ export interface SummaryListItem {
   isPlayed: boolean;
   hasSummary: boolean;
   isFavorited: boolean;
+}
+
+export interface ResummarizeFilter {
+  model?: string;
+  before?: string;
+  podcastId?: string;
+  dryRun?: boolean;
+}
+
+export interface ResummarizeResult {
+  total: number;
+  succeeded?: number;
+  failed?: number;
 }
 
 export interface SummariesFilter {

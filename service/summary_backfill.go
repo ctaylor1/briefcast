@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
@@ -44,6 +45,7 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 	}
 
 	setting := db.GetOrCreateSetting()
+	cfg.Model = ResolveSummarizationModel(setting, cfg)
 	prompt := ResolveSummarizationPrompt(setting, cfg)
 	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
 
@@ -83,4 +85,94 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 
 	logger.Infow("summary backfill finished", "succeeded", succeeded, "failed", failed, "total", total)
 	return succeeded, failed, nil
+}
+
+// ResummarizeFilter controls which existing summaries are regenerated.
+type ResummarizeFilter struct {
+	Model     string     `json:"model"`
+	Before    *time.Time `json:"before"`
+	PodcastID string     `json:"podcastId"`
+	DryRun    bool       `json:"dryRun"`
+}
+
+// ResummarizeResult contains the outcome of a re-summarize operation.
+type ResummarizeResult struct {
+	Total     int `json:"total"`
+	Succeeded int `json:"succeeded"`
+	Failed    int `json:"failed"`
+}
+
+// ResummarizeSummaries regenerates summaries for episodes matching the given
+// filter criteria. Shares the backfill mutex so only one batch job runs at a time.
+func ResummarizeSummaries(filter ResummarizeFilter, progressFn func(status SummaryBackfillStatus)) (ResummarizeResult, error) {
+	if !summaryBackfillRunning.CompareAndSwap(false, true) {
+		return ResummarizeResult{}, fmt.Errorf("a summary job is already running")
+	}
+	defer summaryBackfillRunning.Store(false)
+
+	logger := logging.Sugar()
+
+	cfg := LoadLLMConfig()
+	if !cfg.Enabled {
+		return ResummarizeResult{}, fmt.Errorf("LLM summarization is not enabled (set LLM_ENABLED=true)")
+	}
+	if cfg.APIKey == "" {
+		return ResummarizeResult{}, fmt.Errorf("LLM_API_KEY is not configured")
+	}
+
+	setting := db.GetOrCreateSetting()
+	cfg.Model = ResolveSummarizationModel(setting, cfg)
+	prompt := ResolveSummarizationPrompt(setting, cfg)
+	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
+
+	query := db.DB.
+		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
+		Where("llm_summary_status = ?", "available")
+
+	if filter.Model != "" {
+		query = query.Where("llm_summary_model = ?", filter.Model)
+	}
+	if filter.Before != nil {
+		query = query.Where("llm_summary_date < ?", *filter.Before)
+	}
+	if filter.PodcastID != "" {
+		query = query.Where("podcast_id = ?", filter.PodcastID)
+	}
+
+	var items []db.PodcastItem
+	result := query.Order("pub_date DESC").Find(&items)
+	if result.Error != nil {
+		return ResummarizeResult{}, fmt.Errorf("query failed: %w", result.Error)
+	}
+
+	total := len(items)
+
+	if filter.DryRun {
+		return ResummarizeResult{Total: total}, nil
+	}
+
+	logger.Infow("re-summarize starting", "episodes", total, "filter_model", filter.Model, "target_model", cfg.Model)
+
+	var succeeded, failed int
+	for i := range items {
+		if progressFn != nil {
+			progressFn(SummaryBackfillStatus{
+				Running:   true,
+				Total:     total,
+				Completed: succeeded + failed,
+				Failed:    failed,
+			})
+		}
+
+		if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
+			logger.Warnw("re-summarize failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
+			failed++
+		} else {
+			logger.Infow("re-summarize complete", "episode_id", items[i].ID, "title", items[i].Title)
+			succeeded++
+		}
+	}
+
+	logger.Infow("re-summarize finished", "succeeded", succeeded, "failed", failed, "total", total)
+	return ResummarizeResult{Total: total, Succeeded: succeeded, Failed: failed}, nil
 }

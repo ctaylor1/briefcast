@@ -23,9 +23,11 @@ type SettingsResponse struct {
 	AutoDownload          bool   `json:"autoDownload"`
 	// Summarization
 	SummarizationEnabled    bool   `json:"summarizationEnabled"`
+	SummarizationModel      string `json:"summarizationModel"`
 	SummarizationPrompt     string `json:"summarizationPrompt"`
 	SummarizationUserPrompt string `json:"summarizationUserPrompt"`
 	// Read-only defaults so the UI can show placeholders.
+	DefaultModel        string `json:"defaultModel"`
 	DefaultSystemPrompt string `json:"defaultSystemPrompt"`
 	DefaultUserPrompt   string `json:"defaultUserPrompt"`
 	// Appearance
@@ -50,6 +52,7 @@ type SettingsPatch struct {
 	AutoDownload          *bool   `json:"autoDownload"`
 	// Summarization
 	SummarizationEnabled    *bool   `json:"summarizationEnabled"`
+	SummarizationModel      *string `json:"summarizationModel"`
 	SummarizationPrompt     *string `json:"summarizationPrompt"`
 	SummarizationUserPrompt *string `json:"summarizationUserPrompt"`
 	// Appearance
@@ -125,6 +128,9 @@ func PatchSettings(c *gin.Context) {
 	if patch.SummarizationEnabled != nil {
 		setting.SummarizationEnabled = *patch.SummarizationEnabled
 	}
+	if patch.SummarizationModel != nil {
+		setting.SummarizationModel = *patch.SummarizationModel
+	}
 	if patch.SummarizationPrompt != nil {
 		setting.SummarizationPrompt = *patch.SummarizationPrompt
 	}
@@ -172,6 +178,36 @@ func GetBackfillSummariesStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
 }
 
+// ResummarizeSummaries regenerates summaries for episodes matching filter criteria.
+func ResummarizeSummaries(c *gin.Context) {
+	if service.GetSummaryBackfillRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "a summary job is already running"})
+		return
+	}
+
+	var filter service.ResummarizeFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if filter.DryRun {
+		result, err := service.ResummarizeSummaries(filter, nil)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	go func() {
+		service.ResummarizeSummaries(filter, nil)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "re-summarize started"})
+}
+
 // ExportAll exports all existing transcripts and summaries to text and markdown files.
 func ExportAll(c *gin.Context) {
 	if service.GetExportAllRunning() {
@@ -204,8 +240,10 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		InitialDownloadMonths:   setting.InitialDownloadMonths,
 		AutoDownload:            setting.AutoDownload,
 		SummarizationEnabled:    setting.SummarizationEnabled,
+		SummarizationModel:      setting.SummarizationModel,
 		SummarizationPrompt:     setting.SummarizationPrompt,
 		SummarizationUserPrompt: setting.SummarizationUserPrompt,
+		DefaultModel:            cfg.Model,
 		DefaultSystemPrompt:     cfg.DefaultPrompt,
 		DefaultUserPrompt:       cfg.DefaultUserPrompt,
 		ThemeMode:               setting.ThemeMode,

@@ -205,6 +205,10 @@ where id in (
 		Query: "update settings set initial_download_mode = 'count' where initial_download_mode is null or initial_download_mode = ''",
 	},
 	{
+		Name:  "2026_05_08_01_00_AddSummarizationModel",
+		Query: "alter table settings add column if not exists summarization_model text",
+	},
+	{
 		Name:  "2026_05_03_01_00_AddPodcastItemsSummaryListIndex",
 		Query: "create index if not exists idx_podcast_items_summary_list on podcast_items(llm_summary_status, pub_date)",
 	},

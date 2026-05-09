@@ -157,6 +157,7 @@ type Setting struct {
 
 	// LLM summarization settings (user-configurable from the UI).
 	SummarizationEnabled    bool   `gorm:"default:false"`
+	SummarizationModel      string `gorm:"type:text"`
 	SummarizationPrompt     string `gorm:"type:text"`
 	SummarizationUserPrompt string `gorm:"type:text"`
 

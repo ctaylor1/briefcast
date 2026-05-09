@@ -28,6 +28,7 @@ type BackCatalogForm = {
 
 type SummarizationForm = {
   summarizationEnabled: boolean;
+  summarizationModel: string;
   summarizationPrompt: string;
   summarizationUserPrompt: string;
 };
@@ -48,8 +49,13 @@ const isSavingBackCatalog = ref(false);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
+const defaultModel = ref("");
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
+const isResummarizing = ref(false);
+const resummarizeModelFilter = ref("");
+const resummarizeBeforeDate = ref("");
+const resummarizeDryRunCount = ref<number | null>(null);
 const {
   errorMessage,
   successMessage,
@@ -76,6 +82,7 @@ const backCatalogForm = ref<BackCatalogForm>({
 
 const summarizationForm = ref<SummarizationForm>({
   summarizationEnabled: false,
+  summarizationModel: "",
   summarizationPrompt: "",
   summarizationUserPrompt: "",
 });
@@ -121,9 +128,11 @@ async function loadSettings(): Promise<void> {
     backCatalogForm.value = mapToBackCatalogForm(settings);
     summarizationForm.value = {
       summarizationEnabled: settings.summarizationEnabled,
+      summarizationModel: settings.summarizationModel ?? "",
       summarizationPrompt: settings.summarizationPrompt ?? "",
       summarizationUserPrompt: settings.summarizationUserPrompt ?? "",
     };
+    defaultModel.value = settings.defaultModel ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
   } catch (error) {
@@ -178,11 +187,13 @@ async function saveSummarizationSettings(): Promise<void> {
   try {
     const updated = await settingsApi.update({
       summarizationEnabled: summarizationForm.value.summarizationEnabled,
+      summarizationModel: summarizationForm.value.summarizationModel,
       summarizationPrompt: summarizationForm.value.summarizationPrompt,
       summarizationUserPrompt: summarizationForm.value.summarizationUserPrompt,
     });
     summarizationForm.value = {
       summarizationEnabled: updated.summarizationEnabled,
+      summarizationModel: updated.summarizationModel ?? "",
       summarizationPrompt: updated.summarizationPrompt ?? "",
       summarizationUserPrompt: updated.summarizationUserPrompt ?? "",
     };
@@ -243,6 +254,36 @@ async function saveAppearanceSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to update appearance settings."));
   } finally {
     isSavingAppearance.value = false;
+  }
+}
+
+async function resummarizeDryRun(): Promise<void> {
+  clearAll();
+  try {
+    const filter: Record<string, unknown> = { dryRun: true };
+    if (resummarizeModelFilter.value) filter.model = resummarizeModelFilter.value;
+    if (resummarizeBeforeDate.value) filter.before = new Date(resummarizeBeforeDate.value).toISOString();
+    const result = await settingsApi.resummarize(filter as import("../types/api").ResummarizeFilter);
+    resummarizeDryRunCount.value = result.total;
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to preview re-summarize."));
+  }
+}
+
+async function startResummarize(): Promise<void> {
+  isResummarizing.value = true;
+  clearAll();
+  resummarizeDryRunCount.value = null;
+  try {
+    const filter: Record<string, unknown> = {};
+    if (resummarizeModelFilter.value) filter.model = resummarizeModelFilter.value;
+    if (resummarizeBeforeDate.value) filter.before = new Date(resummarizeBeforeDate.value).toISOString();
+    await settingsApi.resummarize(filter as import("../types/api").ResummarizeFilter);
+    setSuccess("Re-summarize job started. Summaries will be regenerated in the background.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to start re-summarize."));
+  } finally {
+    isResummarizing.value = false;
   }
 }
 
@@ -527,6 +568,21 @@ onMounted(loadSettings);
       </label>
 
       <div class="stack-1">
+        <label class="settings-label" for="summarization-model">Model</label>
+        <input
+          id="summarization-model"
+          v-model="summarizationForm.summarizationModel"
+          type="text"
+          class="ui-input"
+          :disabled="!summarizationForm.summarizationEnabled"
+          :placeholder="defaultModel || 'gpt-4o-mini'"
+        />
+        <p class="meta-text">
+          The LLM model to use for summarization. Leave blank to use the default from your .env configuration{{ defaultModel ? ` (${defaultModel})` : '' }}.
+        </p>
+      </div>
+
+      <div class="stack-1">
         <label class="settings-label" for="summarization-system-prompt">System prompt</label>
         <textarea
           id="summarization-system-prompt"
@@ -564,6 +620,60 @@ onMounted(loadSettings);
         <UiButton :disabled="isSavingSummarization" @click="saveSummarizationSettings">
           {{ isSavingSummarization ? "Saving..." : "Save summarization settings" }}
         </UiButton>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="stack-2">
+        <h4 class="settings-section-subtitle">Re-summarize existing summaries</h4>
+        <p class="meta-text">
+          Regenerate summaries using the current model and prompts. Use filters to target
+          summaries generated by a specific model or before a certain date.
+        </p>
+      </div>
+
+      <div class="surface-grid surface-grid--2">
+        <div class="stack-1">
+          <label class="settings-label" for="resummarize-model">Generated by model</label>
+          <input
+            id="resummarize-model"
+            v-model="resummarizeModelFilter"
+            type="text"
+            class="ui-input"
+            :disabled="!summarizationForm.summarizationEnabled"
+            placeholder="e.g. gpt-4o-mini (leave blank for all)"
+          />
+        </div>
+
+        <div class="stack-1">
+          <label class="settings-label" for="resummarize-before">Generated before</label>
+          <input
+            id="resummarize-before"
+            v-model="resummarizeBeforeDate"
+            type="date"
+            class="ui-input"
+            :disabled="!summarizationForm.summarizationEnabled"
+          />
+        </div>
+      </div>
+
+      <div class="surface-row resummarize-actions">
+        <UiButton
+          :disabled="!summarizationForm.summarizationEnabled"
+          variant="secondary"
+          @click="resummarizeDryRun"
+        >
+          Preview
+        </UiButton>
+        <UiButton
+          :disabled="!summarizationForm.summarizationEnabled || isResummarizing"
+          @click="startResummarize"
+        >
+          {{ isResummarizing ? "Starting..." : "Re-summarize" }}
+        </UiButton>
+        <p v-if="resummarizeDryRunCount !== null" class="meta-text">
+          {{ resummarizeDryRunCount }} {{ resummarizeDryRunCount === 1 ? 'summary' : 'summaries' }} will be regenerated.
+        </p>
       </div>
     </UiCard>
   </section>
@@ -642,5 +752,24 @@ onMounted(loadSettings);
 
 .settings-skeleton-line--short {
   width: 60%;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0;
+}
+
+.settings-section-subtitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-card-title-size);
+  line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.resummarize-actions {
+  flex-wrap: wrap;
+  align-items: center;
 }
 </style>

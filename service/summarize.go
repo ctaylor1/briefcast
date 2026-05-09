@@ -38,7 +38,7 @@ Additional rules:
 - If the transcript does not contain enough information for a requested section, omit that section rather than padding.
 - Ignore advertisements, sponsor reads, affiliate promotions, and paid endorsements unless they are directly relevant to the substance of the discussion.`
 
-const defaultUserPrompt = "Read the following podcast transcript and produce a structured summary using the rules from your system instructions.
+const defaultUserPrompt = `Read the following podcast transcript and produce a structured summary using the rules from your system instructions.
 
 Keep the total response under 650 words.
 
@@ -81,7 +81,9 @@ Output format:
 9. Top Quotes:
    - The top 1–3 short quotes that are memorable, strategically useful, or customer-relevant.
 
-Transcript:\n\n"
+Transcript:
+
+`
 
 const maxTranscriptChars = 200000
 
@@ -136,6 +138,17 @@ type openAIChatResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// ResolveSummarizationModel returns the effective model: DB setting if non-empty,
+// otherwise the env var default from LLMConfig.
+func ResolveSummarizationModel(setting *db.Setting, cfg LLMConfig) string {
+	if setting != nil {
+		if model := strings.TrimSpace(setting.SummarizationModel); model != "" {
+			return model
+		}
+	}
+	return cfg.Model
 }
 
 // ResolveSummarizationPrompt returns the effective system prompt: DB setting if non-empty,
