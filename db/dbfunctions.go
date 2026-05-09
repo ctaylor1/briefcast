@@ -494,6 +494,35 @@ func UpdatePodcastItem(podcastItem *PodcastItem) error {
 	return tx.Error
 }
 
+// CreateShowNoteLinks batch-inserts show note links.
+func CreateShowNoteLinks(links []ShowNoteLink) error {
+	if len(links) == 0 {
+		return nil
+	}
+	tx := DB.Create(&links)
+	return tx.Error
+}
+
+// GetShowNoteLinksByPodcastItemID returns all links for an episode.
+func GetShowNoteLinksByPodcastItemID(podcastItemID string) ([]ShowNoteLink, error) {
+	var links []ShowNoteLink
+	result := DB.Where("podcast_item_id = ?", podcastItemID).Order("position asc").Find(&links)
+	return links, result.Error
+}
+
+// GetShowNoteLinksByPodcastID returns all links for a podcast.
+func GetShowNoteLinksByPodcastID(podcastID string) ([]ShowNoteLink, error) {
+	var links []ShowNoteLink
+	result := DB.Where("podcast_id = ?", podcastID).Order("position asc").Find(&links)
+	return links, result.Error
+}
+
+// DeleteShowNoteLinksByPodcastItemID removes all links for an episode.
+func DeleteShowNoteLinksByPodcastItemID(podcastItemID string) error {
+	result := DB.Where("podcast_item_id = ?", podcastItemID).Delete(&ShowNoteLink{})
+	return result.Error
+}
+
 // UpdateSettings handles the corresponding operation.
 func UpdateSettings(setting *Setting) error {
 	tx := DB.Save(&setting)

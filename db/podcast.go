@@ -116,6 +116,17 @@ type PodcastItem struct {
 	IsSummaryFavorited bool `gorm:"default:false"`
 }
 
+// ShowNoteLink represents a link extracted from episode show notes.
+type ShowNoteLink struct {
+	Base
+	PodcastItemID string `gorm:"index;not null"`
+	PodcastID     string `gorm:"index;not null"`
+	URL           string `gorm:"type:text;not null"`
+	Title         string `gorm:"type:text"`
+	Domain        string `gorm:"index"`
+	Position      int
+}
+
 // DownloadStatus represents a public type.
 type DownloadStatus int
 

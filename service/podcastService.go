@@ -463,6 +463,22 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				}
 				continue
 			}
+			if linkData := feedmeta.ExtractShowNoteLinks(showNotesHTML, showNotesText); len(linkData) > 0 {
+				links := make([]db.ShowNoteLink, len(linkData))
+				for li, ld := range linkData {
+					links[li] = db.ShowNoteLink{
+						PodcastItemID: podcastItem.ID,
+						PodcastID:     podcast.ID,
+						URL:           ld.URL,
+						Title:         ld.Title,
+						Domain:        ld.Domain,
+						Position:      ld.Position,
+					}
+				}
+				if linkErr := db.CreateShowNoteLinks(links); linkErr != nil {
+					Logger.Warnw("failed to persist show note links", "podcast_item_id", podcastItem.ID, "error", linkErr)
+				}
+			}
 			if transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
 				ExportTranscript(&podcastItem)
 			}

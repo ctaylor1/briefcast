@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { marked } from "marked";
+import { sanitizeHtml } from "../lib/sanitize";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
@@ -340,7 +341,7 @@ function renderMarkdown(text: string): void {
   };
 
   const html = marked.parse(normalizeSummaryMarkdown(text), { renderer, async: false }) as string;
-  readerSummaryHtml.value = html;
+  readerSummaryHtml.value = sanitizeHtml(html);
   readerTocItems.value = toc;
 }
 

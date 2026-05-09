@@ -133,7 +133,7 @@ func TestBuildRouterWithPassword(t *testing.T) {
 func TestRegisterRoutesPlayerRedirect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	registerRoutes(engine, &engine.RouterGroup, t.TempDir(), "/backups")
+	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
 
 	req := httptest.NewRequest(http.MethodGet, "/player?foo=bar", nil)
 	resp := httptest.NewRecorder()

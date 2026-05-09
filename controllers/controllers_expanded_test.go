@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,16 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
-
-var wsDispatcherOnce sync.Once
-
-func startWebsocketDispatcher() {
-	wsDispatcherOnce.Do(func() {
-		go HandleWebsocketMessages()
-		// Allow the goroutine to start its read loop before broadcasting.
-		time.Sleep(25 * time.Millisecond)
-	})
-}
 
 type mockSearchService struct {
 	result []*model.CommonSearchResultModel
@@ -118,7 +107,7 @@ func makeExpandedRouter(t *testing.T) *gin.Engine {
 
 	router.POST("/settings", UpdateSetting)
 	router.GET("/rss", GetRss)
-	router.GET("/ws", Wshandler)
+	router.GET("/ws", DefaultHub.Handler)
 
 	return router
 }
@@ -570,13 +559,12 @@ func TestControllerHelpers(t *testing.T) {
 
 // TestHandleWebsocketMessagesWithoutConnections handles the corresponding operation.
 func TestHandleWebsocketMessagesWithoutConnections(t *testing.T) {
-	activePlayers = make(map[*websocket.Conn]string)
-	allConnections = make(map[*websocket.Conn]string)
-	startWebsocketDispatcher()
+	hub := NewHub()
+	go hub.Run()
 
-	broadcast <- Message{Identifier: "alpha", MessageType: "RegisterPlayer"}
-	broadcast <- Message{Identifier: "alpha", MessageType: "PlayerRemoved"}
-	broadcast <- Message{
+	hub.broadcast <- Message{Identifier: "alpha", MessageType: "RegisterPlayer"}
+	hub.broadcast <- Message{Identifier: "alpha", MessageType: "PlayerRemoved"}
+	hub.broadcast <- Message{
 		Identifier:  "alpha",
 		MessageType: "Enqueue",
 		Payload:     `{"itemIds":[],"podcastID":"","tagIds":[]}`,
@@ -674,15 +662,14 @@ func TestDownloadAndSearchControllersHandleDatabaseErrors(t *testing.T) {
 // TestWebsocketHandlerRoundTrip handles the corresponding operation.
 func TestWebsocketHandlerRoundTrip(t *testing.T) {
 	setupControllersTestDB(t)
-	startWebsocketDispatcher()
-	activePlayers = make(map[*websocket.Conn]string)
-	allConnections = make(map[*websocket.Conn]string)
+	hub := NewHub()
+	go hub.Run()
 
 	_, item := createControllerPodcastAndItem(t)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/ws", Wshandler)
+	router.GET("/ws", hub.Handler)
 	server := httptest.NewServer(router)
 	defer server.Close()
 

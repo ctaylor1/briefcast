@@ -218,6 +218,26 @@ func ResummarizeSummaries(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"message": "re-summarize started"})
 }
 
+// BackfillLinks kicks off background extraction of show note links for all
+// episodes that have show notes but no extracted links yet.
+func BackfillLinks(c *gin.Context) {
+	if service.GetLinkBackfillRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "link backfill is already running"})
+		return
+	}
+
+	go func() {
+		service.BackfillShowNoteLinks()
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "link backfill started"})
+}
+
+// GetBackfillLinksStatus returns whether a link backfill is currently running.
+func GetBackfillLinksStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"running": service.GetLinkBackfillRunning()})
+}
+
 // ExportAll exports all existing transcripts and summaries to text and markdown files.
 func ExportAll(c *gin.Context) {
 	if service.GetExportAllRunning() {

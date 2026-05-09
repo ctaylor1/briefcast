@@ -47,7 +47,7 @@ func main() {
 	}
 	db.Migrate()
 	r := buildRouter()
-	go controllers.HandleWebsocketMessages()
+	go controllers.DefaultHub.Run()
 
 	go assetEnv()
 	go intiCron()
@@ -69,7 +69,7 @@ func buildRouter() *gin.Engine {
 	pass := os.Getenv("PASSWORD")
 	dataPath := os.Getenv("DATA")
 	backupPath := path.Join(os.Getenv("CONFIG"), "backups")
-	registerRoutes(r, authRouterGroup(r, pass), dataPath, backupPath)
+	registerRoutes(authRouterGroup(r, pass), dataPath, backupPath)
 	return r
 }
 
@@ -82,7 +82,7 @@ func authRouterGroup(r *gin.Engine, pass string) *gin.RouterGroup {
 	return &r.RouterGroup
 }
 
-func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath string) {
+func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
 	router.Static("/webassets", "./webassets")
 	router.Static("/assets", dataPath)
 	router.Static(backupPath, backupPath)
@@ -128,6 +128,7 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
 	router.GET("/podcastitems/:id/summary", controllers.GetPodcastItemSummary)
+	router.GET("/podcastitems/:id/links", controllers.GetPodcastItemLinks)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
 	router.POST("/podcastitems/:id/resume", controllers.ResumePodcastItemDownload)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
@@ -157,6 +158,8 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.GET("/settings/backfill-summaries", controllers.GetBackfillSummariesStatus)
 	router.POST("/settings/resummarize", controllers.ResummarizeSummaries)
 	router.GET("/settings/summary-models", controllers.GetSummaryModels)
+	router.POST("/settings/backfill-links", controllers.BackfillLinks)
+	router.GET("/settings/backfill-links", controllers.GetBackfillLinksStatus)
 	router.POST("/settings/export-all", controllers.ExportAll)
 	router.GET("/settings/export-all", controllers.GetExportAllStatus)
 	router.GET("/version", func(c *gin.Context) {
@@ -169,7 +172,7 @@ func registerRoutes(r *gin.Engine, router *gin.RouterGroup, dataPath, backupPath
 	router.POST("/opml", controllers.UploadOpml)
 	router.GET("/opml", controllers.GetOPML)
 	router.GET("/rss", controllers.GetRss)
-	r.GET("/ws", controllers.Wshandler)
+	router.GET("/ws", controllers.DefaultHub.Handler)
 }
 func setupSettings() gin.HandlerFunc {
 	return func(c *gin.Context) {

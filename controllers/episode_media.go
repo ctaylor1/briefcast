@@ -70,6 +70,34 @@ func GetPodcastItemTranscript(c *gin.Context) {
 	c.JSON(http.StatusOK, payload)
 }
 
+// GetPodcastItemLinks handles the corresponding operation.
+func GetPodcastItemLinks(c *gin.Context) {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var item db.PodcastItem
+	if err := db.GetPodcastItemByID(searchByIDQuery.ID, &item); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Episode not found"})
+		return
+	}
+
+	links, err := db.GetShowNoteLinksByPodcastItemID(searchByIDQuery.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve links"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"episodeId": item.ID,
+		"podcastId": item.PodcastID,
+		"count":     len(links),
+		"links":     links,
+	})
+}
+
 // GetPodcastItemSummary handles the corresponding operation.
 func GetPodcastItemSummary(c *gin.Context) {
 	var searchByIDQuery SearchByIDQuery

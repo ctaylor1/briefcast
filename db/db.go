@@ -55,7 +55,7 @@ func Init() (*gorm.DB, error) {
 
 // Migrate Database
 func Migrate() {
-	if err := DB.AutoMigrate(&Podcast{}, &PodcastItem{}, &Setting{}, &Migration{}, &JobLock{}, &Tag{}); err != nil {
+	if err := DB.AutoMigrate(&Podcast{}, &PodcastItem{}, &Setting{}, &Migration{}, &JobLock{}, &Tag{}, &ShowNoteLink{}); err != nil {
 		logging.Sugar().Errorw("database automigrate failed", "error", err)
 		return
 	}
