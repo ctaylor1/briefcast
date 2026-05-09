@@ -193,7 +193,7 @@ func ExportAll() (transcripts int, summaries int, err error) {
 				}
 			}
 		}
-		if s := strings.TrimSpace(item.LLMSummary); s != "" {
+		if s := buildExportSummaryContent(item); s != "" {
 			if writeErr := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, dateSub, episode, s); writeErr != nil {
 				logger.Warnw("export_all summary failed", "podcast_item_id", item.ID, "error", writeErr)
 			} else {
@@ -229,20 +229,52 @@ func persistCanonicalTranscript(itemID string, transcript string) error {
 		}).Error
 }
 
+func buildExportSummaryContent(item *db.PodcastItem) string {
+	summary := strings.TrimSpace(item.LLMSummary)
+	if summary == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(summary)
+
+	showNotes := strings.TrimSpace(item.Summary)
+	if showNotes != "" {
+		b.WriteString("\n\n---\n\n## Show Notes\n\n")
+		b.WriteString(showNotes)
+	}
+
+	links, err := db.GetShowNoteLinksByPodcastItemID(item.ID)
+	if err == nil && len(links) > 0 {
+		b.WriteString("\n\n## Links\n\n")
+		for _, link := range links {
+			if link.Title != "" {
+				fmt.Fprintf(&b, "- [%s](%s) — %s\n", link.Title, link.URL, link.Domain)
+			} else {
+				b.WriteString("- ")
+				b.WriteString(link.URL)
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	return b.String()
+}
+
 func ExportSummary(item *db.PodcastItem) {
 	exportDir := resolveExportDir()
 	if exportDir == "" {
 		return
 	}
-	summary := strings.TrimSpace(item.LLMSummary)
-	if summary == "" {
+	content := buildExportSummaryContent(item)
+	if content == "" {
 		return
 	}
 
 	podcast := sanitizeAssetName(podcastTitle(item))
 	episode := exportEpisodeFileName(item)
 
-	if err := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, pubDateSubdir(item.PubDate), episode, summary); err != nil {
+	if err := writeExportVariantFiles(exportDir, summaryExportVariants, podcast, pubDateSubdir(item.PubDate), episode, content); err != nil {
 		logger := logging.Sugar()
 		logger.Warnw("failed to export summary", "podcast_item_id", item.ID, "error", err)
 	}
