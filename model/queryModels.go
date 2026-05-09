@@ -16,15 +16,27 @@ type Pagination struct {
 type EpisodeSort string
 
 const (
-	// ReleaseAsc is a public constant.
-	ReleaseAsc EpisodeSort = "ReleaseAsc"
-	// ReleaseDesc is a public constant.
-	ReleaseDesc EpisodeSort = "ReleaseDesc"
-	// DurationAsc is a public constant.
-	DurationAsc EpisodeSort = "DurationAsc"
-	// DurationDesc is a public constant.
-	DurationDesc EpisodeSort = "DurationDesc"
+	ReleaseAsc   EpisodeSort = "release_asc"
+	ReleaseDesc  EpisodeSort = "release_desc"
+	DurationAsc  EpisodeSort = "duration_asc"
+	DurationDesc EpisodeSort = "duration_desc"
 )
+
+// ParseEpisodeSort normalises both snake_case and legacy PascalCase values.
+func ParseEpisodeSort(raw string) EpisodeSort {
+	switch raw {
+	case "release_asc", "ReleaseAsc":
+		return ReleaseAsc
+	case "release_desc", "ReleaseDesc":
+		return ReleaseDesc
+	case "duration_asc", "DurationAsc":
+		return DurationAsc
+	case "duration_desc", "DurationDesc":
+		return DurationDesc
+	default:
+		return ""
+	}
+}
 
 // EpisodesFilter represents a public type.
 type EpisodesFilter struct {
@@ -45,7 +57,9 @@ func (filter *EpisodesFilter) VerifyPaginationValues() {
 	if filter.Page == 0 {
 		filter.Page = 1
 	}
-	if filter.Sorting == "" {
+	if parsed := ParseEpisodeSort(string(filter.Sorting)); parsed != "" {
+		filter.Sorting = parsed
+	} else {
 		filter.Sorting = ReleaseDesc
 	}
 }

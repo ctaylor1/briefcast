@@ -106,11 +106,14 @@ func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
 	router.GET("/podcasts/:id/image", controllers.GetPodcastImageByID)
 	router.DELETE("/podcasts/:id", controllers.DeletePodcastByID)
 	router.GET("/podcasts/:id/items", controllers.GetPodcastItemsByPodcastID)
-	router.GET("/podcasts/:id/download", controllers.DownloadAllEpisodesByPodcastID)
+	router.POST("/podcasts/:id/download", controllers.DownloadAllEpisodesByPodcastID)
+	router.GET("/podcasts/:id/download", controllers.DownloadAllEpisodesByPodcastID) // deprecated
 	router.DELETE("/podcasts/:id/items", controllers.DeletePodcastEpisodesByID)
 	router.DELETE("/podcasts/:id/podcast", controllers.DeleteOnlyPodcastByID)
-	router.GET("/podcasts/:id/pause", controllers.PausePodcastByID)
-	router.GET("/podcasts/:id/unpause", controllers.UnpausePodcastByID)
+	router.PATCH("/podcasts/:id/pause", controllers.PausePodcastByID)
+	router.GET("/podcasts/:id/pause", controllers.PausePodcastByID) // deprecated
+	router.PATCH("/podcasts/:id/unpause", controllers.UnpausePodcastByID)
+	router.GET("/podcasts/:id/unpause", controllers.UnpausePodcastByID) // deprecated
 	router.PATCH("/podcasts/:id/retention", controllers.PatchPodcastRetention)
 	router.PATCH("/podcasts/:id/sponsor-skip", controllers.PatchPodcastSponsorSkip)
 	router.GET("/podcasts/:id/rss", controllers.GetRssForPodcastByID)
@@ -119,19 +122,25 @@ func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
 	router.GET("/podcastitems/:id", controllers.GetPodcastItemByID)
 	router.GET("/podcastitems/:id/image", controllers.GetPodcastItemImageByID)
 	router.GET("/podcastitems/:id/file", controllers.GetPodcastItemFileByID)
-	router.GET("/podcastitems/:id/markUnplayed", controllers.MarkPodcastItemAsUnplayed)
-	router.GET("/podcastitems/:id/markPlayed", controllers.MarkPodcastItemAsPlayed)
-	router.GET("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem)
-	router.GET("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
+	router.PATCH("/podcastitems/:id/markUnplayed", controllers.MarkPodcastItemAsUnplayed)
+	router.GET("/podcastitems/:id/markUnplayed", controllers.MarkPodcastItemAsUnplayed) // deprecated
+	router.PATCH("/podcastitems/:id/markPlayed", controllers.MarkPodcastItemAsPlayed)
+	router.GET("/podcastitems/:id/markPlayed", controllers.MarkPodcastItemAsPlayed) // deprecated
+	router.PATCH("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem)
+	router.GET("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem) // deprecated
+	router.PATCH("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
+	router.GET("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem) // deprecated
 	router.PATCH("/podcastitems/:id", controllers.PatchPodcastItemByID)
-	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem)
+	router.POST("/podcastitems/:id/download", controllers.DownloadPodcastItem)
+	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem) // deprecated
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
 	router.GET("/podcastitems/:id/summary", controllers.GetPodcastItemSummary)
 	router.GET("/podcastitems/:id/links", controllers.GetPodcastItemLinks)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
 	router.POST("/podcastitems/:id/resume", controllers.ResumePodcastItemDownload)
-	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem)
+	router.DELETE("/podcastitems/:id/delete", controllers.DeletePodcastItem)
+	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem) // deprecated
 
 	router.GET("/summaries", controllers.GetSummaries)
 	router.POST("/summaries/:id/favorite", controllers.FavoriteSummary)

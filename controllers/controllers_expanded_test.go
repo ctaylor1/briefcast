@@ -532,7 +532,7 @@ func TestControllerHelpers(t *testing.T) {
 
 	options := getSortOptions()
 	b, err := json.Marshal(options)
-	if err != nil || !bytes.Contains(b, []byte("ReleaseAsc")) {
+	if err != nil || !bytes.Contains(b, []byte("release_asc")) {
 		t.Fatalf("unexpected sort options payload: %v %s", err, string(b))
 	}
 

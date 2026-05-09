@@ -36,13 +36,13 @@ export const episodesApi = {
     return httpClient.get<PodcastItem>(`/podcastitems/${id}`);
   },
   setPlayed(id: string, played: boolean): Promise<void> {
-    return httpClient.get<void>(`/podcastitems/${id}/${played ? "markPlayed" : "markUnplayed"}`);
+    return httpClient.patch<void>(`/podcastitems/${id}/${played ? "markPlayed" : "markUnplayed"}`);
   },
   setBookmarked(id: string, bookmarked: boolean): Promise<void> {
-    return httpClient.get<void>(`/podcastitems/${id}/${bookmarked ? "bookmark" : "unbookmark"}`);
+    return httpClient.patch<void>(`/podcastitems/${id}/${bookmarked ? "bookmark" : "unbookmark"}`);
   },
   queueDownload(id: string): Promise<void> {
-    return httpClient.get<void>(`/podcastitems/${id}/download`);
+    return httpClient.post<void>(`/podcastitems/${id}/download`);
   },
   getChapters(id: string): Promise<ChaptersResponse> {
     return httpClient.get<ChaptersResponse>(`/podcastitems/${id}/chapters`);

@@ -12,10 +12,10 @@ export const podcastsApi = {
     return httpClient.del<void>(`/podcasts/${id}`);
   },
   queueDownloadAll(id: string): Promise<void> {
-    return httpClient.get<void>(`/podcasts/${id}/download`);
+    return httpClient.post<void>(`/podcasts/${id}/download`);
   },
   setPaused(id: string, paused: boolean): Promise<void> {
-    return httpClient.get<void>(`/podcasts/${id}/${paused ? "pause" : "unpause"}`);
+    return httpClient.patch<void>(`/podcasts/${id}/${paused ? "pause" : "unpause"}`);
   },
   setRetentionKeepAll(id: string, keepAll: boolean): Promise<void> {
     return httpClient.patch<void, { keepAll: boolean }>(`/podcasts/${id}/retention`, { keepAll });

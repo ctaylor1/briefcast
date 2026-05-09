@@ -71,6 +71,69 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 	}
 }
 
+func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
+
+	expect := []struct {
+		method, path string
+	}{
+		{"POST", "/podcasts/:id/download"},
+		{"PATCH", "/podcasts/:id/pause"},
+		{"PATCH", "/podcasts/:id/unpause"},
+		{"PATCH", "/podcastitems/:id/markPlayed"},
+		{"PATCH", "/podcastitems/:id/markUnplayed"},
+		{"PATCH", "/podcastitems/:id/bookmark"},
+		{"PATCH", "/podcastitems/:id/unbookmark"},
+		{"POST", "/podcastitems/:id/download"},
+		{"DELETE", "/podcastitems/:id/delete"},
+	}
+
+	registered := make(map[string]bool)
+	for _, r := range engine.Routes() {
+		registered[r.Method+" "+r.Path] = true
+	}
+
+	for _, tc := range expect {
+		key := tc.method + " " + tc.path
+		if !registered[key] {
+			t.Fatalf("expected route %s to be registered", key)
+		}
+	}
+}
+
+func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
+
+	deprecatedGETs := []string{
+		"/podcasts/:id/download",
+		"/podcasts/:id/pause",
+		"/podcasts/:id/unpause",
+		"/podcastitems/:id/markPlayed",
+		"/podcastitems/:id/markUnplayed",
+		"/podcastitems/:id/bookmark",
+		"/podcastitems/:id/unbookmark",
+		"/podcastitems/:id/download",
+		"/podcastitems/:id/delete",
+	}
+
+	registered := make(map[string]bool)
+	for _, r := range engine.Routes() {
+		if r.Method == "GET" {
+			registered[r.Path] = true
+		}
+	}
+
+	for _, path := range deprecatedGETs {
+		if !registered[path] {
+			t.Fatalf("expected deprecated GET %s to still be registered", path)
+		}
+	}
+}
+
 // TestResolveRunningVersion handles the corresponding operation.
 func TestResolveRunningVersion(t *testing.T) {
 	t.Setenv("BRIEFCAST_VERSION", "1.2.3")

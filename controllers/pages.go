@@ -248,10 +248,10 @@ func getSortOptions() interface{} {
 	return []struct {
 		Label, Value string
 	}{
-		{"Release (asc)", "ReleaseAsc"},
-		{"Release (desc)", "ReleaseDesc"},
-		{"Duration (asc)", "DurationAsc"},
-		{"Duration (desc)", "DurationDesc"},
+		{"Release (asc)", "release_asc"},
+		{"Release (desc)", "release_desc"},
+		{"Duration (asc)", "duration_asc"},
+		{"Duration (desc)", "duration_desc"},
 	}
 }
 

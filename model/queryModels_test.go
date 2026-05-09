@@ -2,7 +2,54 @@ package model
 
 import "testing"
 
-// TestVerifyPaginationValuesAppliesDefaults handles the corresponding operation.
+func TestParseEpisodeSortAcceptsAllCanonicalValues(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  EpisodeSort
+	}{
+		{"release_asc", ReleaseAsc},
+		{"release_desc", ReleaseDesc},
+		{"duration_asc", DurationAsc},
+		{"duration_desc", DurationDesc},
+	} {
+		if got := ParseEpisodeSort(tc.input); got != tc.want {
+			t.Fatalf("ParseEpisodeSort(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestParseEpisodeSortAcceptsLegacyPascalCase(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  EpisodeSort
+	}{
+		{"ReleaseAsc", ReleaseAsc},
+		{"ReleaseDesc", ReleaseDesc},
+		{"DurationAsc", DurationAsc},
+		{"DurationDesc", DurationDesc},
+	} {
+		if got := ParseEpisodeSort(tc.input); got != tc.want {
+			t.Fatalf("ParseEpisodeSort(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestParseEpisodeSortReturnsEmptyForUnknown(t *testing.T) {
+	for _, input := range []string{"", "invalid", "RELEASE_DESC", "releaseDesc"} {
+		if got := ParseEpisodeSort(input); got != "" {
+			t.Fatalf("ParseEpisodeSort(%q) = %q, want empty", input, got)
+		}
+	}
+}
+
+func TestVerifyPaginationValuesNormalisesLegacySorting(t *testing.T) {
+	filter := EpisodesFilter{Sorting: "ReleaseAsc"}
+	filter.VerifyPaginationValues()
+	if filter.Sorting != ReleaseAsc {
+		t.Fatalf("expected legacy PascalCase to be normalised to %q, got %q", ReleaseAsc, filter.Sorting)
+	}
+}
+
 func TestVerifyPaginationValuesAppliesDefaults(t *testing.T) {
 	filter := EpisodesFilter{}
 	filter.VerifyPaginationValues()
