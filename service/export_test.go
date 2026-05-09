@@ -26,20 +26,21 @@ func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 	ExportTranscript(&item)
 	ExportSummary(&item)
 
-	transcriptPath := filepath.Join(dataDir, "transcripts", "Export- Podcast-One", "2024-03-05-1-Episode- One-Two.txt")
+	dateSub := filepath.Join("2024", "2024-03")
+	transcriptPath := filepath.Join(dataDir, "transcripts", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.txt")
 	if got, err := os.ReadFile(transcriptPath); err != nil || string(got) != item.CanonicalTranscript {
 		t.Fatalf("expected transcript export at %q, got content=%q err=%v", transcriptPath, string(got), err)
 	}
-	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Export- Podcast-One", "2024-03-05-1-Episode- One-Two.md")
+	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.md")
 	if got, err := os.ReadFile(transcriptMarkdownPath); err != nil || string(got) != item.CanonicalTranscript {
 		t.Fatalf("expected transcript markdown export at %q, got content=%q err=%v", transcriptMarkdownPath, string(got), err)
 	}
 
-	summaryPath := filepath.Join(dataDir, "summaries", "Export- Podcast-One", "2024-03-05-1-Episode- One-Two.txt")
+	summaryPath := filepath.Join(dataDir, "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.txt")
 	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != item.LLMSummary {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}
-	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export- Podcast-One", "2024-03-05-1-Episode- One-Two.md")
+	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.md")
 	if got, err := os.ReadFile(summaryMarkdownPath); err != nil || string(got) != item.LLMSummary {
 		t.Fatalf("expected summary markdown export at %q, got content=%q err=%v", summaryMarkdownPath, string(got), err)
 	}
@@ -81,20 +82,21 @@ func TestExportAllUsesAssetsLayout(t *testing.T) {
 		t.Fatalf("expected one transcript and summary export, got transcripts=%d summaries=%d", transcripts, summaries)
 	}
 
-	transcriptPath := filepath.Join(dataDir, "transcripts", "Export All Podcast", "2024-04-06-1-Export All Episode.txt")
+	dateSub := filepath.Join("2024", "2024-04")
+	transcriptPath := filepath.Join(dataDir, "transcripts", "Export All Podcast", dateSub, "2024-04-06-1-Export All Episode.txt")
 	if _, err := os.Stat(transcriptPath); err != nil {
 		t.Fatalf("expected transcript export at %q: %v", transcriptPath, err)
 	}
-	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Export All Podcast", "2024-04-06-1-Export All Episode.md")
+	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Export All Podcast", dateSub, "2024-04-06-1-Export All Episode.md")
 	if _, err := os.Stat(transcriptMarkdownPath); err != nil {
 		t.Fatalf("expected transcript markdown export at %q: %v", transcriptMarkdownPath, err)
 	}
 
-	summaryPath := filepath.Join(dataDir, "summaries", "Export All Podcast", "2024-04-06-1-Export All Episode.txt")
+	summaryPath := filepath.Join(dataDir, "summaries", "Export All Podcast", dateSub, "2024-04-06-1-Export All Episode.txt")
 	if _, err := os.Stat(summaryPath); err != nil {
 		t.Fatalf("expected summary export at %q: %v", summaryPath, err)
 	}
-	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export All Podcast", "2024-04-06-1-Export All Episode.md")
+	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export All Podcast", dateSub, "2024-04-06-1-Export All Episode.md")
 	if _, err := os.Stat(summaryMarkdownPath); err != nil {
 		t.Fatalf("expected summary markdown export at %q: %v", summaryMarkdownPath, err)
 	}
@@ -122,7 +124,8 @@ func TestExportAllBackfillsCanonicalTranscriptFromTranscriptJSON(t *testing.T) {
 		t.Fatalf("expected one transcript and no summaries, got transcripts=%d summaries=%d", transcripts, summaries)
 	}
 
-	transcriptPath := filepath.Join(dataDir, "transcripts", "Legacy Podcast", "2024-05-07-1-Legacy Episode.txt")
+	dateSub := filepath.Join("2024", "2024-05")
+	transcriptPath := filepath.Join(dataDir, "transcripts", "Legacy Podcast", dateSub, "2024-05-07-1-Legacy Episode.txt")
 	got, err := os.ReadFile(transcriptPath)
 	if err != nil {
 		t.Fatalf("expected transcript export at %q: %v", transcriptPath, err)
@@ -130,7 +133,7 @@ func TestExportAllBackfillsCanonicalTranscriptFromTranscriptJSON(t *testing.T) {
 	if string(got) != "HOST: Legacy transcript text." {
 		t.Fatalf("unexpected transcript export content %q", string(got))
 	}
-	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Legacy Podcast", "2024-05-07-1-Legacy Episode.md")
+	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Legacy Podcast", dateSub, "2024-05-07-1-Legacy Episode.md")
 	got, err = os.ReadFile(transcriptMarkdownPath)
 	if err != nil {
 		t.Fatalf("expected transcript markdown export at %q: %v", transcriptMarkdownPath, err)
