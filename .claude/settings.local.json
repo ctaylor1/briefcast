@@ -1,48 +1,13 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(git status)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(npm test)",
-      "Bash(npm run test *)",
-      "Bash(npm run lint)",
-      "Bash(npm run lint *)",
-      "Bash(npm run build)",
-      "Bash(npm run build *)",
-      "Bash(pnpm test)",
-      "Bash(pnpm lint)",
-      "Bash(pnpm build)",
-      "Bash(pytest)",
-      "Bash(pytest *)",
-      "Bash(just test-go *)",
-      "Bash(just docker-build *)",
-      "Bash(just ship *)"
-    ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./secrets/**)",
-      "Bash(curl *)"
-    ]
-  },
-  "model": "claude-opus-4-6",
-  "sandbox": {
-    "enabled": true,
-    "autoAllowBashIfSandboxed": true,
-    "network": {
-      "allowedDomains": [
-        "github.com",
-        "*.npmjs.org",
-        "registry.yarnpkg.com",
-        "pypi.org",
-        "files.pythonhosted.org"
-      ]
-    },
-    "excludedCommands": [
-      "git",
-      "docker"
+      "Bash",
+      "PowerShell",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "WebSearch"
     ]
   }
 }
