@@ -456,7 +456,11 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="reader__toolbar-nav">
-          <span class="reader__toolbar-hint">J/K</span>
+          <span class="reader__toolbar-hint">
+            <kbd>K</kbd> prev
+            <span class="reader__toolbar-hint-sep">/</span>
+            <kbd>J</kbd> next
+          </span>
           <button
             type="button"
             class="reader__toolbar-btn"
@@ -892,12 +896,25 @@ onBeforeUnmount(() => {
 }
 
 .reader__toolbar-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--color-text-tertiary);
   font-size: 11px;
-  padding: 2px 6px;
+  margin-right: var(--space-2);
+}
+
+.reader__toolbar-hint kbd {
+  padding: 1px 5px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-1);
-  margin-right: var(--space-2);
+  background: var(--color-bg-secondary);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.reader__toolbar-hint-sep {
+  opacity: 0.5;
 }
 
 .reader__toolbar-btn-label {
@@ -906,8 +923,8 @@ onBeforeUnmount(() => {
 
 /* ── Container: sidebar + main ──────────────────────────── */
 .reader__container {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  justify-content: center;
   gap: var(--space-6);
   padding-top: var(--space-6);
 }
@@ -919,9 +936,9 @@ onBeforeUnmount(() => {
 /* ── Main article ───────────────────────────────────────── */
 .reader__main {
   min-width: 0;
-  max-width: 80ch;
-  margin: 0 auto;
+  max-width: min(72ch, 100%);
   width: 100%;
+  padding-inline: var(--space-2);
 }
 
 /* ── Header ─────────────────────────────────────────────── */
@@ -1531,16 +1548,14 @@ onBeforeUnmount(() => {
     grid-template-columns: 1.6fr 1fr 1fr 0.8fr;
   }
 
-  .reader__container {
-    grid-template-columns: 200px 1fr;
-  }
-
   .reader__sidebar {
     display: block;
+    flex-shrink: 0;
+    width: 200px;
   }
 
   .reader__main {
-    max-width: 80ch;
+    max-width: min(72ch, 100%);
   }
 
   .reader__title {
@@ -1550,12 +1565,12 @@ onBeforeUnmount(() => {
 
 /* Wide desktop (≥ 1440px) */
 @media (min-width: 1440px) {
-  .reader__container {
-    grid-template-columns: 220px 1fr;
+  .reader__sidebar {
+    width: 220px;
   }
 
   .reader__main {
-    max-width: 85ch;
+    max-width: min(78ch, 100%);
   }
 }
 </style>
