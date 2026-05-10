@@ -209,6 +209,10 @@ where id in (
 		Query: "alter table settings add column if not exists summarization_model text",
 	},
 	{
+		Name:  "2026_05_09_01_00_AddLLMConcurrency",
+		Query: "alter table settings add column if not exists llm_concurrency integer default 1",
+	},
+	{
 		Name:  "2026_05_03_01_00_AddPodcastItemsSummaryListIndex",
 		Query: "create index if not exists idx_podcast_items_summary_list on podcast_items(llm_summary_status, pub_date)",
 	},

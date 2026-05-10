@@ -26,6 +26,8 @@ type SettingsResponse struct {
 	SummarizationModel      string `json:"summarizationModel"`
 	SummarizationPrompt     string `json:"summarizationPrompt"`
 	SummarizationUserPrompt string `json:"summarizationUserPrompt"`
+	// Model settings
+	LLMConcurrency int `json:"llmConcurrency"`
 	// Read-only defaults so the UI can show placeholders.
 	DefaultModel        string `json:"defaultModel"`
 	DefaultSystemPrompt string `json:"defaultSystemPrompt"`
@@ -55,6 +57,8 @@ type SettingsPatch struct {
 	SummarizationModel      *string `json:"summarizationModel"`
 	SummarizationPrompt     *string `json:"summarizationPrompt"`
 	SummarizationUserPrompt *string `json:"summarizationUserPrompt"`
+	// Model settings
+	LLMConcurrency *int `json:"llmConcurrency"`
 	// Appearance
 	ThemeMode      *string `json:"themeMode"`
 	Timezone       *string `json:"timezone"`
@@ -136,6 +140,14 @@ func PatchSettings(c *gin.Context) {
 	}
 	if patch.SummarizationUserPrompt != nil {
 		setting.SummarizationUserPrompt = *patch.SummarizationUserPrompt
+	}
+	if patch.LLMConcurrency != nil {
+		v := *patch.LLMConcurrency
+		if v < 1 || v > 10 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "llmConcurrency must be between 1 and 10"})
+			return
+		}
+		setting.LLMConcurrency = v
 	}
 	if patch.ThemeMode != nil {
 		setting.ThemeMode = *patch.ThemeMode
@@ -273,6 +285,7 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		SummarizationModel:      setting.SummarizationModel,
 		SummarizationPrompt:     setting.SummarizationPrompt,
 		SummarizationUserPrompt: setting.SummarizationUserPrompt,
+		LLMConcurrency:          setting.LLMConcurrency,
 		DefaultModel:            cfg.Model,
 		DefaultSystemPrompt:     cfg.DefaultPrompt,
 		DefaultUserPrompt:       cfg.DefaultUserPrompt,

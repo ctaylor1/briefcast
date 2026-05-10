@@ -33,6 +33,10 @@ type SummarizationForm = {
   summarizationUserPrompt: string;
 };
 
+type ModelSettingsForm = {
+  llmConcurrency: number;
+};
+
 const {
   themeMode,
   timezone,
@@ -49,6 +53,7 @@ const isSavingBackCatalog = ref(false);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
+const isSavingModelSettings = ref(false);
 const defaultModel = ref("");
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
@@ -86,6 +91,10 @@ const summarizationForm = ref<SummarizationForm>({
   summarizationModel: "",
   summarizationPrompt: "",
   summarizationUserPrompt: "",
+});
+
+const modelSettingsForm = ref<ModelSettingsForm>({
+  llmConcurrency: 1,
 });
 
 const modelOptions = computed(() => {
@@ -139,6 +148,9 @@ async function loadSettings(): Promise<void> {
       summarizationModel: settings.summarizationModel ?? "",
       summarizationPrompt: settings.summarizationPrompt ?? "",
       summarizationUserPrompt: settings.summarizationUserPrompt ?? "",
+    };
+    modelSettingsForm.value = {
+      llmConcurrency: settings.llmConcurrency ?? 1,
     };
     defaultModel.value = settings.defaultModel ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
@@ -216,6 +228,24 @@ async function saveSummarizationSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to update summarization settings."));
   } finally {
     isSavingSummarization.value = false;
+  }
+}
+
+async function saveModelSettings(): Promise<void> {
+  isSavingModelSettings.value = true;
+  clearAll();
+  try {
+    const updated = await settingsApi.update({
+      llmConcurrency: modelSettingsForm.value.llmConcurrency,
+    });
+    modelSettingsForm.value = {
+      llmConcurrency: updated.llmConcurrency ?? 1,
+    };
+    setSuccess("Model settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update model settings."));
+  } finally {
+    isSavingModelSettings.value = false;
   }
 }
 
@@ -690,6 +720,38 @@ onMounted(loadSettings);
         <p v-if="resummarizeDryRunCount !== null" class="meta-text">
           {{ resummarizeDryRunCount }} {{ resummarizeDryRunCount === 1 ? 'summary' : 'summaries' }} will be regenerated.
         </p>
+      </div>
+    </UiCard>
+
+    <!-- Model Settings -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Model Settings</h3>
+        <p class="section-subtitle">
+          Configure how the LLM is used during batch summarization jobs.
+        </p>
+      </div>
+
+      <div class="surface-grid surface-grid--3">
+        <div class="stack-1">
+          <label class="settings-label" for="settings-llm-concurrency">Concurrency</label>
+          <select
+            id="settings-llm-concurrency"
+            v-model.number="modelSettingsForm.llmConcurrency"
+            class="ui-select"
+          >
+            <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
+          </select>
+          <p class="meta-text">
+            Number of parallel requests sent to the LLM provider during backfill and re-summarize jobs. Higher values speed up batch processing but may hit rate limits.
+          </p>
+        </div>
+      </div>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingModelSettings" @click="saveModelSettings">
+          {{ isSavingModelSettings ? "Saving..." : "Save model settings" }}
+        </UiButton>
       </div>
     </UiCard>
   </section>

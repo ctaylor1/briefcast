@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,60 @@ func GetSummaryBackfillRunning() bool {
 	return summaryBackfillRunning.Load()
 }
 
+func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt string, progressFn func(SummaryBackfillStatus)) (succeeded, failed int) {
+	logger := logging.Sugar()
+	total := len(items)
+	if total == 0 {
+		return 0, 0
+	}
+
+	concurrency := cfg.Concurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if concurrency > total {
+		concurrency = total
+	}
+
+	var succeededCount, failedCount atomic.Int32
+
+	work := make(chan int, total)
+	for i := range items {
+		work <- i
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	for w := 0; w < concurrency; w++ {
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
+					logger.Warnw("summary failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
+					failedCount.Add(1)
+				} else {
+					logger.Infow("summary complete", "episode_id", items[i].ID, "title", items[i].Title)
+					succeededCount.Add(1)
+				}
+				if progressFn != nil {
+					s := int(succeededCount.Load())
+					f := int(failedCount.Load())
+					progressFn(SummaryBackfillStatus{
+						Running:   true,
+						Total:     total,
+						Completed: s + f,
+						Failed:    f,
+					})
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	return int(succeededCount.Load()), int(failedCount.Load())
+}
+
 // BackfillSummaries summarizes all episodes that have a canonical transcript
 // but no summary yet, processing most-recent first. It calls progressFn after
 // each episode (may be nil). Returns total succeeded and failed counts.
@@ -46,10 +101,12 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 
 	setting := db.GetOrCreateSetting()
 	cfg.Model = ResolveSummarizationModel(setting, cfg)
+	if setting.LLMConcurrency > 0 {
+		cfg.Concurrency = setting.LLMConcurrency
+	}
 	prompt := ResolveSummarizationPrompt(setting, cfg)
 	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
 
-	// Find all episodes with a transcript but no summary, most recent first.
 	var items []db.PodcastItem
 	result := db.DB.
 		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
@@ -61,29 +118,9 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 		return 0, 0, fmt.Errorf("query failed: %w", result.Error)
 	}
 
-	total := len(items)
-	logger.Infow("summary backfill starting", "episodes", total)
-
-	for i := range items {
-		if progressFn != nil {
-			progressFn(SummaryBackfillStatus{
-				Running:   true,
-				Total:     total,
-				Completed: succeeded + failed,
-				Failed:    failed,
-			})
-		}
-
-		if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
-			logger.Warnw("backfill summary failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
-			failed++
-		} else {
-			logger.Infow("backfill summary complete", "episode_id", items[i].ID, "title", items[i].Title)
-			succeeded++
-		}
-	}
-
-	logger.Infow("summary backfill finished", "succeeded", succeeded, "failed", failed, "total", total)
+	logger.Infow("summary backfill starting", "episodes", len(items), "concurrency", cfg.Concurrency)
+	succeeded, failed = summarizeBatch(items, cfg, prompt, userPrompt, progressFn)
+	logger.Infow("summary backfill finished", "succeeded", succeeded, "failed", failed, "total", len(items))
 	return succeeded, failed, nil
 }
 
@@ -122,6 +159,9 @@ func ResummarizeSummaries(filter ResummarizeFilter, progressFn func(status Summa
 
 	setting := db.GetOrCreateSetting()
 	cfg.Model = ResolveSummarizationModel(setting, cfg)
+	if setting.LLMConcurrency > 0 {
+		cfg.Concurrency = setting.LLMConcurrency
+	}
 	prompt := ResolveSummarizationPrompt(setting, cfg)
 	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
 
@@ -151,28 +191,8 @@ func ResummarizeSummaries(filter ResummarizeFilter, progressFn func(status Summa
 		return ResummarizeResult{Total: total}, nil
 	}
 
-	logger.Infow("re-summarize starting", "episodes", total, "filter_model", filter.Model, "target_model", cfg.Model)
-
-	var succeeded, failed int
-	for i := range items {
-		if progressFn != nil {
-			progressFn(SummaryBackfillStatus{
-				Running:   true,
-				Total:     total,
-				Completed: succeeded + failed,
-				Failed:    failed,
-			})
-		}
-
-		if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
-			logger.Warnw("re-summarize failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
-			failed++
-		} else {
-			logger.Infow("re-summarize complete", "episode_id", items[i].ID, "title", items[i].Title)
-			succeeded++
-		}
-	}
-
+	logger.Infow("re-summarize starting", "episodes", total, "filter_model", filter.Model, "target_model", cfg.Model, "concurrency", cfg.Concurrency)
+	succeeded, failed := summarizeBatch(items, cfg, prompt, userPrompt, progressFn)
 	logger.Infow("re-summarize finished", "succeeded", succeeded, "failed", failed, "total", total)
 	return ResummarizeResult{Total: total, Succeeded: succeeded, Failed: failed}, nil
 }

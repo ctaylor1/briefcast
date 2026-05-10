@@ -157,6 +157,7 @@ export interface AppSettings {
   summarizationModel: string;
   summarizationPrompt: string;
   summarizationUserPrompt: string;
+  llmConcurrency: number;
   defaultModel: string;
   defaultSystemPrompt: string;
   defaultUserPrompt: string;

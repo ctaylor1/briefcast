@@ -171,6 +171,7 @@ type Setting struct {
 	SummarizationModel      string `gorm:"type:text"`
 	SummarizationPrompt     string `gorm:"type:text"`
 	SummarizationUserPrompt string `gorm:"type:text"`
+	LLMConcurrency          int    `gorm:"default:1"`
 
 	// Appearance / schedule settings.
 	ThemeMode      string `gorm:"default:auto"`

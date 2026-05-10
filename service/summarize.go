@@ -97,6 +97,7 @@ type LLMConfig struct {
 	MaxTokens         int
 	Temperature       float64
 	TimeoutSecs       int
+	Concurrency       int
 	DefaultPrompt     string
 	DefaultUserPrompt string
 }
@@ -112,6 +113,7 @@ func LoadLLMConfig() LLMConfig {
 		MaxTokens:         getEnvInt("LLM_MAX_TOKENS", 1024),
 		Temperature:       getEnvFloat("LLM_TEMPERATURE", 0.3),
 		TimeoutSecs:       getEnvInt("LLM_TIMEOUT_SECONDS", 120),
+		Concurrency:       getEnvInt("LLM_CONCURRENCY", 1),
 		DefaultPrompt:     getEnvString("LLM_SUMMARIZATION_PROMPT", defaultSummarizationPrompt),
 		DefaultUserPrompt: getEnvString("LLM_SUMMARIZATION_USER_PROMPT", defaultUserPrompt),
 	}
