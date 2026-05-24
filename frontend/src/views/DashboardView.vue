@@ -26,7 +26,8 @@ const activeId = ref<string | null>(null);
 const podcastToDelete = ref<Podcast | null>(null);
 const feedsPodcast = ref<Podcast | null>(null);
 const feedsUrls = ref<string[]>([]);
-const feedsBusy = ref(false);
+const feedsSaving = ref(false);
+const feedsError = ref("");
 const router = useRouter();
 
 const isDeleteBusy = computed(() => {
@@ -141,30 +142,35 @@ async function toggleSponsorSkip(podcast: Podcast): Promise<void> {
 }
 
 async function openAlternateFeeds(podcast: Podcast): Promise<void> {
-  feedsPodcast.value = podcast;
-  feedsBusy.value = true;
+  feedsError.value = "";
+  feedsUrls.value = [];
   try {
     const resp = await podcastsApi.getAlternateFeeds(podcast.ID);
     feedsUrls.value = resp.urls;
   } catch {
     feedsUrls.value = [];
-  } finally {
-    feedsBusy.value = false;
   }
+  feedsPodcast.value = podcast;
+}
+
+function closeAlternateFeeds(): void {
+  feedsPodcast.value = null;
+  feedsError.value = "";
 }
 
 async function saveAlternateFeeds(urls: string[]): Promise<void> {
   if (!feedsPodcast.value) return;
-  feedsBusy.value = true;
-  clearAll();
+  feedsSaving.value = true;
+  feedsError.value = "";
   try {
     await podcastsApi.setAlternateFeeds(feedsPodcast.value.ID, urls);
-    setSuccess("Alternate feeds saved. Resolving alternate download URLs in background.");
     feedsPodcast.value = null;
+    feedsError.value = "";
+    setSuccess("Alternate feeds saved. Resolving alternate download URLs in background.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to save alternate feeds."));
+    feedsError.value = getErrorMessage(error, "Failed to save alternate feeds.");
   } finally {
-    feedsBusy.value = false;
+    feedsSaving.value = false;
   }
 }
 
@@ -281,9 +287,10 @@ onMounted(loadPodcasts);
     <AlternateFeedsDialog
       :open="feedsPodcast !== null"
       :urls="feedsUrls"
-      :busy="feedsBusy"
+      :saving="feedsSaving"
       :podcast-title="feedsPodcast?.Title ?? ''"
-      @close="feedsPodcast = null"
+      :error="feedsError"
+      @close="closeAlternateFeeds"
       @save="saveAlternateFeeds"
     />
   </section>

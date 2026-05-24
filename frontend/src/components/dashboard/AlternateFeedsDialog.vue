@@ -13,8 +13,9 @@ import UiInput from "../ui/UiInput.vue";
 const props = defineProps<{
   open: boolean;
   urls: string[];
-  busy: boolean;
+  saving: boolean;
   podcastTitle: string;
+  error: string;
 }>();
 
 const emit = defineEmits<{
@@ -22,7 +23,7 @@ const emit = defineEmits<{
   (event: "save", urls: string[]): void;
 }>();
 
-const localUrls = ref<string[]>([]);
+const localUrls = ref<string[]>([""]);
 
 watch(
   () => props.open,
@@ -41,6 +42,9 @@ function addRow(): void {
 
 function removeRow(index: number): void {
   localUrls.value.splice(index, 1);
+  if (localUrls.value.length === 0) {
+    localUrls.value = [""];
+  }
 }
 
 function handleSave(): void {
@@ -101,13 +105,13 @@ function handleSave(): void {
                     :model-value="url"
                     type="url"
                     :placeholder="`Alternate feed URL ${index + 1}`"
-                    :disabled="busy"
+                    :disabled="saving"
                     @update:model-value="localUrls[index] = $event"
                   />
                   <UiButton
                     size="sm"
                     variant="danger"
-                    :disabled="busy || localUrls.length <= 1"
+                    :disabled="saving"
                     @click="removeRow(index)"
                   >
                     Remove
@@ -119,18 +123,20 @@ function handleSave(): void {
                 v-if="localUrls.length < 3"
                 size="sm"
                 variant="secondary"
-                :disabled="busy"
+                :disabled="saving"
                 @click="addRow"
               >
                 + Add URL
               </UiButton>
 
+              <p v-if="error" class="alt-feeds-error">{{ error }}</p>
+
               <div class="dialog-actions">
-                <UiButton variant="secondary" :disabled="busy" @click="emit('close')">
+                <UiButton variant="secondary" @click="emit('close')">
                   Cancel
                 </UiButton>
-                <UiButton variant="primary" :disabled="busy" @click="handleSave">
-                  Save
+                <UiButton variant="primary" :disabled="saving" @click="handleSave">
+                  {{ saving ? "Saving..." : "Save" }}
                 </UiButton>
               </div>
             </DialogPanel>
@@ -156,5 +162,11 @@ function handleSave(): void {
 
 .alt-feeds-row > :first-child {
   flex: 1;
+}
+
+.alt-feeds-error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-danger, #dc2626);
+  font-size: var(--font-caption-size, 0.8125rem);
 }
 </style>

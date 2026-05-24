@@ -225,7 +225,7 @@ func GetPodcastAlternateFeeds(c *gin.Context) {
 	}
 
 	var podcast db.Podcast
-	if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
+	if err := db.DB.Select("id", "alternate_feed_urls").First(&podcast, "id = ?", searchByIDQuery.ID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
@@ -262,19 +262,19 @@ func PatchPodcastAlternateFeeds(c *gin.Context) {
 		}
 	}
 
-	var podcast db.Podcast
-	if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-		return
-	}
-
-	podcast.AlternateFeedURLs = service.MarshalAlternateURLs(patch.AlternateFeedURLs)
-	if err := db.UpdatePodcast(&podcast); err != nil {
+	marshaledURLs := service.MarshalAlternateURLs(patch.AlternateFeedURLs)
+	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIDQuery.ID).
+		Update("alternate_feed_urls", marshaledURLs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	go func() {
+		var podcast db.Podcast
+		if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
+			controllerLogger.Warnw("failed to load podcast for alternate feed resolution", "podcast_id", searchByIDQuery.ID, "error", err)
+			return
+		}
 		if err := service.ResolveAlternateFileURLs(&podcast); err != nil {
 			controllerLogger.Warnw("failed to resolve alternate file URLs", "podcast_id", podcast.ID, "error", err)
 		}
