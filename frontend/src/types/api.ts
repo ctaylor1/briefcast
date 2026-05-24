@@ -29,6 +29,7 @@ export interface Podcast {
   IsPaused: boolean;
   RetentionKeepAll: boolean;
   AutoSkipSponsorChapters: boolean;
+  AlternateFeedURLs?: string[];
 }
 
 export interface PodcastItemPodcast {

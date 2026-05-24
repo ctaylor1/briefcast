@@ -224,6 +224,14 @@ where id in (
 		Name:  "2026_05_03_01_02_AddPodcastItemsPodcastPubDateIndex",
 		Query: "create index if not exists idx_podcast_items_podcast_pub_date on podcast_items(podcast_id, pub_date)",
 	},
+	{
+		Name:  "2026_05_24_01_00_AddAlternateFeedURLs",
+		Query: "alter table podcasts add column if not exists alternate_feed_urls text",
+	},
+	{
+		Name:  "2026_05_24_01_01_AddAlternateFileURLs",
+		Query: "alter table podcast_items add column if not exists alternate_file_urls text",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

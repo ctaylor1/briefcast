@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import AlternateFeedsDialog from "../components/dashboard/AlternateFeedsDialog.vue";
 import PodcastCard from "../components/dashboard/PodcastCard.vue";
 import PodcastsTable from "../components/dashboard/PodcastsTable.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
@@ -23,6 +24,9 @@ const {
 const podcasts = ref<Podcast[]>([]);
 const activeId = ref<string | null>(null);
 const podcastToDelete = ref<Podcast | null>(null);
+const feedsPodcast = ref<Podcast | null>(null);
+const feedsUrls = ref<string[]>([]);
+const feedsBusy = ref(false);
 const router = useRouter();
 
 const isDeleteBusy = computed(() => {
@@ -136,6 +140,34 @@ async function toggleSponsorSkip(podcast: Podcast): Promise<void> {
   );
 }
 
+async function openAlternateFeeds(podcast: Podcast): Promise<void> {
+  feedsPodcast.value = podcast;
+  feedsBusy.value = true;
+  try {
+    const resp = await podcastsApi.getAlternateFeeds(podcast.ID);
+    feedsUrls.value = resp.urls;
+  } catch {
+    feedsUrls.value = [];
+  } finally {
+    feedsBusy.value = false;
+  }
+}
+
+async function saveAlternateFeeds(urls: string[]): Promise<void> {
+  if (!feedsPodcast.value) return;
+  feedsBusy.value = true;
+  clearAll();
+  try {
+    await podcastsApi.setAlternateFeeds(feedsPodcast.value.ID, urls);
+    setSuccess("Alternate feeds saved. Resolving alternate download URLs in background.");
+    feedsPodcast.value = null;
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to save alternate feeds."));
+  } finally {
+    feedsBusy.value = false;
+  }
+}
+
 onMounted(loadPodcasts);
 </script>
 
@@ -214,6 +246,7 @@ onMounted(loadPodcasts);
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
           @toggle-sponsor-skip="toggleSponsorSkip"
+          @edit-feeds="openAlternateFeeds"
           @delete="requestDelete"
         />
       </div>
@@ -228,6 +261,7 @@ onMounted(loadPodcasts);
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
           @toggle-sponsor-skip="toggleSponsorSkip"
+          @edit-feeds="openAlternateFeeds"
           @delete="requestDelete"
         />
       </div>
@@ -242,6 +276,15 @@ onMounted(loadPodcasts);
       :busy="isDeleteBusy"
       @close="podcastToDelete = null"
       @confirm="confirmDeletePodcast"
+    />
+
+    <AlternateFeedsDialog
+      :open="feedsPodcast !== null"
+      :urls="feedsUrls"
+      :busy="feedsBusy"
+      :podcast-title="feedsPodcast?.Title ?? ''"
+      @close="feedsPodcast = null"
+      @save="saveAlternateFeeds"
     />
   </section>
 </template>

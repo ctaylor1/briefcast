@@ -39,6 +39,8 @@ type Podcast struct {
 	RetentionKeepAll bool `gorm:"default:false"`
 
 	AutoSkipSponsorChapters bool `gorm:"default:false"`
+
+	AlternateFeedURLs string `gorm:"type:text" json:"-"`
 }
 
 // PodcastItem is
@@ -112,6 +114,8 @@ type PodcastItem struct {
 	LLMSummaryPrompt string `gorm:"type:text" json:"-"`
 
 	HasSummary bool `gorm:"-"`
+
+	AlternateFileURLs string `gorm:"type:text" json:"-"`
 
 	IsSummaryFavorited bool `gorm:"default:false"`
 }

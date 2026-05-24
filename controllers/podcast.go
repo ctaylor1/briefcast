@@ -70,6 +70,11 @@ type PodcastSponsorSkipPatch struct {
 	AutoSkipSponsorChapters *bool `json:"autoSkipSponsorChapters"`
 }
 
+// PodcastAlternateFeedsPatch represents the request body for alternate feeds.
+type PodcastAlternateFeedsPatch struct {
+	AlternateFeedURLs []string `json:"alternateFeedURLs"`
+}
+
 // AddPodcastData represents a public type.
 type AddPodcastData struct {
 	URL string `binding:"required" form:"url" json:"url"`
@@ -207,6 +212,73 @@ func PatchPodcastSponsorSkip(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// GetPodcastAlternateFeeds returns the alternate feed URLs for a podcast.
+func GetPodcastAlternateFeeds(c *gin.Context) {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var podcast db.Podcast
+	if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	urls := service.ParseAlternateURLs(podcast.AlternateFeedURLs)
+	if urls == nil {
+		urls = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{"urls": urls})
+}
+
+// PatchPodcastAlternateFeeds updates the alternate feed URLs for a podcast.
+func PatchPodcastAlternateFeeds(c *gin.Context) {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var patch PodcastAlternateFeedsPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(patch.AlternateFeedURLs) > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 3 alternate feeds allowed"})
+		return
+	}
+	for _, u := range patch.AlternateFeedURLs {
+		if !service.ValidateFeedURL(u) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid URL: %s", u)})
+			return
+		}
+	}
+
+	var podcast db.Podcast
+	if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	podcast.AlternateFeedURLs = service.MarshalAlternateURLs(patch.AlternateFeedURLs)
+	if err := db.UpdatePodcast(&podcast); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		if err := service.ResolveAlternateFileURLs(&podcast); err != nil {
+			controllerLogger.Warnw("failed to resolve alternate file URLs", "podcast_id", podcast.ID, "error", err)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }

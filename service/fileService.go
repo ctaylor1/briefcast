@@ -30,6 +30,26 @@ var (
 	backupNow         = func() time.Time { return time.Now().UTC() }
 )
 
+// DownloadHTTPError represents an HTTP-level download failure with status code.
+type DownloadHTTPError struct {
+	StatusCode int
+	Status     string
+	URL        string
+}
+
+func (e *DownloadHTTPError) Error() string {
+	return fmt.Sprintf("download failed with status %s for %s", e.Status, e.URL)
+}
+
+// IsHTTPClientError returns true when the error is a 4xx HTTP failure.
+func IsHTTPClientError(err error) bool {
+	var httpErr *DownloadHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode >= 400 && httpErr.StatusCode < 500
+	}
+	return false
+}
+
 const (
 	defaultHTTPTimeoutSeconds = 900
 	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
@@ -82,8 +102,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 			}
 		}
 		resp.Body.Close()
-		// Keep upstream status visible in logs/UI (for example 416 resume mismatches).
-		return "", fmt.Errorf("download failed with status %s", resp.Status)
+		return "", &DownloadHTTPError{StatusCode: resp.StatusCode, Status: resp.Status, URL: link}
 	}
 
 	var file *os.File
@@ -157,6 +176,16 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		_ = db.UpdatePodcastItemDownloadProgress(downloadID, downloadedBytes, totalBytes)
 	}
 	defer file.Close()
+
+	if downloadedBytes == 0 {
+		_ = os.Remove(finalPath)
+		return "", fmt.Errorf("download produced empty file (0 bytes) for %s", link)
+	}
+	if totalBytes > 0 && downloadedBytes < totalBytes {
+		_ = os.Remove(finalPath)
+		return "", fmt.Errorf("download incomplete: got %d of %d bytes for %s", downloadedBytes, totalBytes, link)
+	}
+
 	changeOwnership(finalPath)
 	return finalPath, nil
 

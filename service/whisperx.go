@@ -17,6 +17,7 @@ import (
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -315,24 +316,52 @@ func TranscribePendingEpisodes() error {
 
 	runWorkerPool(*items, workers, func(item db.PodcastItem) {
 		// WhisperX only runs against local downloaded audio files.
-		if item.DownloadPath == "" || !FileExists(item.DownloadPath) {
-			missingErr := fmt.Errorf("audio file missing for transcription at %s", item.DownloadPath)
-			scheduleTranscriptRetry(&item, cfg, missingErr)
-			item.TranscriptProgressStage = "waiting_for_audio"
+		// Validate the audio file is present and usable before attempting transcription.
+		if item.DownloadPath == "" {
 			jobLogger.Warnw(
-				"audio file missing for transcription",
-				"podcast_item_id",
-				item.ID,
-				"path",
-				item.DownloadPath,
-				"retry_count",
-				item.TranscriptRetryCount,
-				"next_attempt",
-				item.TranscriptNextAttempt,
+				"skipping transcription: no download path set",
+				"podcast_item_id", item.ID,
+				"episode", item.Title,
+				"download_status", item.DownloadStatus,
 			)
-			if err := db.UpdatePodcastItem(&item); err != nil {
-				jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", err)
+			resetItemForRedownload(&item, "no download path set", jobLogger)
+			return
+		}
+		if !FileExists(item.DownloadPath) {
+			jobLogger.Warnw(
+				"skipping transcription: audio file not found on disk",
+				"podcast_item_id", item.ID,
+				"episode", item.Title,
+				"path", item.DownloadPath,
+			)
+			resetItemForRedownload(&item, "audio file not found on disk", jobLogger)
+			return
+		}
+		fileSize, sizeErr := GetFileSize(item.DownloadPath)
+		if sizeErr != nil {
+			jobLogger.Warnw(
+				"skipping transcription: unable to read audio file",
+				"podcast_item_id", item.ID,
+				"episode", item.Title,
+				"path", item.DownloadPath,
+				"error", sizeErr,
+			)
+			resetItemForRedownload(&item, fmt.Sprintf("unable to read audio file: %v", sizeErr), jobLogger)
+			return
+		}
+		const minAudioFileBytes = 1024
+		if fileSize < minAudioFileBytes {
+			jobLogger.Warnw(
+				"skipping transcription: audio file too small (likely corrupted or incomplete download)",
+				"podcast_item_id", item.ID,
+				"episode", item.Title,
+				"path", item.DownloadPath,
+				"file_size_bytes", fileSize,
+			)
+			if removeErr := os.Remove(item.DownloadPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				jobLogger.Warnw("failed to remove corrupted audio file", "path", item.DownloadPath, "error", removeErr)
 			}
+			resetItemForRedownload(&item, fmt.Sprintf("audio file too small (%d bytes)", fileSize), jobLogger)
 			return
 		}
 
@@ -389,6 +418,23 @@ func TranscribePendingEpisodes() error {
 			},
 		)
 		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "Failed to load audio") || strings.Contains(errMsg, "No such file or directory") {
+				jobLogger.Errorw(
+					"whisperx transcription failed: audio file is unreadable or corrupted, resetting for re-download",
+					"podcast_item_id", item.ID,
+					"episode", item.Title,
+					"path", item.DownloadPath,
+					"error", err,
+				)
+				if removeErr := os.Remove(item.DownloadPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					jobLogger.Warnw("failed to remove corrupted audio file", "path", item.DownloadPath, "error", removeErr)
+				}
+				resetItemForRedownload(&item, fmt.Sprintf("audio file unreadable: %s", trimToLength(errMsg, 200)), jobLogger)
+				setError(err)
+				return
+			}
+
 			scheduleTranscriptRetry(&item, cfg, err)
 			item.TranscriptProgressStage = "failed"
 			if item.TranscriptProgressPct >= 100 {
@@ -396,14 +442,11 @@ func TranscribePendingEpisodes() error {
 			}
 			jobLogger.Warnw(
 				"whisperx transcription failed",
-				"podcast_item_id",
-				item.ID,
-				"error",
-				err,
-				"retry_count",
-				item.TranscriptRetryCount,
-				"next_attempt",
-				item.TranscriptNextAttempt,
+				"podcast_item_id", item.ID,
+				"episode", item.Title,
+				"error", err,
+				"retry_count", item.TranscriptRetryCount,
+				"next_attempt", item.TranscriptNextAttempt,
 			)
 			if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
 				jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", updateErr)
@@ -938,6 +981,23 @@ func collectWhisperXQueueSnapshot(statuses []string, now time.Time) (whisperxQue
 		}
 	}
 	return snapshot, nil
+}
+
+func resetItemForRedownload(item *db.PodcastItem, reason string, jobLogger *zap.SugaredLogger) {
+	item.DownloadStatus = db.NotDownloaded
+	item.DownloadPath = ""
+	item.DownloadedBytes = 0
+	item.DownloadTotalBytes = 0
+	item.TranscriptStatus = "pending_whisperx"
+	item.TranscriptProgressPct = 0
+	item.TranscriptProgressStage = "waiting_for_download"
+	item.TranscriptCheckpointJSON = ""
+	item.TranscriptRetryCount = 0
+	item.TranscriptNextAttempt = nil
+	item.TranscriptLastError = reason
+	if err := db.UpdatePodcastItem(item); err != nil {
+		jobLogger.Warnw("failed to reset item for re-download", "podcast_item_id", item.ID, "error", err)
+	}
 }
 
 func scheduleTranscriptRetry(item *db.PodcastItem, cfg WhisperXConfig, transcriptionErr error) {

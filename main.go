@@ -116,6 +116,8 @@ func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
 	router.GET("/podcasts/:id/unpause", controllers.UnpausePodcastByID) // deprecated
 	router.PATCH("/podcasts/:id/retention", controllers.PatchPodcastRetention)
 	router.PATCH("/podcasts/:id/sponsor-skip", controllers.PatchPodcastSponsorSkip)
+	router.GET("/podcasts/:id/alternate-feeds", controllers.GetPodcastAlternateFeeds)
+	router.PATCH("/podcasts/:id/alternate-feeds", controllers.PatchPodcastAlternateFeeds)
 	router.GET("/podcasts/:id/rss", controllers.GetRssForPodcastByID)
 
 	router.GET("/podcastitems", controllers.GetAllPodcastItems)

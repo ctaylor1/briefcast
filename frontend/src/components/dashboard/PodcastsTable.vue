@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (event: "toggle-pause", podcast: Podcast): void;
   (event: "toggle-retention", podcast: Podcast): void;
   (event: "toggle-sponsor-skip", podcast: Podcast): void;
+  (event: "edit-feeds", podcast: Podcast): void;
   (event: "delete", podcast: Podcast): void;
 }>();
 
@@ -132,6 +133,14 @@ function getPodcastImage(id: string): string {
                   @click="emit('toggle-pause', podcast)"
                 >
                   {{ podcast.IsPaused ? "Resume All Downloads" : "Pause All Downloads" }}
+                </UiButton>
+                <UiButton
+                  size="sm"
+                  variant="outline"
+                  :disabled="activeId === podcast.ID"
+                  @click="emit('edit-feeds', podcast)"
+                >
+                  Alt Feeds
                 </UiButton>
               </div>
             </td>

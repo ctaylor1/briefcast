@@ -26,4 +26,13 @@ export const podcastsApi = {
       { autoSkipSponsorChapters: enabled },
     );
   },
+  getAlternateFeeds(id: string): Promise<{ urls: string[] }> {
+    return httpClient.get<{ urls: string[] }>(`/podcasts/${id}/alternate-feeds`);
+  },
+  setAlternateFeeds(id: string, urls: string[]): Promise<void> {
+    return httpClient.patch<void, { alternateFeedURLs: string[] }>(
+      `/podcasts/${id}/alternate-feeds`,
+      { alternateFeedURLs: urls },
+    );
+  },
 };

@@ -502,6 +502,11 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			}
 		}
 	}
+	if podcast.AlternateFeedURLs != "" {
+		if resolveErr := ResolveAlternateFileURLs(podcast); resolveErr != nil {
+			Logger.Warnw("failed to resolve alternate file URLs during refresh", "podcast_id", podcast.ID, "error", resolveErr)
+		}
+	}
 	return firstItemErr
 }
 
@@ -839,7 +844,8 @@ func DownloadMissingEpisodes() error {
 			jobLogger.Warnw("failed to mark episode downloading", "podcast_item_id", item.ID, "error", err)
 		}
 
-		url, downloadErr := Download(item.ID, item.FileURL, item.Title, item.Podcast.Title, GetPodcastPrefix(&item, &settingSnapshot))
+		prefix := GetPodcastPrefix(&item, &settingSnapshot)
+		filePath, downloadErr := DownloadWithFallback(item.ID, &item, prefix)
 		if downloadErr != nil {
 			if downloadErr == ErrDownloadCancelled {
 				jobLogger.Infow("download cancelled", "podcast_item_id", item.ID)
@@ -851,13 +857,19 @@ func DownloadMissingEpisodes() error {
 				_ = SetPodcastItemAsPaused(item.ID)
 				return
 			}
-			jobLogger.Errorw("failed to download episode", "podcast_item_id", item.ID, "error", downloadErr)
+			jobLogger.Errorw("failed to download episode",
+				"podcast_item_id", item.ID,
+				"podcast", item.Podcast.Title,
+				"episode", item.Title,
+				"url", item.FileURL,
+				"error", downloadErr,
+			)
 			_ = SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
 			setError(downloadErr)
 			return
 		}
 
-		if saveErr := SetPodcastItemAsDownloaded(item.ID, url); saveErr != nil {
+		if saveErr := SetPodcastItemAsDownloaded(item.ID, filePath); saveErr != nil {
 			jobLogger.Errorw("failed to update downloaded episode", "podcast_item_id", item.ID, "error", saveErr)
 			setError(saveErr)
 		}
@@ -924,6 +936,48 @@ func DeleteEpisodeFile(podcastItemID string) error {
 	return SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
 }
 
+// DownloadWithFallback tries the primary FileURL first, then alternate URLs on 4xx errors.
+func DownloadWithFallback(downloadID string, item *db.PodcastItem, prefix string) (string, error) {
+	podcastTitle := item.Podcast.Title
+	episodeTitle := item.Title
+
+	filePath, err := Download(downloadID, item.FileURL, episodeTitle, podcastTitle, prefix)
+	if err == nil {
+		return filePath, nil
+	}
+
+	if !IsHTTPClientError(err) {
+		return "", err
+	}
+
+	failedURL := item.FileURL
+	for {
+		nextURL, ok := GetNextAlternateURL(item, failedURL)
+		if !ok {
+			break
+		}
+		Logger.Infow("trying alternate download URL",
+			"podcast_item_id", item.ID,
+			"failed_url", failedURL,
+			"alternate_url", nextURL,
+		)
+		filePath, altErr := Download(downloadID, nextURL, episodeTitle, podcastTitle, prefix)
+		if altErr == nil {
+			item.FileURL = nextURL
+			if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
+				Logger.Warnw("failed to persist working alternate URL", "podcast_item_id", item.ID, "error", updateErr)
+			}
+			return filePath, nil
+		}
+		if !IsHTTPClientError(altErr) {
+			return "", altErr
+		}
+		failedURL = nextURL
+	}
+
+	return "", err
+}
+
 // DownloadSingleEpisode handles the corresponding operation.
 func DownloadSingleEpisode(podcastItemID string) error {
 	var podcastItem db.PodcastItem
@@ -941,22 +995,23 @@ func DownloadSingleEpisode(podcastItemID string) error {
 		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemID, "error", err)
 	}
 
-	url, err := Download(podcastItem.ID, podcastItem.FileURL, podcastItem.Title, podcastItem.Podcast.Title, GetPodcastPrefix(&podcastItem, setting))
+	prefix := GetPodcastPrefix(&podcastItem, setting)
+	filePath, dlErr := DownloadWithFallback(podcastItem.ID, &podcastItem, prefix)
 
-	if err != nil {
-		if err == ErrDownloadCancelled {
+	if dlErr != nil {
+		if dlErr == ErrDownloadCancelled {
 			_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
 			return nil
 		}
-		if err == ErrDownloadPaused {
+		if dlErr == ErrDownloadPaused {
 			_ = SetPodcastItemAsPaused(podcastItem.ID)
 			return nil
 		}
-		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemID, "error", err)
+		Logger.Errorw("failed to download single episode", "podcast_item_id", podcastItemID, "error", dlErr)
 		_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.NotDownloaded)
-		return err
+		return dlErr
 	}
-	err = SetPodcastItemAsDownloaded(podcastItem.ID, url)
+	err = SetPodcastItemAsDownloaded(podcastItem.ID, filePath)
 
 	if setting.DownloadEpisodeImages {
 		if imageErr := downloadImageLocally(podcastItem.ID); imageErr != nil {
