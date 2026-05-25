@@ -139,32 +139,35 @@ func GetPodcastByID(c *gin.Context) {
 // PausePodcastByID handles the corresponding operation.
 func PausePodcastByID(c *gin.Context) {
 	var searchByIDQuery SearchByIDQuery
-	if c.ShouldBindUri(&searchByIDQuery) == nil {
-
-		err := service.TogglePodcastPause(searchByIDQuery.ID, true)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, err)
-			return
-		}
-		c.JSON(200, gin.H{})
-	} else {
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
 	}
+
+	if err := service.TogglePodcastPause(searchByIDQuery.ID, true); err != nil {
+		controllerLogger.Warnw("failed to pause podcast", "podcast_id", searchByIDQuery.ID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	controllerLogger.Infow("podcast paused", "podcast_id", searchByIDQuery.ID)
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // UnpausePodcastByID handles the corresponding operation.
 func UnpausePodcastByID(c *gin.Context) {
 	var searchByIDQuery SearchByIDQuery
-	if c.ShouldBindUri(&searchByIDQuery) == nil {
-		err := service.TogglePodcastPause(searchByIDQuery.ID, false)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, err)
-			return
-		}
-		c.JSON(200, gin.H{})
-	} else {
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
 	}
+
+	if err := service.TogglePodcastPause(searchByIDQuery.ID, false); err != nil {
+		controllerLogger.Warnw("failed to unpause podcast", "podcast_id", searchByIDQuery.ID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	controllerLogger.Infow("podcast unpaused", "podcast_id", searchByIDQuery.ID)
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // PatchPodcastRetention handles the corresponding operation.
@@ -187,10 +190,12 @@ func PatchPodcastRetention(c *gin.Context) {
 
 	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIDQuery.ID).
 		Update("retention_keep_all", *patch.KeepAll).Error; err != nil {
+		controllerLogger.Warnw("failed to update retention", "podcast_id", searchByIDQuery.ID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	controllerLogger.Infow("podcast retention updated", "podcast_id", searchByIDQuery.ID, "keep_all", *patch.KeepAll)
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -214,10 +219,12 @@ func PatchPodcastSponsorSkip(c *gin.Context) {
 
 	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIDQuery.ID).
 		Update("auto_skip_sponsor_chapters", *patch.AutoSkipSponsorChapters).Error; err != nil {
+		controllerLogger.Warnw("failed to update sponsor skip", "podcast_id", searchByIDQuery.ID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	controllerLogger.Infow("podcast sponsor skip updated", "podcast_id", searchByIDQuery.ID, "enabled", *patch.AutoSkipSponsorChapters)
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -241,9 +248,12 @@ func PatchPodcastBriefpoint(c *gin.Context) {
 
 	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIDQuery.ID).
 		Update("briefpoint_enabled", *patch.BriefpointEnabled).Error; err != nil {
+		controllerLogger.Warnw("failed to update briefpoint", "podcast_id", searchByIDQuery.ID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	controllerLogger.Infow("podcast briefpoint updated", "podcast_id", searchByIDQuery.ID, "enabled", *patch.BriefpointEnabled)
 
 	if *patch.BriefpointEnabled {
 		go func() {

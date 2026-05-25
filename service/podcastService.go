@@ -1305,11 +1305,5 @@ func AddTag(label, description string) (db.Tag, error) {
 
 // TogglePodcastPause handles the corresponding operation.
 func TogglePodcastPause(id string, isPaused bool) error {
-	var podcast db.Podcast
-	err := db.GetPodcastByID(id, &podcast)
-	if err != nil {
-		return err
-	}
-
 	return db.TogglePodcastPauseStatus(id, isPaused)
 }
