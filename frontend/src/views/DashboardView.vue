@@ -141,6 +141,16 @@ async function toggleSponsorSkip(podcast: Podcast): Promise<void> {
   );
 }
 
+async function toggleBriefpoint(podcast: Podcast): Promise<void> {
+  await runAction(
+    podcast.ID,
+    () => podcastsApi.setBriefpointEnabled(podcast.ID, !podcast.BriefpointEnabled),
+    podcast.BriefpointEnabled
+      ? "Briefpoint sync disabled."
+      : "Briefpoint sync enabled. Sending episodes in background.",
+  );
+}
+
 async function openAlternateFeeds(podcast: Podcast): Promise<void> {
   feedsError.value = "";
   feedsUrls.value = [];
@@ -252,6 +262,7 @@ onMounted(loadPodcasts);
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
           @toggle-sponsor-skip="toggleSponsorSkip"
+          @toggle-briefpoint="toggleBriefpoint"
           @edit-feeds="openAlternateFeeds"
           @delete="requestDelete"
         />
@@ -267,6 +278,7 @@ onMounted(loadPodcasts);
           @toggle-pause="togglePause"
           @toggle-retention="toggleRetention"
           @toggle-sponsor-skip="toggleSponsorSkip"
+          @toggle-briefpoint="toggleBriefpoint"
           @edit-feeds="openAlternateFeeds"
           @delete="requestDelete"
         />

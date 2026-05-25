@@ -29,6 +29,7 @@ export interface Podcast {
   IsPaused: boolean;
   RetentionKeepAll: boolean;
   AutoSkipSponsorChapters: boolean;
+  BriefpointEnabled: boolean;
   AlternateFeedURLs?: string[];
 }
 
@@ -166,6 +167,9 @@ export interface AppSettings {
   timezone: string;
   lightStartHour: number;
   darkStartHour: number;
+  briefpointEnabled: boolean;
+  briefpointServerURL: string;
+  briefpointAPIKey: string;
 }
 
 export interface RuntimeVersionInfo {

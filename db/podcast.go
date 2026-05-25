@@ -41,6 +41,8 @@ type Podcast struct {
 	AutoSkipSponsorChapters bool `gorm:"default:false"`
 
 	AlternateFeedURLs string `gorm:"type:text" json:"-"`
+
+	BriefpointEnabled bool `gorm:"default:false"`
 }
 
 // PodcastItem is
@@ -182,6 +184,11 @@ type Setting struct {
 	Timezone       string `gorm:"default:America/New_York"`
 	LightStartHour int    `gorm:"default:6"`
 	DarkStartHour  int    `gorm:"default:20"`
+
+	// Briefpoint integration settings.
+	BriefpointEnabled   bool   `gorm:"default:false"`
+	BriefpointServerURL string `gorm:"type:text"`
+	BriefpointAPIKey    string `gorm:"type:text"`
 }
 
 // Migration represents a public type.

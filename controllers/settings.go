@@ -37,6 +37,10 @@ type SettingsResponse struct {
 	Timezone       string `json:"timezone"`
 	LightStartHour int    `json:"lightStartHour"`
 	DarkStartHour  int    `json:"darkStartHour"`
+	// Briefpoint
+	BriefpointEnabled   bool   `json:"briefpointEnabled"`
+	BriefpointServerURL string `json:"briefpointServerURL"`
+	BriefpointAPIKey    string `json:"briefpointAPIKey"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -64,6 +68,10 @@ type SettingsPatch struct {
 	Timezone       *string `json:"timezone"`
 	LightStartHour *int    `json:"lightStartHour"`
 	DarkStartHour  *int    `json:"darkStartHour"`
+	// Briefpoint
+	BriefpointEnabled   *bool   `json:"briefpointEnabled"`
+	BriefpointServerURL *string `json:"briefpointServerURL"`
+	BriefpointAPIKey    *string `json:"briefpointAPIKey"`
 }
 
 // GetSettings handles the corresponding operation.
@@ -160,6 +168,15 @@ func PatchSettings(c *gin.Context) {
 	}
 	if patch.DarkStartHour != nil {
 		setting.DarkStartHour = *patch.DarkStartHour
+	}
+	if patch.BriefpointEnabled != nil {
+		setting.BriefpointEnabled = *patch.BriefpointEnabled
+	}
+	if patch.BriefpointServerURL != nil {
+		setting.BriefpointServerURL = *patch.BriefpointServerURL
+	}
+	if patch.BriefpointAPIKey != nil {
+		setting.BriefpointAPIKey = *patch.BriefpointAPIKey
 	}
 
 	if err := db.UpdateSettings(setting); err != nil {
@@ -293,5 +310,8 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		Timezone:                setting.Timezone,
 		LightStartHour:          setting.LightStartHour,
 		DarkStartHour:           setting.DarkStartHour,
+		BriefpointEnabled:       setting.BriefpointEnabled,
+		BriefpointServerURL:     setting.BriefpointServerURL,
+		BriefpointAPIKey:        setting.BriefpointAPIKey,
 	}
 }

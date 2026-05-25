@@ -26,6 +26,15 @@ export const podcastsApi = {
       { autoSkipSponsorChapters: enabled },
     );
   },
+  setBriefpointEnabled(id: string, enabled: boolean): Promise<void> {
+    return httpClient.patch<void, { briefpointEnabled: boolean }>(
+      `/podcasts/${id}/briefpoint`,
+      { briefpointEnabled: enabled },
+    );
+  },
+  syncToBriefpoint(id: string): Promise<void> {
+    return httpClient.post<void>(`/podcasts/${id}/briefpoint/sync`);
+  },
   getAlternateFeeds(id: string): Promise<{ urls: string[] }> {
     return httpClient.get<{ urls: string[] }>(`/podcasts/${id}/alternate-feeds`);
   },

@@ -54,6 +54,7 @@ const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
 const isSavingModelSettings = ref(false);
+const isSavingBriefpoint = ref(false);
 const defaultModel = ref("");
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
@@ -95,6 +96,18 @@ const summarizationForm = ref<SummarizationForm>({
 
 const modelSettingsForm = ref<ModelSettingsForm>({
   llmConcurrency: 1,
+});
+
+type BriefpointForm = {
+  briefpointEnabled: boolean;
+  briefpointServerURL: string;
+  briefpointAPIKey: string;
+};
+
+const briefpointForm = ref<BriefpointForm>({
+  briefpointEnabled: false,
+  briefpointServerURL: "",
+  briefpointAPIKey: "",
 });
 
 const modelOptions = computed(() => {
@@ -151,6 +164,11 @@ async function loadSettings(): Promise<void> {
     };
     modelSettingsForm.value = {
       llmConcurrency: settings.llmConcurrency ?? 1,
+    };
+    briefpointForm.value = {
+      briefpointEnabled: settings.briefpointEnabled ?? false,
+      briefpointServerURL: settings.briefpointServerURL ?? "",
+      briefpointAPIKey: settings.briefpointAPIKey ?? "",
     };
     defaultModel.value = settings.defaultModel ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
@@ -246,6 +264,28 @@ async function saveModelSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to update model settings."));
   } finally {
     isSavingModelSettings.value = false;
+  }
+}
+
+async function saveBriefpointSettings(): Promise<void> {
+  isSavingBriefpoint.value = true;
+  clearAll();
+  try {
+    const updated = await settingsApi.update({
+      briefpointEnabled: briefpointForm.value.briefpointEnabled,
+      briefpointServerURL: briefpointForm.value.briefpointServerURL,
+      briefpointAPIKey: briefpointForm.value.briefpointAPIKey,
+    });
+    briefpointForm.value = {
+      briefpointEnabled: updated.briefpointEnabled ?? false,
+      briefpointServerURL: updated.briefpointServerURL ?? "",
+      briefpointAPIKey: updated.briefpointAPIKey ?? "",
+    };
+    setSuccess("Briefpoint settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update Briefpoint settings."));
+  } finally {
+    isSavingBriefpoint.value = false;
   }
 }
 
@@ -751,6 +791,60 @@ onMounted(loadSettings);
       <div class="surface-row">
         <UiButton :disabled="isSavingModelSettings" @click="saveModelSettings">
           {{ isSavingModelSettings ? "Saving..." : "Save model settings" }}
+        </UiButton>
+      </div>
+    </UiCard>
+
+    <!-- Briefpoint Integration -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Briefpoint Integration</h3>
+        <p class="section-subtitle">
+          Send completed episodes (transcripts and summaries) to Briefpoint for scoring and surfacing.
+          Enable per-podcast sync from the dashboard.
+        </p>
+      </div>
+
+      <label class="settings-checkbox-row">
+        <input
+          v-model="briefpointForm.briefpointEnabled"
+          type="checkbox"
+          class="settings-checkbox"
+        />
+        <div>
+          <p class="settings-checkbox-title">Enable Briefpoint integration</p>
+          <p class="meta-text">
+            When enabled, podcasts with Briefpoint toggled on will send their episodes to the Briefpoint ingest API.
+          </p>
+        </div>
+      </label>
+
+      <div class="surface-grid surface-grid--2">
+        <UiInput
+          v-model="briefpointForm.briefpointServerURL"
+          type="text"
+          :disabled="!briefpointForm.briefpointEnabled"
+          label="Server URL"
+          placeholder="http://localhost:12314"
+        />
+
+        <UiInput
+          v-model="briefpointForm.briefpointAPIKey"
+          type="password"
+          :disabled="!briefpointForm.briefpointEnabled"
+          label="API Key"
+          placeholder="sk_..."
+        />
+      </div>
+
+      <UiAlert tone="info">
+        The API key is shown once when you register Briefcast as an ingest client on Briefpoint.
+        Store it securely. If lost, rotate the key from the Briefpoint admin UI.
+      </UiAlert>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingBriefpoint" @click="saveBriefpointSettings">
+          {{ isSavingBriefpoint ? "Saving..." : "Save Briefpoint settings" }}
         </UiButton>
       </div>
     </UiCard>

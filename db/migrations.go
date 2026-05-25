@@ -232,6 +232,26 @@ where id in (
 		Name:  "2026_05_24_01_01_AddAlternateFileURLs",
 		Query: "alter table podcast_items add column if not exists alternate_file_urls text",
 	},
+	{
+		Name:  "2026_05_24_02_00_AddPodcastBriefpointEnabled",
+		Query: "alter table podcasts add column if not exists briefpoint_enabled boolean default false",
+	},
+	{
+		Name:  "2026_05_24_02_01_BackfillPodcastBriefpointEnabled",
+		Query: "update podcasts set briefpoint_enabled = false where briefpoint_enabled is null",
+	},
+	{
+		Name:  "2026_05_24_02_02_AddSettingsBriefpointEnabled",
+		Query: "alter table settings add column if not exists briefpoint_enabled boolean default false",
+	},
+	{
+		Name:  "2026_05_24_02_03_AddSettingsBriefpointServerURL",
+		Query: "alter table settings add column if not exists briefpoint_server_url text",
+	},
+	{
+		Name:  "2026_05_24_02_04_AddSettingsBriefpointAPIKey",
+		Query: "alter table settings add column if not exists briefpoint_api_key text",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

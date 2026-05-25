@@ -2,8 +2,8 @@
 import { formatDate } from "../../lib/format";
 import type { Podcast } from "../../types/api";
 import UiBadge from "../ui/UiBadge.vue";
-import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
+import UiTooltip from "../ui/UiTooltip.vue";
 
 defineProps<{
   podcasts: Podcast[];
@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (event: "toggle-pause", podcast: Podcast): void;
   (event: "toggle-retention", podcast: Podcast): void;
   (event: "toggle-sponsor-skip", podcast: Podcast): void;
+  (event: "toggle-briefpoint", podcast: Podcast): void;
   (event: "edit-feeds", podcast: Podcast): void;
   (event: "delete", podcast: Podcast): void;
 }>();
@@ -79,69 +80,120 @@ function getPodcastImage(id: string): string {
                 <UiBadge :tone="podcast.IsPaused ? 'warning' : 'success'">
                   {{ podcast.IsPaused ? "Paused" : "Active" }}
                 </UiBadge>
-                <div class="podcasts-table__inline-action">
-                  <span class="meta-text">Retention: {{ podcast.RetentionKeepAll ? "Keep all" : "Global" }}</span>
-                  <UiButton
-                    size="sm"
-                    variant="ghost"
-                    :disabled="activeId === podcast.ID"
-                    @click="emit('toggle-retention', podcast)"
-                  >
-                    {{ podcast.RetentionKeepAll ? "Use global" : "Keep all" }}
-                  </UiButton>
-                </div>
-                <div class="podcasts-table__inline-action">
-                  <span class="meta-text">
-                    Sponsor skip: {{ podcast.AutoSkipSponsorChapters ? "On" : "Off" }}
-                  </span>
-                  <UiButton
-                    size="sm"
-                    variant="ghost"
-                    :disabled="activeId === podcast.ID"
-                    @click="emit('toggle-sponsor-skip', podcast)"
-                  >
-                    {{ podcast.AutoSkipSponsorChapters ? "Disable" : "Enable" }}
-                  </UiButton>
-                </div>
               </div>
             </td>
             <td>
               <div class="podcasts-table__actions">
-                <UiButton size="sm" :disabled="activeId === podcast.ID" @click="emit('play', podcast.ID)">
-                  Play
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="secondary"
-                  :disabled="activeId === podcast.ID"
-                  @click="emit('download-all', podcast)"
-                >
-                  Download
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="danger"
-                  :disabled="activeId === podcast.ID"
-                  @click="emit('delete', podcast)"
-                >
-                  Delete
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="outline"
-                  :disabled="activeId === podcast.ID"
-                  @click="emit('toggle-pause', podcast)"
-                >
-                  {{ podcast.IsPaused ? "Resume All Downloads" : "Pause All Downloads" }}
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="outline"
-                  :disabled="activeId === podcast.ID"
-                  @click="emit('edit-feeds', podcast)"
-                >
-                  Alt Feeds
-                </UiButton>
+                <UiTooltip text="Open player">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('play', podcast.ID)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip text="Download all">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('download-all', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 4v10M8 10l4 4 4-4M5 20h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip :text="podcast.IsPaused ? 'Resume downloads' : 'Pause downloads'">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :class="{ 'icon-btn--active': podcast.IsPaused }"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('toggle-pause', podcast)"
+                  >
+                    <svg v-if="!podcast.IsPaused" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M10 4H6v16h4V4zM18 4h-4v16h4V4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip :text="podcast.RetentionKeepAll ? 'Retention: Keep all' : 'Retention: Global'">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :class="{ 'icon-btn--active': podcast.RetentionKeepAll }"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('toggle-retention', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zM12 5v2M8 5v2M16 5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip :text="podcast.AutoSkipSponsorChapters ? 'Sponsor skip: On' : 'Sponsor skip: Off'">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :class="{ 'icon-btn--active': podcast.AutoSkipSponsorChapters }"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('toggle-sponsor-skip', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M17 8l4-4M17 16l4 4M3 12h14M7 8l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip :text="podcast.BriefpointEnabled ? 'Briefpoint: On' : 'Briefpoint: Off'">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :class="{ 'icon-btn--active': podcast.BriefpointEnabled }"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('toggle-briefpoint', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 5l7 4v6l-7 4-7-4V9l7-4zM12 12v7M12 12L5 9M12 12l7-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip text="Alternate feeds">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('edit-feeds', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 11a9 9 0 0 1 9-9M4 4a16 16 0 0 1 16 16M5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
+
+                <UiTooltip text="Delete podcast">
+                  <button
+                    type="button"
+                    class="icon-btn icon-btn--danger"
+                    :disabled="activeId === podcast.ID"
+                    @click="emit('delete', podcast)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M3 6h18M8 6V4h8v2M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </UiTooltip>
               </div>
             </td>
           </tr>
@@ -153,7 +205,7 @@ function getPodcastImage(id: string): string {
 
 <style scoped>
 .podcasts-table {
-  min-width: 980px;
+  min-width: 840px;
 }
 
 .podcasts-table__identity {
@@ -215,17 +267,57 @@ function getPodcastImage(id: string): string {
   gap: var(--space-2);
 }
 
-.podcasts-table__inline-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
 .podcasts-table__actions {
   display: grid;
-  gap: var(--space-2);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-width: 210px;
+  grid-template-columns: repeat(4, auto);
+  gap: var(--space-1);
+  justify-content: start;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: var(--color-hover);
+  border-color: var(--color-text-secondary);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.icon-btn--active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.icon-btn--active:hover:not(:disabled) {
+  color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: var(--color-danger-subtle, var(--color-hover));
 }
 </style>

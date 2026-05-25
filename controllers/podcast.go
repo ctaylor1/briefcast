@@ -70,6 +70,11 @@ type PodcastSponsorSkipPatch struct {
 	AutoSkipSponsorChapters *bool `json:"autoSkipSponsorChapters"`
 }
 
+// PodcastBriefpointPatch represents the request body for toggling Briefpoint.
+type PodcastBriefpointPatch struct {
+	BriefpointEnabled *bool `json:"briefpointEnabled"`
+}
+
 // PodcastAlternateFeedsPatch represents the request body for alternate feeds.
 type PodcastAlternateFeedsPatch struct {
 	AlternateFeedURLs []string `json:"alternateFeedURLs"`
@@ -214,6 +219,63 @@ func PatchPodcastSponsorSkip(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// PatchPodcastBriefpoint toggles Briefpoint sync for a podcast.
+func PatchPodcastBriefpoint(c *gin.Context) {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var patch PodcastBriefpointPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if patch.BriefpointEnabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "briefpointEnabled is required"})
+		return
+	}
+
+	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", searchByIDQuery.ID).
+		Update("briefpoint_enabled", *patch.BriefpointEnabled).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if *patch.BriefpointEnabled {
+		go func() {
+			if _, err := service.SendPodcastToBriefpoint(searchByIDQuery.ID); err != nil {
+				controllerLogger.Warnw("briefpoint sync failed", "podcast_id", searchByIDQuery.ID, "error", err)
+			}
+		}()
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// SyncPodcastToBriefpoint sends all completed episodes for a podcast to Briefpoint.
+func SyncPodcastToBriefpoint(c *gin.Context) {
+	var searchByIDQuery SearchByIDQuery
+	if c.ShouldBindUri(&searchByIDQuery) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if service.GetBriefpointSyncRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "a briefpoint sync is already running"})
+		return
+	}
+
+	go func() {
+		if _, err := service.SendPodcastToBriefpoint(searchByIDQuery.ID); err != nil {
+			controllerLogger.Warnw("briefpoint sync failed", "podcast_id", searchByIDQuery.ID, "error", err)
+		}
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "briefpoint sync started"})
 }
 
 // GetPodcastAlternateFeeds returns the alternate feed URLs for a podcast.
