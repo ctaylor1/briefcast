@@ -837,3 +837,23 @@ func UntagAllByTagID(tagID string) error {
 	tx := DB.Exec("DELETE FROM podcast_tags WHERE tag_id=?", tagID)
 	return tx.Error
 }
+
+func CreatePromptVersion(promptType, content string) error {
+	v := PromptVersion{PromptType: promptType, Content: content}
+	return DB.Create(&v).Error
+}
+
+func GetPromptVersions(promptType string) ([]PromptVersion, error) {
+	var versions []PromptVersion
+	result := DB.Where("prompt_type = ?", promptType).Order("created_at DESC").Find(&versions)
+	return versions, result.Error
+}
+
+func GetPromptVersionByID(id string) (*PromptVersion, error) {
+	var v PromptVersion
+	result := DB.First(&v, "id = ?", id)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &v, nil
+}

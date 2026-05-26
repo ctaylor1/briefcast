@@ -3,11 +3,12 @@ import { computed, onMounted, ref } from "vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
+import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
-import type { AppSettings } from "../types/api";
+import type { AppSettings, PromptVersion } from "../types/api";
 
 type RetentionForm = {
   keepAllEpisodes: boolean;
@@ -63,6 +64,10 @@ const isResummarizing = ref(false);
 const resummarizeModelFilter = ref("");
 const resummarizeBeforeDate = ref("");
 const resummarizeDryRunCount = ref<number | null>(null);
+const promptHistoryOpen = ref(false);
+const promptHistoryType = ref<"system" | "user">("system");
+const promptHistoryVersions = ref<PromptVersion[]>([]);
+const promptHistoryLoading = ref(false);
 const {
   errorMessage,
   successMessage,
@@ -159,8 +164,8 @@ async function loadSettings(): Promise<void> {
     summarizationForm.value = {
       summarizationEnabled: settings.summarizationEnabled,
       summarizationModel: settings.summarizationModel ?? "",
-      summarizationPrompt: settings.summarizationPrompt ?? "",
-      summarizationUserPrompt: settings.summarizationUserPrompt ?? "",
+      summarizationPrompt: settings.summarizationPrompt || settings.defaultSystemPrompt || "",
+      summarizationUserPrompt: settings.summarizationUserPrompt || settings.defaultUserPrompt || "",
     };
     modelSettingsForm.value = {
       llmConcurrency: settings.llmConcurrency ?? 1,
@@ -229,17 +234,21 @@ async function saveSummarizationSettings(): Promise<void> {
   isSavingSummarization.value = true;
   clearAll();
   try {
+    const sysPrompt = summarizationForm.value.summarizationPrompt.trim();
+    const usrPrompt = summarizationForm.value.summarizationUserPrompt.trim();
     const updated = await settingsApi.update({
       summarizationEnabled: summarizationForm.value.summarizationEnabled,
       summarizationModel: summarizationForm.value.summarizationModel,
-      summarizationPrompt: summarizationForm.value.summarizationPrompt,
-      summarizationUserPrompt: summarizationForm.value.summarizationUserPrompt,
+      summarizationPrompt: sysPrompt === defaultSystemPrompt.value ? "" : sysPrompt,
+      summarizationUserPrompt: usrPrompt === defaultUserPrompt.value ? "" : usrPrompt,
     });
+    defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
+    defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
     summarizationForm.value = {
       summarizationEnabled: updated.summarizationEnabled,
       summarizationModel: updated.summarizationModel ?? "",
-      summarizationPrompt: updated.summarizationPrompt ?? "",
-      summarizationUserPrompt: updated.summarizationUserPrompt ?? "",
+      summarizationPrompt: updated.summarizationPrompt || updated.defaultSystemPrompt || "",
+      summarizationUserPrompt: updated.summarizationUserPrompt || updated.defaultUserPrompt || "",
     };
     setSuccess("Summarization settings updated.");
   } catch (error) {
@@ -247,6 +256,41 @@ async function saveSummarizationSettings(): Promise<void> {
   } finally {
     isSavingSummarization.value = false;
   }
+}
+
+async function openPromptHistory(type: "system" | "user"): Promise<void> {
+  promptHistoryType.value = type;
+  promptHistoryOpen.value = true;
+  promptHistoryLoading.value = true;
+  try {
+    promptHistoryVersions.value = await settingsApi.getPromptVersions(type);
+  } catch {
+    promptHistoryVersions.value = [];
+  } finally {
+    promptHistoryLoading.value = false;
+  }
+}
+
+async function restorePromptVersion(id: string): Promise<void> {
+  try {
+    const updated = await settingsApi.restorePromptVersion(id);
+    defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
+    defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
+    summarizationForm.value = {
+      summarizationEnabled: updated.summarizationEnabled,
+      summarizationModel: updated.summarizationModel ?? "",
+      summarizationPrompt: updated.summarizationPrompt || updated.defaultSystemPrompt || "",
+      summarizationUserPrompt: updated.summarizationUserPrompt || updated.defaultUserPrompt || "",
+    };
+    promptHistoryOpen.value = false;
+    setSuccess("Prompt restored successfully.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to restore prompt version."));
+  }
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString();
 }
 
 async function saveModelSettings(): Promise<void> {
@@ -668,32 +712,38 @@ onMounted(loadSettings);
       </div>
 
       <div class="stack-1">
-        <label class="settings-label" for="summarization-system-prompt">System prompt</label>
+        <div class="settings-label-row">
+          <label class="settings-label" for="summarization-system-prompt">System prompt</label>
+          <UiButton variant="ghost" size="sm" @click="openPromptHistory('system')">History</UiButton>
+        </div>
         <textarea
           id="summarization-system-prompt"
           v-model="summarizationForm.summarizationPrompt"
           rows="6"
           class="settings-textarea"
           :disabled="!summarizationForm.summarizationEnabled"
-          :placeholder="defaultSystemPrompt || 'Leave blank to use the default system prompt from your environment configuration.'"
+          placeholder="Enter a system prompt…"
         />
         <p class="meta-text">
-          Sent as the system message to the LLM. Leave blank to use the default prompt from your .env configuration.
+          Sent as the system message to the LLM. Edit directly or clear to reset to the default.
         </p>
       </div>
 
       <div class="stack-1">
-        <label class="settings-label" for="summarization-user-prompt">User prompt prefix</label>
+        <div class="settings-label-row">
+          <label class="settings-label" for="summarization-user-prompt">User prompt prefix</label>
+          <UiButton variant="ghost" size="sm" @click="openPromptHistory('user')">History</UiButton>
+        </div>
         <textarea
           id="summarization-user-prompt"
           v-model="summarizationForm.summarizationUserPrompt"
           rows="4"
           class="settings-textarea"
           :disabled="!summarizationForm.summarizationEnabled"
-          :placeholder="defaultUserPrompt || 'Leave blank to use the default user prompt prefix.'"
+          placeholder="Enter a user prompt prefix…"
         />
         <p class="meta-text">
-          Prepended to the transcript in the user message. Leave blank to use the default prefix.
+          Prepended to the transcript in the user message. Edit directly or clear to reset to the default.
         </p>
       </div>
 
@@ -849,6 +899,25 @@ onMounted(loadSettings);
       </div>
     </UiCard>
   </section>
+
+  <UiDrawer
+    :open="promptHistoryOpen"
+    :title="`${promptHistoryType === 'system' ? 'System' : 'User'} prompt history`"
+    description="Previous versions saved when you changed the prompt."
+    @close="promptHistoryOpen = false"
+  >
+    <p v-if="promptHistoryLoading" class="meta-text">Loading…</p>
+    <p v-else-if="promptHistoryVersions.length === 0" class="meta-text">No previous versions yet.</p>
+    <div v-else class="prompt-version-list">
+      <div v-for="v in promptHistoryVersions" :key="v.ID" class="prompt-version-item">
+        <div class="prompt-version-header">
+          <span class="prompt-version-date">{{ formatDate(v.CreatedAt) }}</span>
+          <UiButton variant="ghost" size="sm" @click="restorePromptVersion(v.ID)">Restore</UiButton>
+        </div>
+        <pre class="prompt-version-content">{{ v.Content }}</pre>
+      </div>
+    </div>
+  </UiDrawer>
 </template>
 
 <style scoped>
@@ -943,5 +1012,45 @@ onMounted(loadSettings);
 .resummarize-actions {
   flex-wrap: wrap;
   align-items: center;
+}
+
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prompt-version-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3, 0.75rem);
+}
+
+.prompt-version-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  padding: var(--spacing-3, 0.75rem);
+}
+
+.prompt-version-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-2, 0.5rem);
+}
+
+.prompt-version-date {
+  font-size: var(--font-sm-size, 0.875rem);
+  color: var(--color-text-secondary);
+}
+
+.prompt-version-content {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--font-sm-size, 0.875rem);
+  color: var(--color-text-primary);
+  max-height: 12rem;
+  overflow-y: auto;
 }
 </style>

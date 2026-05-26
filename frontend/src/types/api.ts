@@ -202,6 +202,13 @@ export interface SummaryListItem {
   isFavorited: boolean;
 }
 
+export interface PromptVersion {
+  ID: string;
+  CreatedAt: string;
+  PromptType: "system" | "user";
+  Content: string;
+}
+
 export interface ResummarizeFilter {
   model?: string;
   before?: string;

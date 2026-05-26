@@ -143,10 +143,16 @@ func PatchSettings(c *gin.Context) {
 	if patch.SummarizationModel != nil {
 		setting.SummarizationModel = *patch.SummarizationModel
 	}
-	if patch.SummarizationPrompt != nil {
+	if patch.SummarizationPrompt != nil && *patch.SummarizationPrompt != setting.SummarizationPrompt {
+		if setting.SummarizationPrompt != "" {
+			db.CreatePromptVersion("system", setting.SummarizationPrompt)
+		}
 		setting.SummarizationPrompt = *patch.SummarizationPrompt
 	}
-	if patch.SummarizationUserPrompt != nil {
+	if patch.SummarizationUserPrompt != nil && *patch.SummarizationUserPrompt != setting.SummarizationUserPrompt {
+		if setting.SummarizationUserPrompt != "" {
+			db.CreatePromptVersion("user", setting.SummarizationUserPrompt)
+		}
 		setting.SummarizationUserPrompt = *patch.SummarizationUserPrompt
 	}
 	if patch.LLMConcurrency != nil {
@@ -284,6 +290,51 @@ func ExportAll(c *gin.Context) {
 // GetExportAllStatus returns whether an export is currently running.
 func GetExportAllStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"running": service.GetExportAllRunning()})
+}
+
+// GetPromptVersions returns the version history for a prompt type (system or user).
+func GetPromptVersions(c *gin.Context) {
+	promptType := c.Query("type")
+	if promptType != "system" && promptType != "user" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'system' or 'user'"})
+		return
+	}
+	versions, err := db.GetPromptVersions(promptType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load prompt versions"})
+		return
+	}
+	c.JSON(http.StatusOK, versions)
+}
+
+// RestorePromptVersion restores a previous prompt version by writing it back to settings.
+func RestorePromptVersion(c *gin.Context) {
+	id := c.Param("id")
+	version, err := db.GetPromptVersionByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
+		return
+	}
+
+	setting := db.GetOrCreateSetting()
+	switch version.PromptType {
+	case "system":
+		if setting.SummarizationPrompt != "" {
+			db.CreatePromptVersion("system", setting.SummarizationPrompt)
+		}
+		setting.SummarizationPrompt = version.Content
+	case "user":
+		if setting.SummarizationUserPrompt != "" {
+			db.CreatePromptVersion("user", setting.SummarizationUserPrompt)
+		}
+		setting.SummarizationUserPrompt = version.Content
+	}
+
+	if err := db.UpdateSettings(setting); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, settingsFromModel(setting))
 }
 
 func settingsFromModel(setting *db.Setting) SettingsResponse {

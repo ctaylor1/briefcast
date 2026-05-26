@@ -1,4 +1,4 @@
-import type { AppSettings, ResummarizeFilter, ResummarizeResult } from "../../types/api";
+import type { AppSettings, PromptVersion, ResummarizeFilter, ResummarizeResult } from "../../types/api";
 import { httpClient } from "./http";
 
 export const settingsApi = {
@@ -19,5 +19,11 @@ export const settingsApi = {
   },
   getSummaryModels(): Promise<{ models: string[] }> {
     return httpClient.get("/settings/summary-models");
+  },
+  getPromptVersions(type: "system" | "user"): Promise<PromptVersion[]> {
+    return httpClient.get<PromptVersion[]>(`/settings/prompt-versions?type=${type}`);
+  },
+  restorePromptVersion(id: string): Promise<AppSettings> {
+    return httpClient.post<AppSettings>(`/settings/prompt-versions/${id}/restore`);
   },
 };

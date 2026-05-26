@@ -191,6 +191,13 @@ type Setting struct {
 	BriefpointAPIKey    string `gorm:"type:text"`
 }
 
+// PromptVersion stores a snapshot of a prompt each time it is changed via settings.
+type PromptVersion struct {
+	Base
+	PromptType string `gorm:"type:text;index"`
+	Content    string `gorm:"type:text"`
+}
+
 // Migration represents a public type.
 type Migration struct {
 	Base

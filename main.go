@@ -175,6 +175,8 @@ func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
 	router.GET("/settings/backfill-links", controllers.GetBackfillLinksStatus)
 	router.POST("/settings/export-all", controllers.ExportAll)
 	router.GET("/settings/export-all", controllers.GetExportAllStatus)
+	router.GET("/settings/prompt-versions", controllers.GetPromptVersions)
+	router.POST("/settings/prompt-versions/:id/restore", controllers.RestorePromptVersion)
 	router.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, versionResponse{
 			Version: resolveRunningVersion(),
