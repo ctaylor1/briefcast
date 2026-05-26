@@ -70,7 +70,7 @@ func PodcastPage(c *gin.Context) {
 
 		var podcast db.Podcast
 
-		if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err == nil {
+		if err := db.GetPodcastByIDWithItems(searchByIDQuery.ID, &podcast); err == nil {
 			var pagination model.Pagination
 			if c.ShouldBindQuery(&pagination) == nil {
 				var page, count int

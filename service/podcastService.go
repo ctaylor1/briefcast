@@ -65,7 +65,7 @@ func ParseOpml(content string) (model.OpmlModel, error) {
 func GetPodcastByID(id string) *db.Podcast {
 	var podcast db.Podcast
 
-	if err := db.GetPodcastByID(id, &podcast); err != nil {
+	if err := db.GetPodcastByIDWithItems(id, &podcast); err != nil {
 		Logger.Warnw("failed to load podcast by id", "podcast_id", id, "error", err)
 	}
 

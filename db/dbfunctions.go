@@ -136,12 +136,17 @@ func GetPaginatedTags(page int, count int, tags *[]Tag, total *int64) error {
 	return result.Error
 }
 
-// GetPodcastByID handles the corresponding operation.
+// GetPodcastByID loads a podcast without its episodes.
 func GetPodcastByID(id string, podcast *Podcast) error {
+	result := DB.Preload("Tags").First(&podcast, "id=?", id)
+	return result.Error
+}
 
+// GetPodcastByIDWithItems loads a podcast with all episodes (expensive for large feeds).
+func GetPodcastByIDWithItems(id string, podcast *Podcast) error {
 	result := DB.Preload("PodcastItems", func(db *gorm.DB) *gorm.DB {
 		return db.Order("podcast_items.pub_date DESC")
-	}).First(&podcast, "id=?", id)
+	}).Preload("Tags").First(&podcast, "id=?", id)
 	return result.Error
 }
 
@@ -175,8 +180,7 @@ func DeleteTagByID(id string) error {
 
 // GetAllPodcastItemsByPodcastID handles the corresponding operation.
 func GetAllPodcastItemsByPodcastID(podcastID string, podcastItems *[]PodcastItem) error {
-
-	result := podcastItemsWithAssociations(DB).Where(&PodcastItem{PodcastID: podcastID}).Find(&podcastItems)
+	result := DB.Where(&PodcastItem{PodcastID: podcastID}).Find(&podcastItems)
 	return result.Error
 }
 
