@@ -187,11 +187,16 @@ func GetAllPodcastItemsByPodcastID(podcastID string, podcastItems *[]PodcastItem
 // podcastItemListColumns contains the columns needed for list/player views,
 // excluding heavy text blobs (transcripts, JSON, summaries) that are never
 // serialized in the API response.
+// podcastItemListColumns contains the columns needed for list/player views,
+// excluding heavy text blobs (transcripts, summaries) that are never
+// serialized in the API response. Chapters JSON columns are included because
+// they are tiny (empty for most episodes) and needed for the HasChapters flag.
 var podcastItemListColumns = []string{
 	"id", "created_at", "updated_at", "deleted_at",
 	"podcast_id", "title", "summary", "summary_html",
 	"episode_type", "duration", "pub_date", "file_url",
 	"guid", "image", "chapters_url", "chapters_type",
+	"chapters_json", "id3_chapters_json",
 	"download_date", "download_path", "download_status",
 	"is_played", "bookmark_date", "local_image",
 	"file_size", "downloaded_bytes", "download_total_bytes",
