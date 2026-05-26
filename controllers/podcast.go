@@ -431,7 +431,7 @@ func GetPodcastItemsByPodcastID(c *gin.Context) {
 
 		var podcastItems []db.PodcastItem
 
-		err := db.GetAllPodcastItemsByPodcastID(searchByIDQuery.ID, &podcastItems)
+		err := db.GetPodcastItemsByPodcastIDLightweight(searchByIDQuery.ID, &podcastItems)
 		if err != nil {
 			controllerLogger.Warnw("failed to fetch podcast items", "podcast_id", searchByIDQuery.ID, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -900,8 +900,8 @@ func decoratePodcastItem(item *db.PodcastItem) {
 	if item == nil {
 		return
 	}
-	item.HasChapters = item.ChaptersJSON != "" || item.ID3ChaptersJSON != ""
-	item.HasTranscript = item.TranscriptJSON != "" || item.TranscriptStatus == "available"
+	item.HasChapters = item.ChaptersURL != "" || item.ChaptersJSON != "" || item.ID3ChaptersJSON != ""
+	item.HasTranscript = item.TranscriptStatus == "available" || item.TranscriptJSON != ""
 	item.HasSummary = item.LLMSummaryStatus == "available"
 	if strings.TrimSpace(item.TranscriptStatus) == "" {
 		item.TranscriptStatus = "missing"

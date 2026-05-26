@@ -184,6 +184,33 @@ func GetAllPodcastItemsByPodcastID(podcastID string, podcastItems *[]PodcastItem
 	return result.Error
 }
 
+// podcastItemListColumns contains the columns needed for list/player views,
+// excluding heavy text blobs (transcripts, JSON, summaries) that are never
+// serialized in the API response.
+var podcastItemListColumns = []string{
+	"id", "created_at", "updated_at", "deleted_at",
+	"podcast_id", "title", "summary", "summary_html",
+	"episode_type", "duration", "pub_date", "file_url",
+	"guid", "image", "chapters_url", "chapters_type",
+	"download_date", "download_path", "download_status",
+	"is_played", "bookmark_date", "local_image",
+	"file_size", "downloaded_bytes", "download_total_bytes",
+	"canonical_transcript_version", "canonical_updated_at",
+	"transcript_status", "transcript_progress_pct", "transcript_progress_stage",
+	"transcript_retry_count", "transcript_next_attempt", "transcript_model",
+	"llm_summary_status", "llm_summary_date", "llm_summary_model",
+	"is_summary_favorited",
+}
+
+// GetPodcastItemsByPodcastIDLightweight loads items without heavy text columns.
+func GetPodcastItemsByPodcastIDLightweight(podcastID string, podcastItems *[]PodcastItem) error {
+	result := DB.Select(podcastItemListColumns).
+		Where("podcast_id = ?", podcastID).
+		Order("pub_date DESC").
+		Find(&podcastItems)
+	return result.Error
+}
+
 // GetAllPodcastItemsByPodcastIds handles the corresponding operation.
 func GetAllPodcastItemsByPodcastIds(podcastIds []string, podcastItems *[]PodcastItem) error {
 
