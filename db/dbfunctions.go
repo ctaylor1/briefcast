@@ -726,6 +726,25 @@ func Unlock(name string) {
 	})
 }
 
+// UnlockAllJobs unconditionally releases every lock. Call at process startup:
+// no previous work can still be running in this process, so any held lock is
+// stale (e.g. the container was restarted mid-transcription).
+func UnlockAllJobs() {
+	result := DB.Model(&JobLock{}).
+		Where("duration > 0").
+		Updates(map[string]interface{}{
+			"duration": 0,
+			"date":     time.Time{},
+		})
+	if result.Error != nil {
+		logging.Sugar().Warnw("failed to clear job locks at startup", "error", result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		logging.Sugar().Infow("cleared stale job locks at startup", "count", result.RowsAffected)
+	}
+}
+
 // UnlockMissedJobs clears stale lock rows whose lease has expired.
 func UnlockMissedJobs() {
 	var jobLocks []JobLock

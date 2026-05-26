@@ -306,7 +306,7 @@ func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency in
 func intiCron() {
 	appLogger := logging.Sugar()
 	checkFrequency := resolveCheckFrequency(os.Getenv("CHECK_FREQUENCY"), appLogger)
-	service.UnlockMissedJobs()
+	service.UnlockAllJobs()
 
 	scheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 	whisperxFrequency := resolveWhisperXFrequency(checkFrequency, os.Getenv("WHISPERX_CHECK_FREQUENCY"), appLogger)

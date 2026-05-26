@@ -1278,6 +1278,12 @@ func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, initialDownloa
 	return db.UpdateSettings(setting)
 }
 
+// UnlockAllJobs clears every held lock. Safe to call at process startup since
+// no background work from a previous process can still be running.
+func UnlockAllJobs() {
+	db.UnlockAllJobs()
+}
+
 // UnlockMissedJobs handles the corresponding operation.
 func UnlockMissedJobs() {
 	db.UnlockMissedJobs()
