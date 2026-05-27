@@ -482,7 +482,16 @@ func ForceSetLastEpisodeDate(podcastID string) {
 func TogglePodcastPauseStatus(podcastID string, isPaused bool) error {
 
 	tx := DB.Exec("update podcasts set is_paused = @isPaused where id = @id", sql.Named("id", podcastID), sql.Named("isPaused", isPaused))
-	return tx.Error
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		var podcast Podcast
+		if err := DB.Select("id").First(&podcast, "id = ?", podcastID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetPodcastItemsByPodcastIDAndGUIDs handles the corresponding operation.

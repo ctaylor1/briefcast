@@ -27,7 +27,11 @@ var (
 	ErrDownloadCancelled = errors.New("download cancelled")
 	// ErrDownloadPaused is a public variable.
 	ErrDownloadPaused = errors.New("download paused")
-	backupNow         = func() time.Time { return time.Now().UTC() }
+	// ErrPathOutsideAssetsDir is returned when destructive asset operations are given an unscoped path.
+	ErrPathOutsideAssetsDir = errors.New("path is outside assets directory")
+	// ErrPathNotRegularAssetFile is returned when destructive file cleanup is pointed at a directory.
+	ErrPathNotRegularAssetFile = errors.New("asset path is not a regular file")
+	backupNow                  = func() time.Time { return time.Now().UTC() }
 )
 
 // DownloadHTTPError represents an HTTP-level download failure with status code.
@@ -375,6 +379,24 @@ func DeleteFile(filePath string) error {
 	return nil
 }
 
+func DeleteAssetFile(filePath string) error {
+	cleanPath := strings.TrimSpace(filePath)
+	if cleanPath == "" {
+		return &os.PathError{Op: "remove", Path: filePath, Err: os.ErrNotExist}
+	}
+	if !IsPathWithinAssetsDir(cleanPath) {
+		return fmt.Errorf("%w: %s", ErrPathOutsideAssetsDir, cleanPath)
+	}
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%w: %s", ErrPathNotRegularAssetFile, cleanPath)
+	}
+	return os.Remove(cleanPath)
+}
+
 // FileExists handles the corresponding operation.
 func FileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
@@ -516,9 +538,10 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 func httpClient() *http.Client {
 	timeoutSeconds := getEnvInt(httpTimeoutEnv, defaultHTTPTimeoutSeconds)
 	client := http.Client{
+		Transport: outboundHTTPTransport(outboundPurposeHTTP),
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			//	r.URL.Opaque = r.URL.Path
-			return nil
+			_, err := validateOutboundURL(r.URL.String(), outboundPurposeHTTP)
+			return err
 		},
 	}
 	if timeoutSeconds > 0 {
@@ -533,14 +556,21 @@ func getRequest(url string) (*http.Request, error) {
 }
 
 func getRequestWithMethod(method string, targetURL string) (*http.Request, error) {
-	req, err := http.NewRequest(method, targetURL, nil)
+	parsedURL, err := validateOutboundURL(targetURL, outboundPurposeHTTP)
 	if err != nil {
 		return nil, err
 	}
 
-	setting := db.GetOrCreateSetting()
-	if len(setting.UserAgent) > 0 {
-		req.Header.Add("User-Agent", setting.UserAgent)
+	req, err := http.NewRequest(method, parsedURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if db.DB != nil {
+		setting := db.GetOrCreateSetting()
+		if len(setting.UserAgent) > 0 {
+			req.Header.Add("User-Agent", setting.UserAgent)
+		}
 	}
 
 	return req, nil
@@ -583,6 +613,13 @@ func deletePodcastFolder(folder string) error {
 		dataCategoryPodcastFolderPath(assetMarkdownSummariesDir, folder),
 	}
 	for _, folderPath := range paths {
+		if !IsPathWithinAssetsDir(folderPath) {
+			err := fmt.Errorf("%w: %s", ErrPathOutsideAssetsDir, folderPath)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
 		if err := os.RemoveAll(folderPath); err != nil && firstErr == nil {
 			firstErr = err
 		}

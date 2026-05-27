@@ -37,11 +37,12 @@ func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 	}
 
 	summaryPath := filepath.Join(dataDir, "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.txt")
-	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != item.LLMSummary {
+	expectedSummary := item.LLMSummary + "\n\n---\n\n## Show Notes\n\n" + item.Summary
+	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != expectedSummary {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}
 	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.md")
-	if got, err := os.ReadFile(summaryMarkdownPath); err != nil || string(got) != item.LLMSummary {
+	if got, err := os.ReadFile(summaryMarkdownPath); err != nil || string(got) != expectedSummary {
 		t.Fatalf("expected summary markdown export at %q, got content=%q err=%v", summaryMarkdownPath, string(got), err)
 	}
 }

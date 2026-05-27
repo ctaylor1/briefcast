@@ -56,6 +56,7 @@ const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
 const isSavingModelSettings = ref(false);
 const isSavingBriefpoint = ref(false);
+const briefpointAPIKeyConfigured = ref(false);
 const defaultModel = ref("");
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
@@ -173,8 +174,9 @@ async function loadSettings(): Promise<void> {
     briefpointForm.value = {
       briefpointEnabled: settings.briefpointEnabled ?? false,
       briefpointServerURL: settings.briefpointServerURL ?? "",
-      briefpointAPIKey: settings.briefpointAPIKey ?? "",
+      briefpointAPIKey: "",
     };
+    briefpointAPIKeyConfigured.value = settings.briefpointAPIKeyConfigured ?? false;
     defaultModel.value = settings.defaultModel ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
@@ -315,16 +317,25 @@ async function saveBriefpointSettings(): Promise<void> {
   isSavingBriefpoint.value = true;
   clearAll();
   try {
-    const updated = await settingsApi.update({
+    const payload = {
       briefpointEnabled: briefpointForm.value.briefpointEnabled,
       briefpointServerURL: briefpointForm.value.briefpointServerURL,
-      briefpointAPIKey: briefpointForm.value.briefpointAPIKey,
-    });
+    };
+    const nextAPIKey = briefpointForm.value.briefpointAPIKey.trim();
+    const updated = await settingsApi.update(
+      nextAPIKey
+        ? {
+            ...payload,
+            briefpointAPIKey: nextAPIKey,
+          }
+        : payload,
+    );
     briefpointForm.value = {
       briefpointEnabled: updated.briefpointEnabled ?? false,
       briefpointServerURL: updated.briefpointServerURL ?? "",
-      briefpointAPIKey: updated.briefpointAPIKey ?? "",
+      briefpointAPIKey: "",
     };
+    briefpointAPIKeyConfigured.value = updated.briefpointAPIKeyConfigured ?? false;
     setSuccess("Briefpoint settings updated.");
   } catch (error) {
     setError(getErrorMessage(error, "Failed to update Briefpoint settings."));
@@ -883,7 +894,7 @@ onMounted(loadSettings);
           type="password"
           :disabled="!briefpointForm.briefpointEnabled"
           label="API Key"
-          placeholder="sk_..."
+          :placeholder="briefpointAPIKeyConfigured ? 'Saved key' : 'sk_...'"
         />
       </div>
 

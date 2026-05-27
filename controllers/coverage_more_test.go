@@ -27,6 +27,119 @@ func waitForControllerItemStatus(t *testing.T, id string, expected db.DownloadSt
 	t.Fatalf("timed out waiting for podcast item %s status %v", id, expected)
 }
 
+func TestEpisodeMediaDoesNotServeLocalPathsOutsideAssets(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+
+	_, item := createControllerPodcastAndItem(t)
+	outsideDir := t.TempDir()
+	outsideImage := filepath.Join(outsideDir, "outside.jpg")
+	outsideAudio := filepath.Join(outsideDir, "outside.mp3")
+	if err := os.WriteFile(outsideImage, []byte("outside-image"), 0o644); err != nil {
+		t.Fatalf("write outside image: %v", err)
+	}
+	if err := os.WriteFile(outsideAudio, []byte("outside-audio"), 0o644); err != nil {
+		t.Fatalf("write outside audio: %v", err)
+	}
+
+	item.LocalImage = outsideImage
+	item.Image = "https://example.com/fallback.jpg"
+	item.DownloadPath = outsideAudio
+	item.FileURL = "https://example.com/fallback.mp3"
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("update item with outside paths: %v", err)
+	}
+
+	resp := performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/image", nil, nil)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected outside image path to redirect, got %d", resp.Code)
+	}
+	if got := resp.Header().Get("Location"); got != item.Image {
+		t.Fatalf("expected image fallback redirect %q, got %q", item.Image, got)
+	}
+	if strings.Contains(resp.Body.String(), "outside-image") {
+		t.Fatalf("outside image content was served")
+	}
+
+	resp = performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/file", nil, nil)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected outside media path to redirect, got %d", resp.Code)
+	}
+	if got := resp.Header().Get("Location"); got != item.FileURL {
+		t.Fatalf("expected media fallback redirect %q, got %q", item.FileURL, got)
+	}
+	if strings.Contains(resp.Body.String(), "outside-audio") {
+		t.Fatalf("outside audio content was served")
+	}
+}
+
+func TestEpisodeMediaDoesNotServeAssetDirectories(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+
+	dataDir := strings.TrimSpace(os.Getenv("DATA"))
+	_, item := createControllerPodcastAndItem(t)
+	item.LocalImage = dataDir
+	item.Image = "https://example.com/fallback.jpg"
+	item.DownloadPath = dataDir
+	item.FileURL = "https://example.com/fallback.mp3"
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("update item with directory paths: %v", err)
+	}
+
+	resp := performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/image", nil, nil)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected asset directory image path to redirect, got %d", resp.Code)
+	}
+	if got := resp.Header().Get("Location"); got != item.Image {
+		t.Fatalf("expected image fallback redirect %q, got %q", item.Image, got)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/file", nil, nil)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected asset directory media path to redirect, got %d", resp.Code)
+	}
+	if got := resp.Header().Get("Location"); got != item.FileURL {
+		t.Fatalf("expected media fallback redirect %q, got %q", item.FileURL, got)
+	}
+}
+
+func TestEpisodeMediaRejectsUnsafeFallbackRedirects(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+
+	podcast, item := createControllerPodcastAndItem(t)
+	podcast.Image = "javascript:alert(1)"
+	if err := db.UpdatePodcast(&podcast); err != nil {
+		t.Fatalf("update podcast unsafe image fallback: %v", err)
+	}
+
+	item.LocalImage = ""
+	item.Image = "javascript:alert(1)"
+	item.DownloadPath = ""
+	item.FileURL = "file:///etc/passwd"
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("update item with unsafe fallback URLs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "podcast image", path: "/podcasts/" + podcast.ID + "/image"},
+		{name: "episode image", path: "/podcastitems/" + item.ID + "/image"},
+		{name: "episode file", path: "/podcastitems/" + item.ID + "/file"},
+	} {
+		resp := performRequest(router, http.MethodGet, tc.path, nil, nil)
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected unsafe fallback URL to return 404, got %d", tc.name, resp.Code)
+		}
+		if got := resp.Header().Get("Location"); got != "" {
+			t.Fatalf("%s: expected no Location header for unsafe fallback URL, got %q", tc.name, got)
+		}
+	}
+}
+
 // TestEpisodeMediaAndPodcastItemActionBranches handles the corresponding operation.
 func TestEpisodeMediaAndPodcastItemActionBranches(t *testing.T) {
 	setupControllersTestDB(t)

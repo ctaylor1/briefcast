@@ -78,14 +78,14 @@ type BriefpointIngestRequest struct {
 }
 
 type BriefpointIngestResponse struct {
-	ItemID        string  `json:"item_id"`
-	ExternalRef   string  `json:"external_ref"`
-	SourceID      string  `json:"source_id"`
-	SourceCreated bool    `json:"source_created"`
-	Updated       bool    `json:"updated"`
-	Status        string  `json:"status"`
+	ItemID        string   `json:"item_id"`
+	ExternalRef   string   `json:"external_ref"`
+	SourceID      string   `json:"source_id"`
+	SourceCreated bool     `json:"source_created"`
+	Updated       bool     `json:"updated"`
+	Status        string   `json:"status"`
 	FinalScore    *float64 `json:"final_score"`
-	Promoted      bool    `json:"promoted"`
+	Promoted      bool     `json:"promoted"`
 }
 
 type BriefpointSyncResult struct {
@@ -213,7 +213,10 @@ func sendEpisodeToBriefpoint(cfg BriefpointConfig, podcast *db.Podcast, episode 
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := cfg.ServerURL + "/api/ingest/items"
+	url, err := briefpointIngestURL(cfg.ServerURL)
+	if err != nil {
+		return err
+	}
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -221,7 +224,14 @@ func sendEpisodeToBriefpoint(cfg BriefpointConfig, podcast *db.Podcast, episode 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: outboundHTTPTransport(outboundPurposeBriefpoint),
+		CheckRedirect: func(r *http.Request, _ []*http.Request) error {
+			_, redirectErr := validateOutboundURL(r.URL.String(), outboundPurposeBriefpoint)
+			return redirectErr
+		},
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
@@ -234,4 +244,12 @@ func sendEpisodeToBriefpoint(cfg BriefpointConfig, podcast *db.Podcast, episode 
 	}
 
 	return nil
+}
+
+func briefpointIngestURL(serverURL string) (string, error) {
+	parsed, err := validateOutboundURL(serverURL, outboundPurposeBriefpoint)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(parsed.String(), "/") + "/api/ingest/items", nil
 }

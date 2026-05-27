@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -203,7 +202,10 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 		return "", fmt.Errorf("failed to encode LLM request: %w", err)
 	}
 
-	url := strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
+	url, err := llmChatCompletionsURL(cfg.BaseURL)
+	if err != nil {
+		return "", err
+	}
 
 	ctx := context.Background()
 	cancel := func() {}
@@ -219,13 +221,13 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := llmHTTPClient(cfg).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("LLM request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBoundedOutboundBody(resp.Body, resp.ContentLength)
 	if err != nil {
 		return "", fmt.Errorf("failed to read LLM response: %w", err)
 	}
@@ -253,6 +255,28 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 	}
 
 	return summary, nil
+}
+
+func llmChatCompletionsURL(baseURL string) (string, error) {
+	parsed, err := validateOutboundURL(baseURL, outboundPurposeLLM)
+	if err != nil {
+		return "", fmt.Errorf("invalid LLM base URL: %w", err)
+	}
+	return strings.TrimRight(parsed.String(), "/") + "/chat/completions", nil
+}
+
+func llmHTTPClient(cfg LLMConfig) *http.Client {
+	client := &http.Client{
+		Transport: outboundHTTPTransport(outboundPurposeLLM),
+		CheckRedirect: func(r *http.Request, _ []*http.Request) error {
+			_, err := validateOutboundURL(r.URL.String(), outboundPurposeLLM)
+			return err
+		},
+	}
+	if cfg.TimeoutSecs > 0 {
+		client.Timeout = time.Duration(cfg.TimeoutSecs) * time.Second
+	}
+	return client
 }
 
 // SummarizeEpisode summarizes a single episode's canonical transcript using the configured LLM.

@@ -67,9 +67,7 @@ func buildRouter() *gin.Engine {
 
 	// Legacy HTML templates removed; modern Vue app is the only UI.
 	pass := os.Getenv("PASSWORD")
-	dataPath := os.Getenv("DATA")
-	backupPath := path.Join(os.Getenv("CONFIG"), "backups")
-	registerRoutes(authRouterGroup(r, pass), dataPath, backupPath)
+	registerRoutes(authRouterGroup(r, pass))
 	return r
 }
 
@@ -82,10 +80,8 @@ func authRouterGroup(r *gin.Engine, pass string) *gin.RouterGroup {
 	return &r.RouterGroup
 }
 
-func registerRoutes(router *gin.RouterGroup, dataPath, backupPath string) {
+func registerRoutes(router *gin.RouterGroup) {
 	router.Static("/webassets", "./webassets")
-	router.Static("/assets", dataPath)
-	router.Static(backupPath, backupPath)
 	router.Static("/app/assets", "./frontend/dist/assets")
 	router.StaticFile("/app/favicon.ico", "./frontend/dist/favicon.ico")
 	router.GET("/", func(c *gin.Context) {

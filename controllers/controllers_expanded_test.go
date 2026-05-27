@@ -149,12 +149,20 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("add tag to podcast failed: %v", err)
 	}
 
-	episodeImagePath := filepath.Join(os.TempDir(), "controller-episode-image.jpg")
+	dataDir := strings.TrimSpace(os.Getenv("DATA"))
+	episodeImagePath := filepath.Join(dataDir, "images", "controller-episode-image.jpg")
+	if err := os.MkdirAll(filepath.Dir(episodeImagePath), 0o755); err != nil {
+		t.Fatalf("mkdir episode image dir failed: %v", err)
+	}
 	if err := os.WriteFile(episodeImagePath, []byte("img"), 0o644); err != nil {
 		t.Fatalf("write episode image failed: %v", err)
 	}
 	item.LocalImage = episodeImagePath
-	episodeFilePath := filepath.Join(os.TempDir(), "controller-episode-file.mp3")
+	item.Image = "https://example.com/fallback.jpg"
+	episodeFilePath := filepath.Join(dataDir, "audio", "controller-episode-file.mp3")
+	if err := os.MkdirAll(filepath.Dir(episodeFilePath), 0o755); err != nil {
+		t.Fatalf("mkdir episode file dir failed: %v", err)
+	}
 	if err := os.WriteFile(episodeFilePath, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("write episode file failed: %v", err)
 	}

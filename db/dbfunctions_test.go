@@ -285,6 +285,15 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	if !refreshedPodcastA.IsPaused {
 		t.Fatalf("expected podcast A paused")
 	}
+	if err := TogglePodcastPauseStatus(podcastA.ID, true); err != nil {
+		t.Fatalf("idempotent TogglePodcastPauseStatus pause failed: %v", err)
+	}
+	if err := TogglePodcastPauseStatus(podcastA.ID, false); err != nil {
+		t.Fatalf("TogglePodcastPauseStatus unpause failed: %v", err)
+	}
+	if err := TogglePodcastPauseStatus(podcastA.ID, false); err != nil {
+		t.Fatalf("idempotent TogglePodcastPauseStatus unpause failed: %v", err)
+	}
 
 	if err := SetAllEpisodesToDownload(podcastA.ID); err != nil {
 		t.Fatalf("SetAllEpisodesToDownload failed: %v", err)

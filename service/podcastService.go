@@ -4,7 +4,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -25,11 +24,19 @@ import (
 // Logger is a public variable.
 var Logger = logging.Sugar()
 
+var startPostOpmlRefresh = func() {
+	go refreshEpisodesAfterOPMLImport()
+}
+
 const (
 	InitialDownloadModeCount  = "count"
 	InitialDownloadModeMonths = "months"
 	InitialDownloadModeAll    = "all"
+	MaxOPMLContentBytes       = 5 * 1024 * 1024
+	MaxOPMLUploadBytes        = MaxOPMLContentBytes + 1024*1024
 )
+
+var ErrOPMLTooLarge = fmt.Errorf("OPML file exceeds %d bytes", MaxOPMLContentBytes)
 
 // NormalizeInitialDownloadMode returns a supported initial back-catalog mode, or
 // an empty string when the input is invalid.
@@ -149,6 +156,10 @@ func GetAllPodcasts(sorting string) *[]db.Podcast {
 
 // AddOpml handles the corresponding operation.
 func AddOpml(content string) error {
+	if len(content) > MaxOPMLContentBytes {
+		return ErrOPMLTooLarge
+	}
+
 	opmlModel, err := ParseOpml(content)
 	if err != nil {
 		Logger.Warnw("failed to parse OPML payload", "error", err)
@@ -180,13 +191,15 @@ func AddOpml(content string) error {
 		Logger.Warnw("Failed to add podcast from OPML", "url", url, "error", addErr)
 	})
 
-	go func() {
-		if refreshErr := RefreshEpisodes(); refreshErr != nil {
-			Logger.Warnw("failed to refresh episodes after OPML import", "error", refreshErr)
-		}
-	}()
+	startPostOpmlRefresh()
 	return nil
 
+}
+
+func refreshEpisodesAfterOPMLImport() {
+	if refreshErr := RefreshEpisodes(); refreshErr != nil {
+		Logger.Warnw("failed to refresh episodes after OPML import", "error", refreshErr)
+	}
 }
 
 // ExportOPML handles the corresponding operation.
@@ -918,17 +931,16 @@ func DeleteEpisodeFile(podcastItemID string) error {
 		return err
 	}
 
-	err = DeleteFile(podcastItem.DownloadPath)
-
-	if err != nil && !os.IsNotExist(err) {
+	err = deletePodcastItemAssetFile(podcastItemID, podcastItem.DownloadPath, "download_path")
+	if err != nil {
 		Logger.Errorw("failed to delete episode file", "podcast_item_id", podcastItemID, "path", podcastItem.DownloadPath, "error", err)
 		return err
 	}
 
 	if podcastItem.LocalImage != "" {
 		go func(localImagePath string) {
-			if deleteErr := DeleteFile(localImagePath); deleteErr != nil && !os.IsNotExist(deleteErr) {
-				Logger.Warnw("failed to delete local image", "path", localImagePath, "error", deleteErr)
+			if deleteErr := deletePodcastItemAssetFile(podcastItemID, localImagePath, "local_image"); deleteErr != nil {
+				Logger.Warnw("failed to delete local image", "podcast_item_id", podcastItemID, "path", localImagePath, "error", deleteErr)
 			}
 		}(podcastItem.LocalImage)
 	}
@@ -1112,11 +1124,11 @@ func DeletePodcastEpisodes(id string) error {
 		return err
 	}
 	for _, item := range podcastItems {
-		if err := DeleteFile(item.DownloadPath); err != nil && !os.IsNotExist(err) {
+		if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
 			Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
 		}
 		if item.LocalImage != "" {
-			if err := DeleteFile(item.LocalImage); err != nil && !os.IsNotExist(err) {
+			if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
 				Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
 			}
 		}
@@ -1145,11 +1157,11 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	}
 	for _, item := range podcastItems {
 		if deleteFiles {
-			if err := DeleteFile(item.DownloadPath); err != nil && !os.IsNotExist(err) {
+			if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
 				Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
 			}
 			if item.LocalImage != "" {
-				if err := DeleteFile(item.LocalImage); err != nil && !os.IsNotExist(err) {
+				if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
 					Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
 				}
 			}
@@ -1172,6 +1184,18 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	}
 	return nil
 
+}
+
+func deletePodcastItemAssetFile(podcastItemID string, filePath string, field string) error {
+	err := DeleteAssetFile(filePath)
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	if errors.Is(err, ErrPathOutsideAssetsDir) || errors.Is(err, ErrPathNotRegularAssetFile) {
+		Logger.Warnw("skipping unsafe episode asset delete", "podcast_item_id", podcastItemID, "field", field, "path", filePath, "error", err)
+		return nil
+	}
+	return err
 }
 
 // DeleteTag handles the corresponding operation.
@@ -1203,7 +1227,7 @@ func makeQuery(url string) ([]byte, error) {
 
 	defer resp.Body.Close()
 	Logger.Debugw("received outbound query response", "url", url, "status", resp.Status)
-	body, readErr := io.ReadAll(resp.Body)
+	body, readErr := readBoundedOutboundBody(resp.Body, resp.ContentLength)
 	if readErr != nil {
 		return nil, readErr
 	}

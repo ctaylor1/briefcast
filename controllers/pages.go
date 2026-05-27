@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -371,25 +372,71 @@ func GetOPML(c *gin.Context) {
 
 // UploadOpml handles the corresponding operation.
 func UploadOpml(c *gin.Context) {
-	file, _, err := c.Request.FormFile("file")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxOPMLUploadBytes)
+	content, err := readOPMLUpload(c.Request)
 	if err != nil {
+		if errors.Is(err, service.ErrOPMLTooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request"})
 		return
 	}
-	defer file.Close()
 
-	buf := bytes.NewBuffer(nil)
-	if _, err := io.Copy(buf, file); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request"})
-		return
-	}
-	content := buf.String()
 	err = service.AddOpml(content)
 	if err != nil {
+		if errors.Is(err, service.ErrOPMLTooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	} else {
 		c.JSON(200, gin.H{"success": "File uploaded"})
 	}
+}
+
+func readOPMLUpload(r *http.Request) (string, error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if isRequestBodyTooLarge(err) {
+				return "", service.ErrOPMLTooLarge
+			}
+			return "", err
+		}
+		if part.FormName() != "file" || part.FileName() == "" {
+			_ = part.Close()
+			continue
+		}
+
+		var buf bytes.Buffer
+		n, copyErr := io.Copy(&buf, io.LimitReader(part, service.MaxOPMLContentBytes+1))
+		_ = part.Close()
+		if copyErr != nil {
+			if isRequestBodyTooLarge(copyErr) {
+				return "", service.ErrOPMLTooLarge
+			}
+			return "", copyErr
+		}
+		if n > service.MaxOPMLContentBytes {
+			return "", service.ErrOPMLTooLarge
+		}
+		return buf.String(), nil
+	}
+
+	return "", errors.New("missing OPML upload file")
+}
+
+func isRequestBodyTooLarge(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "request body too large")
 }
 
 // AddNewPodcast handles the corresponding operation.

@@ -1,10 +1,30 @@
 package service
 
 import (
+	"net"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+func resetServiceTestState() {
+	resetDownloadManagerState()
+	exportAllRunning.Store(false)
+	briefpointSyncRunning.Store(false)
+	linkBackfillRunning.Store(false)
+	summaryBackfillRunning.Store(false)
+	lookupOutboundIPAddrs = net.DefaultResolver.LookupIPAddr
+	resetOutboundRequestLimiterForTests()
+}
+
+func runPostOpmlRefreshSynchronously(t *testing.T) {
+	t.Helper()
+	original := startPostOpmlRefresh
+	startPostOpmlRefresh = refreshEpisodesAfterOPMLImport
+	t.Cleanup(func() {
+		startPostOpmlRefresh = original
+	})
+}
 
 func requireWorkingPython(t *testing.T) string {
 	t.Helper()

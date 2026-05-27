@@ -14,6 +14,10 @@ import (
 
 func setupRetentionTestDB(t *testing.T) string {
 	t.Helper()
+	resetServiceTestState()
+	t.Cleanup(resetServiceTestState)
+	runPostOpmlRefreshSynchronously(t)
+
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "assets")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
@@ -22,6 +26,7 @@ func setupRetentionTestDB(t *testing.T) string {
 	t.Setenv("CONFIG", tempDir)
 	t.Setenv("DATA", dataDir)
 	t.Setenv("DATABASE_URL", filepath.Join(tempDir, "briefcast.db"))
+	t.Setenv(outboundAllowPrivateEnv, "true")
 
 	var err error
 	db.DB, err = db.Init()

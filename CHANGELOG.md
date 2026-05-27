@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-05-27
+
+### Added
+- Added Go and frontend CI gates alongside the existing Python quality workflow.
+- Added regression coverage for OPML upload limits, outbound URL policy enforcement, media redirect safety, static route exposure, scoped asset deletion, and write-only Briefpoint API key handling.
+- Added durable agent instructions in `AGENTS.md` and `CLAUDE.md`.
+
+### Changed
+- Hardened outbound feed/media/search/Briefpoint/LLM HTTP calls with URL validation, redirect validation, transport-level private-address checks, request timeouts, host limiting, and bounded in-memory response reads.
+- Made OPML import refresh behavior testable while preserving the asynchronous production refresh path.
+- Updated Briefpoint settings so API keys are write-only in API responses and frontend state.
+- Scoped podcast and episode media serving/deletion to the configured assets directory.
+- Updated CI documentation and release/version references for `1.9.0`.
+
+### Fixed
+- Fixed pause/unpause behavior so missing podcast IDs return an error while existing podcasts remain idempotent for repeated pause or unpause calls.
+- Fixed OPML upload handling to reject oversized file parts and oversized multipart request bodies.
+- Fixed media fallback handling to reject unsafe non-HTTP(S) redirect targets.
+
+### Removed
+- Removed public static serving for backups and the broad `/assets` storage directory.
+
+### Security
+- Prevented stored Briefpoint API keys from being returned to clients.
+- Reduced SSRF risk for outbound HTTP integrations and redirect chains.
+- Prevented arbitrary local path serving and destructive deletion outside the configured assets directory.
+
 ## [1.2.2] - 2026-02-28
 
 ### Added

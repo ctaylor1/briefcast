@@ -33,11 +33,11 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 `)
 
 	successAudio := filepath.Join(tempDir, "success.mp3")
-	if err := os.WriteFile(successAudio, []byte("audio"), 0o644); err != nil {
+	if err := os.WriteFile(successAudio, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
 		t.Fatalf("failed to create success audio: %v", err)
 	}
 	failAudio := filepath.Join(tempDir, "fail.mp3")
-	if err := os.WriteFile(failAudio, []byte("audio"), 0o644); err != nil {
+	if err := os.WriteFile(failAudio, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
 		t.Fatalf("failed to create fail audio: %v", err)
 	}
 	missingAudio := filepath.Join(tempDir, "missing.mp3")
@@ -102,14 +102,17 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	if err := db.GetPodcastItemByID(missingItem.ID, &refreshedMissing); err != nil {
 		t.Fatalf("failed to reload missing item: %v", err)
 	}
-	if refreshedMissing.TranscriptStatus != "failed" {
-		t.Fatalf("expected missing item transcript status failed, got %q", refreshedMissing.TranscriptStatus)
+	if refreshedMissing.DownloadStatus != db.NotDownloaded {
+		t.Fatalf("expected missing item to be queued for re-download, got %v", refreshedMissing.DownloadStatus)
 	}
-	if refreshedMissing.TranscriptRetryCount == 0 {
-		t.Fatalf("expected missing item retry count to increment")
+	if refreshedMissing.TranscriptStatus != "pending_whisperx" {
+		t.Fatalf("expected missing item transcript status pending_whisperx, got %q", refreshedMissing.TranscriptStatus)
 	}
-	if refreshedMissing.TranscriptNextAttempt == nil {
-		t.Fatalf("expected missing item next retry timestamp to be scheduled")
+	if refreshedMissing.TranscriptProgressStage != "waiting_for_download" {
+		t.Fatalf("expected missing item transcript progress to wait for download, got %q", refreshedMissing.TranscriptProgressStage)
+	}
+	if !strings.Contains(refreshedMissing.TranscriptLastError, "audio file not found") {
+		t.Fatalf("expected missing item last error to explain missing audio, got %q", refreshedMissing.TranscriptLastError)
 	}
 
 	var refreshedFailed db.PodcastItem
@@ -153,7 +156,7 @@ json.dump({"segments":[]}, sys.stdout)
 
 	podcast := createPodcast(t, "whisperx-lock", false)
 	audioPath := filepath.Join(tempDir, "lock-audio.mp3")
-	if err := os.WriteFile(audioPath, []byte("audio"), 0o644); err != nil {
+	if err := os.WriteFile(audioPath, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
 		t.Fatalf("failed to create lock test audio: %v", err)
 	}
 	item := createServicePodcastItem(t, podcast, "whisperx-lock-item", db.Downloaded)
@@ -202,6 +205,8 @@ json.dump({"segments":[]}, sys.stdout)
 
 // TestSearchProviderErrorBranches handles the corresponding operation.
 func TestSearchProviderErrorBranches(t *testing.T) {
+	t.Setenv(outboundAllowPrivateEnv, "true")
+
 	origGpodder := gpodderBaseURL
 	origItunes := itunesBaseURL
 	t.Cleanup(func() {
@@ -281,6 +286,86 @@ func TestDeletePodcastWithoutDeletingExternalFiles(t *testing.T) {
 	if err := db.GetPodcastByID(podcast.ID, &removedPodcast); err == nil {
 		t.Fatalf("expected podcast to be deleted")
 	}
+}
+
+func TestEpisodeDeletionSkipsPathsOutsideAssets(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	podcast := createPodcast(t, "skip-outside-delete-episode", false)
+	item := createServicePodcastItem(t, podcast, "skip-outside-delete-item", db.Downloaded)
+	audioPath, _ := writeOutsideAssetFiles(t)
+	item.DownloadPath = audioPath
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("failed to persist outside episode path: %v", err)
+	}
+
+	if err := DeleteEpisodeFile(item.ID); err != nil {
+		t.Fatalf("delete episode file with outside path should not fail: %v", err)
+	}
+	if _, err := os.Stat(audioPath); err != nil {
+		t.Fatalf("expected outside audio to remain after DeleteEpisodeFile, got %v", err)
+	}
+	var refreshed db.PodcastItem
+	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
+		t.Fatalf("failed to reload item: %v", err)
+	}
+	if refreshed.DownloadStatus != db.Deleted {
+		t.Fatalf("expected outside-path item to be marked deleted, got %v", refreshed.DownloadStatus)
+	}
+
+	podcastEpisodes := createPodcast(t, "skip-outside-delete-episodes", false)
+	itemEpisodes := createServicePodcastItem(t, podcastEpisodes, "skip-outside-delete-episodes-item", db.Downloaded)
+	episodesAudio, episodesImage := writeOutsideAssetFiles(t)
+	itemEpisodes.DownloadPath = episodesAudio
+	itemEpisodes.LocalImage = episodesImage
+	if err := db.UpdatePodcastItem(&itemEpisodes); err != nil {
+		t.Fatalf("failed to persist outside episode paths: %v", err)
+	}
+
+	if err := DeletePodcastEpisodes(podcastEpisodes.ID); err != nil {
+		t.Fatalf("delete podcast episodes with outside paths failed: %v", err)
+	}
+	for _, path := range []string{episodesAudio, episodesImage} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected outside path %q to remain after DeletePodcastEpisodes, got %v", path, err)
+		}
+	}
+
+	podcastDelete := createPodcast(t, "skip-outside-delete-podcast", false)
+	itemDelete := createServicePodcastItem(t, podcastDelete, "skip-outside-delete-podcast-item", db.Downloaded)
+	deleteAudio, deleteImage := writeOutsideAssetFiles(t)
+	itemDelete.DownloadPath = deleteAudio
+	itemDelete.LocalImage = deleteImage
+	if err := db.UpdatePodcastItem(&itemDelete); err != nil {
+		t.Fatalf("failed to persist outside delete paths: %v", err)
+	}
+
+	if err := DeletePodcast(podcastDelete.ID, true); err != nil {
+		t.Fatalf("delete podcast with outside paths failed: %v", err)
+	}
+	for _, path := range []string{deleteAudio, deleteImage} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected outside path %q to remain after DeletePodcast(deleteFiles=true), got %v", path, err)
+		}
+	}
+	var deletedItem db.PodcastItem
+	if err := db.GetPodcastItemByID(itemDelete.ID, &deletedItem); err == nil {
+		t.Fatalf("expected podcast item to be deleted")
+	}
+}
+
+func writeOutsideAssetFiles(t *testing.T) (string, string) {
+	t.Helper()
+	externalDir := t.TempDir()
+	audioPath := filepath.Join(externalDir, "outside-audio.mp3")
+	imagePath := filepath.Join(externalDir, "outside-image.jpg")
+	if err := os.WriteFile(audioPath, []byte("audio"), 0o644); err != nil {
+		t.Fatalf("failed to create outside audio file: %v", err)
+	}
+	if err := os.WriteFile(imagePath, []byte("image"), 0o644); err != nil {
+		t.Fatalf("failed to create outside image file: %v", err)
+	}
+	return audioPath, imagePath
 }
 
 // TestSetPodcastItemAsDownloadedTranscriptDefaults handles the corresponding operation.
@@ -506,7 +591,8 @@ json.dump(payload, sys.stdout)
 	if ep1.TranscriptStatus != "available" || !strings.Contains(ep1.TranscriptJSON, "hello transcript") {
 		t.Fatalf("expected ep-1 transcript to be available with fetched content, got status=%q json=%s", ep1.TranscriptStatus, ep1.TranscriptJSON)
 	}
-	transcriptPath := filepath.Join(os.Getenv("DATA"), "transcripts", "Coverage Feed", "2024-01-01-2-Episode 1.txt")
+	dateSub := filepath.Join("2024", "2024-01")
+	transcriptPath := filepath.Join(os.Getenv("DATA"), "transcripts", "Coverage Feed", dateSub, "2024-01-01-1-Episode 1.txt")
 	if got, err := os.ReadFile(transcriptPath); err != nil || string(got) != "hello transcript" {
 		t.Fatalf("expected transcript export at %q, got content=%q err=%v", transcriptPath, string(got), err)
 	}
@@ -516,8 +602,9 @@ json.dump(payload, sys.stdout)
 	if ep1.LLMSummary != "Executive summary from feed transcript" {
 		t.Fatalf("expected ep-1 LLM summary from stub response, got %q", ep1.LLMSummary)
 	}
-	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", "2024-01-01-2-Episode 1.txt")
-	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != "Executive summary from feed transcript" {
+	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", dateSub, "2024-01-01-1-Episode 1.txt")
+	expectedSummary := "Executive summary from feed transcript\n\n---\n\n## Show Notes\n\nEpisode one summary"
+	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != expectedSummary {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}
 	if ep1.LLMSummaryModel != "test-model" {

@@ -38,9 +38,9 @@ type SettingsResponse struct {
 	LightStartHour int    `json:"lightStartHour"`
 	DarkStartHour  int    `json:"darkStartHour"`
 	// Briefpoint
-	BriefpointEnabled   bool   `json:"briefpointEnabled"`
-	BriefpointServerURL string `json:"briefpointServerURL"`
-	BriefpointAPIKey    string `json:"briefpointAPIKey"`
+	BriefpointEnabled          bool   `json:"briefpointEnabled"`
+	BriefpointServerURL        string `json:"briefpointServerURL"`
+	BriefpointAPIKeyConfigured bool   `json:"briefpointAPIKeyConfigured"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -340,29 +340,29 @@ func RestorePromptVersion(c *gin.Context) {
 func settingsFromModel(setting *db.Setting) SettingsResponse {
 	cfg := service.LoadLLMConfig()
 	return SettingsResponse{
-		KeepAllEpisodes:         setting.RetentionKeepAll,
-		KeepLatestEpisodes:      setting.RetentionKeepLatest,
-		DeleteAfterDays:         setting.RetentionDeleteAfterDays,
-		DeleteOnlyPlayed:        setting.RetentionDeleteOnlyPlayed,
-		DownloadOnAdd:           setting.DownloadOnAdd,
-		InitialDownloadCount:    setting.InitialDownloadCount,
-		InitialDownloadMode:     service.NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode),
-		InitialDownloadMonths:   setting.InitialDownloadMonths,
-		AutoDownload:            setting.AutoDownload,
-		SummarizationEnabled:    setting.SummarizationEnabled,
-		SummarizationModel:      setting.SummarizationModel,
-		SummarizationPrompt:     setting.SummarizationPrompt,
-		SummarizationUserPrompt: setting.SummarizationUserPrompt,
-		LLMConcurrency:          setting.LLMConcurrency,
-		DefaultModel:            cfg.Model,
-		DefaultSystemPrompt:     cfg.DefaultPrompt,
-		DefaultUserPrompt:       cfg.DefaultUserPrompt,
-		ThemeMode:               setting.ThemeMode,
-		Timezone:                setting.Timezone,
-		LightStartHour:          setting.LightStartHour,
-		DarkStartHour:           setting.DarkStartHour,
-		BriefpointEnabled:       setting.BriefpointEnabled,
-		BriefpointServerURL:     setting.BriefpointServerURL,
-		BriefpointAPIKey:        setting.BriefpointAPIKey,
+		KeepAllEpisodes:            setting.RetentionKeepAll,
+		KeepLatestEpisodes:         setting.RetentionKeepLatest,
+		DeleteAfterDays:            setting.RetentionDeleteAfterDays,
+		DeleteOnlyPlayed:           setting.RetentionDeleteOnlyPlayed,
+		DownloadOnAdd:              setting.DownloadOnAdd,
+		InitialDownloadCount:       setting.InitialDownloadCount,
+		InitialDownloadMode:        service.NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode),
+		InitialDownloadMonths:      setting.InitialDownloadMonths,
+		AutoDownload:               setting.AutoDownload,
+		SummarizationEnabled:       setting.SummarizationEnabled,
+		SummarizationModel:         setting.SummarizationModel,
+		SummarizationPrompt:        setting.SummarizationPrompt,
+		SummarizationUserPrompt:    setting.SummarizationUserPrompt,
+		LLMConcurrency:             setting.LLMConcurrency,
+		DefaultModel:               cfg.Model,
+		DefaultSystemPrompt:        cfg.DefaultPrompt,
+		DefaultUserPrompt:          cfg.DefaultUserPrompt,
+		ThemeMode:                  setting.ThemeMode,
+		Timezone:                   setting.Timezone,
+		LightStartHour:             setting.LightStartHour,
+		DarkStartHour:              setting.DarkStartHour,
+		BriefpointEnabled:          setting.BriefpointEnabled,
+		BriefpointServerURL:        setting.BriefpointServerURL,
+		BriefpointAPIKeyConfigured: setting.BriefpointAPIKey != "",
 	}
 }

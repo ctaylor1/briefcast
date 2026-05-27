@@ -24,6 +24,7 @@ func setupControllersTestDB(t *testing.T) {
 	t.Setenv("CONFIG", tempDir)
 	t.Setenv("DATA", dataDir)
 	t.Setenv("DATABASE_URL", filepath.Join(tempDir, "briefcast.db"))
+	t.Setenv("BRIEFCAST_ALLOW_PRIVATE_OUTBOUND_URLS", "true")
 
 	var err error
 	db.DB, err = db.Init()
@@ -130,6 +131,77 @@ func TestSettingsEndpoints(t *testing.T) {
 	}
 	if payload["keepLatestEpisodes"] != float64(3) {
 		t.Fatalf("expected keepLatestEpisodes=3, got %+v", payload)
+	}
+}
+
+func TestSettingsBriefpointAPIKeyIsWriteOnly(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeRouter()
+
+	setting := db.GetOrCreateSetting()
+	setting.BriefpointEnabled = true
+	setting.BriefpointServerURL = "http://briefpoint.example"
+	setting.BriefpointAPIKey = "stored-secret"
+	if err := db.UpdateSettings(setting); err != nil {
+		t.Fatalf("failed to seed briefpoint settings: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /settings, got %d", resp.Code)
+	}
+	assertBriefpointKeyNotReturned(t, resp.Body.String(), true)
+
+	patchWithoutKey := `{"briefpointEnabled":false,"briefpointServerURL":"http://briefpoint-next.example"}`
+	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(patchWithoutKey))
+	req.Header.Set("Content-Type", "application/json")
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from PATCH /settings without key, got %d", resp.Code)
+	}
+	assertBriefpointKeyNotReturned(t, resp.Body.String(), true)
+
+	refreshed := db.GetOrCreateSetting()
+	if refreshed.BriefpointAPIKey != "stored-secret" {
+		t.Fatalf("expected omitted briefpoint key to be preserved, got %q", refreshed.BriefpointAPIKey)
+	}
+	if refreshed.BriefpointServerURL != "http://briefpoint-next.example" {
+		t.Fatalf("expected briefpoint server url to update, got %q", refreshed.BriefpointServerURL)
+	}
+
+	patchWithKey := `{"briefpointAPIKey":"new-secret"}`
+	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(patchWithKey))
+	req.Header.Set("Content-Type", "application/json")
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from PATCH /settings with key, got %d", resp.Code)
+	}
+	assertBriefpointKeyNotReturned(t, resp.Body.String(), true)
+
+	refreshed = db.GetOrCreateSetting()
+	if refreshed.BriefpointAPIKey != "new-secret" {
+		t.Fatalf("expected provided briefpoint key to update, got %q", refreshed.BriefpointAPIKey)
+	}
+}
+
+func assertBriefpointKeyNotReturned(t *testing.T, body string, configured bool) {
+	t.Helper()
+	if strings.Contains(body, "stored-secret") || strings.Contains(body, "new-secret") {
+		t.Fatalf("settings response leaked briefpoint API key: %s", body)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("failed to decode settings response: %v", err)
+	}
+	if _, exists := payload["briefpointAPIKey"]; exists {
+		t.Fatalf("settings response must not include briefpointAPIKey: %+v", payload)
+	}
+	if payload["briefpointAPIKeyConfigured"] != configured {
+		t.Fatalf("expected briefpointAPIKeyConfigured=%v, got %+v", configured, payload)
 	}
 }
 

@@ -26,6 +26,7 @@ func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 
 	t.Setenv("CONFIG", tempDir)
 	t.Setenv("DATA", dataDir)
+	t.Setenv(outboundAllowPrivateEnv, "true")
 	dbURL := strings.TrimSpace(os.Getenv("BRIEFCAST_INTEGRATION_DB_URL"))
 	if dbURL == "" {
 		dbURL = filepath.Join(tempDir, "briefcast.db")
@@ -138,7 +139,7 @@ func testFeedServer() http.Handler {
 	})
 	mux.HandleFunc("/audio.mp3", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "audio/mpeg")
-		_, _ = w.Write([]byte("fake audio data"))
+		_, _ = w.Write([]byte(strings.Repeat("a", 2048)))
 	})
 	mux.HandleFunc("/cover.jpg", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")

@@ -74,7 +74,7 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
+	registerRoutes(&engine.RouterGroup)
 
 	expect := []struct {
 		method, path string
@@ -106,7 +106,7 @@ func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
+	registerRoutes(&engine.RouterGroup)
 
 	deprecatedGETs := []string{
 		"/podcasts/:id/download",
@@ -131,6 +131,34 @@ func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
 		if !registered[path] {
 			t.Fatalf("expected deprecated GET %s to still be registered", path)
 		}
+	}
+}
+
+func TestRegisterRoutesDoesNotExposeBackupsAsStaticFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerRoutes(&engine.RouterGroup)
+
+	req := httptest.NewRequest(http.MethodGet, "/backups/briefcast_backup_2026.02.22_120000.tar.gz", nil)
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected backup static route to be unavailable, got %d", resp.Code)
+	}
+}
+
+func TestRegisterRoutesDoesNotExposeAssetsAsStaticFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerRoutes(&engine.RouterGroup)
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/transcripts/private.txt", nil)
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected assets static route to be unavailable, got %d", resp.Code)
 	}
 }
 
@@ -196,7 +224,7 @@ func TestBuildRouterWithPassword(t *testing.T) {
 func TestRegisterRoutesPlayerRedirect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	registerRoutes(&engine.RouterGroup, t.TempDir(), "/backups")
+	registerRoutes(&engine.RouterGroup)
 
 	req := httptest.NewRequest(http.MethodGet, "/player?foo=bar", nil)
 	resp := httptest.NewRecorder()

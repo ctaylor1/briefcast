@@ -3,6 +3,7 @@ package controllers
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -524,11 +525,11 @@ func GetPodcastItemImageByID(c *gin.Context) {
 
 		err := db.GetPodcastItemByID(searchByIDQuery.ID, &podcast)
 		if err == nil {
-			if _, err = os.Stat(podcast.LocalImage); os.IsNotExist(err) {
-				c.Redirect(302, podcast.Image)
-			} else {
+			if localAssetFileExists(podcast.LocalImage) {
 				c.File(podcast.LocalImage)
+				return
 			}
+			redirectToExternalMediaURL(c, podcast.Image)
 		}
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -546,11 +547,11 @@ func GetPodcastImageByID(c *gin.Context) {
 		err := db.GetPodcastByID(searchByIDQuery.ID, &podcast)
 		if err == nil {
 			localPath := service.GetPodcastLocalImagePath(podcast.Image, podcast.Title)
-			if _, err = os.Stat(localPath); os.IsNotExist(err) {
-				c.Redirect(302, podcast.Image)
-			} else {
+			if localAssetFileExists(localPath) {
 				c.File(localPath)
+				return
 			}
+			redirectToExternalMediaURL(c, podcast.Image)
 		}
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -567,16 +568,34 @@ func GetPodcastItemFileByID(c *gin.Context) {
 
 		err := db.GetPodcastItemByID(searchByIDQuery.ID, &podcast)
 		if err == nil {
-			if _, err = os.Stat(podcast.DownloadPath); !os.IsNotExist(err) {
+			if localAssetFileExists(podcast.DownloadPath) {
 				c.Header("Content-Type", GetFileContentType(podcast.DownloadPath))
 				c.File(podcast.DownloadPath)
-			} else {
-				c.Redirect(302, podcast.FileURL)
+				return
 			}
+			redirectToExternalMediaURL(c, podcast.FileURL)
 		}
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 	}
+}
+
+func localAssetFileExists(filePath string) bool {
+	if !service.IsPathWithinAssetsDir(filePath) {
+		return false
+	}
+	info, err := os.Stat(filePath)
+	return err == nil && !info.IsDir()
+}
+
+func redirectToExternalMediaURL(c *gin.Context, rawURL string) {
+	target := strings.TrimSpace(rawURL)
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Media unavailable"})
+		return
+	}
+	c.Redirect(http.StatusFound, parsed.String())
 }
 
 // GetFileContentType handles the corresponding operation.

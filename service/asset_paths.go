@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -23,6 +24,40 @@ var (
 
 func resolveAssetsDir() string {
 	return strings.TrimSpace(os.Getenv("DATA"))
+}
+
+func IsPathWithinAssetsDir(filePath string) bool {
+	return isPathWithinDir(filePath, resolveAssetsDir())
+}
+
+func isPathWithinDir(filePath, dir string) bool {
+	cleanPath := strings.TrimSpace(filePath)
+	cleanDir := strings.TrimSpace(dir)
+	if cleanPath == "" || cleanDir == "" {
+		return false
+	}
+
+	root, err := filepath.Abs(cleanDir)
+	if err != nil {
+		return false
+	}
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolvedRoot
+	}
+
+	target, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return false
+	}
+	if resolvedTarget, err := filepath.EvalSymlinks(target); err == nil {
+		target = resolvedTarget
+	}
+
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel))
 }
 
 func sanitizeAssetName(name string) string {

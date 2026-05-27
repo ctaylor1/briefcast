@@ -1,12 +1,18 @@
-import type { AppSettings, PromptVersion, ResummarizeFilter, ResummarizeResult } from "../../types/api";
+import type {
+  AppSettings,
+  AppSettingsUpdate,
+  PromptVersion,
+  ResummarizeFilter,
+  ResummarizeResult,
+} from "../../types/api";
 import { httpClient } from "./http";
 
 export const settingsApi = {
   get(): Promise<AppSettings> {
     return httpClient.get<AppSettings>("/settings");
   },
-  update(payload: Partial<AppSettings>): Promise<AppSettings> {
-    return httpClient.patch<AppSettings, Partial<AppSettings>>("/settings", payload);
+  update(payload: AppSettingsUpdate): Promise<AppSettings> {
+    return httpClient.patch<AppSettings, AppSettingsUpdate>("/settings", payload);
   },
   backfillSummaries(): Promise<{ message: string }> {
     return httpClient.post("/settings/backfill-summaries");

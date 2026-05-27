@@ -231,7 +231,7 @@ just up
 ### Pull Published Images
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.6.1
+docker pull ghcr.io/ctaylor1/briefcast:1.9.0
 docker pull ghcr.io/ctaylor1/briefcast:latest
 ```
 
@@ -248,7 +248,7 @@ docker run -d \
   -e CONFIG=/config \
   -e DATA=/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.6.1
+  ghcr.io/ctaylor1/briefcast:1.9.0
 ```
 
 ### External Postgres
@@ -265,7 +265,7 @@ docker run -d \
   -e DATA=/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.6.1
+  ghcr.io/ctaylor1/briefcast:1.9.0
 ```
 
 ### Local WhisperX Image Tar
@@ -315,6 +315,8 @@ Asset subfolders:
 ```
 
 Audio files should be under `audio/<podcast>/`. Podcast and episode artwork should be under `images/<podcast>/`. Transcript and summary text exports are written to their respective folders, with markdown copies under `markdown/`.
+
+The `/assets` directory is storage, not a public static route. Use the application media endpoints for audio and artwork access; transcript and summary exports are served through their API views.
 
 To move assets to another drive or host path:
 
@@ -376,6 +378,10 @@ DB_DRIVER=postgres
 - `PER_HOST_MAX_CONCURRENCY`: per-host outbound request cap; default `2`
 - `PER_HOST_RATE_LIMIT_RPS`: per-host rate limit; default `2.0`; `0` disables pacing
 - `HTTP_TIMEOUT_SECONDS`: outbound HTTP timeout; default `900`; `0` disables
+- `BRIEFCAST_ALLOW_PRIVATE_OUTBOUND_URLS`: allow feed/media/image requests to private, loopback, link-local, or hostnames resolving to private addresses; default `false`
+- `BRIEFCAST_ALLOW_PRIVATE_BRIEFPOINT_URLS`: allow Briefpoint requests to private or loopback hosts; default `true`
+- `BRIEFCAST_ALLOW_PRIVATE_LLM_URLS`: allow LLM summary requests to private or loopback hosts for local OpenAI-compatible providers; default `true`
+- `BRIEFCAST_MAX_OUTBOUND_RESPONSE_BYTES`: maximum in-memory response size for feed/search/transcript metadata and LLM responses; default `20971520`
 
 ### Logging
 
@@ -572,7 +578,7 @@ uv run pip-audit
 
 ## Release Basics
 
-The package version is defined in `pyproject.toml`. Current version: `1.6.1`.
+The package version is defined in `pyproject.toml`. Current version: `1.9.0`.
 
 Release helpers:
 
@@ -593,7 +599,7 @@ One-command GitHub Actions release:
 gh workflow run release.yml --ref <default-branch> -f bump=patch
 gh workflow run release.yml --ref <default-branch> -f bump=minor
 gh workflow run release.yml --ref <default-branch> -f bump=major
-gh workflow run release.yml --ref <default-branch> -f version=1.6.1
+gh workflow run release.yml --ref <default-branch> -f version=1.9.0
 ```
 
 Dry run:
@@ -606,7 +612,7 @@ Manual image publish:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
-  -t ghcr.io/ctaylor1/briefcast:1.6.1 \
+  -t ghcr.io/ctaylor1/briefcast:1.9.0 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -665,7 +671,7 @@ uv sync --locked --group dev
 just test-full
 git add .
 git commit -m "release: ship-ready"
-git tag -a v1.6.1 -m "Briefcast v1.6.1"
+git tag -a v1.9.0 -m "Briefcast v1.9.0"
 git push origin HEAD
-git push origin v1.6.1
+git push origin v1.9.0
 ```

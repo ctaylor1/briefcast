@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -62,6 +63,66 @@ func TestUploadOpmlSuccessAndAllTagsErrorBranches(t *testing.T) {
 	resp = performRequest(router, http.MethodGet, "/tags-page?page=1&count=10", nil, nil)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected database error branch on tags page to return 400, got %d", resp.Code)
+	}
+}
+
+func TestUploadOpmlRejectsOversizedFile(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+
+	var uploadBody bytes.Buffer
+	uploader := multipart.NewWriter(&uploadBody)
+	fileWriter, err := uploader.CreateFormFile("file", "large.opml")
+	if err != nil {
+		t.Fatalf("failed to create multipart form file: %v", err)
+	}
+	if _, err := fileWriter.Write([]byte(strings.Repeat("x", service.MaxOPMLContentBytes+1))); err != nil {
+		t.Fatalf("failed to write oversized opml payload: %v", err)
+	}
+	if err := uploader.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	resp := performRequest(router, http.MethodPost, "/opml", &uploadBody, map[string]string{
+		"Content-Type": uploader.FormDataContentType(),
+	})
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected oversized OPML upload to return 413, got %d", resp.Code)
+	}
+	if !strings.Contains(resp.Body.String(), "OPML file exceeds") {
+		t.Fatalf("expected oversized OPML response body, got %s", resp.Body.String())
+	}
+}
+
+func TestUploadOpmlRejectsOversizedMultipartBody(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+
+	var uploadBody bytes.Buffer
+	uploader := multipart.NewWriter(&uploadBody)
+	fieldWriter, err := uploader.CreateFormField("metadata")
+	if err != nil {
+		t.Fatalf("failed to create multipart field: %v", err)
+	}
+	if _, err := fieldWriter.Write([]byte(strings.Repeat("x", service.MaxOPMLUploadBytes+1))); err != nil {
+		t.Fatalf("failed to write oversized multipart field: %v", err)
+	}
+	fileWriter, err := uploader.CreateFormFile("file", "import.opml")
+	if err != nil {
+		t.Fatalf("failed to create multipart form file: %v", err)
+	}
+	if _, err := fileWriter.Write([]byte(`<?xml version="1.0"?><opml version="2.0"><body></body></opml>`)); err != nil {
+		t.Fatalf("failed to write opml payload: %v", err)
+	}
+	if err := uploader.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	resp := performRequest(router, http.MethodPost, "/opml", &uploadBody, map[string]string{
+		"Content-Type": uploader.FormDataContentType(),
+	})
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected oversized multipart upload to return 413, got %d", resp.Code)
 	}
 }
 

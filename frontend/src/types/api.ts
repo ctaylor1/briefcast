@@ -169,8 +169,12 @@ export interface AppSettings {
   darkStartHour: number;
   briefpointEnabled: boolean;
   briefpointServerURL: string;
-  briefpointAPIKey: string;
+  briefpointAPIKeyConfigured: boolean;
 }
+
+export type AppSettingsUpdate = Partial<AppSettings> & {
+  briefpointAPIKey?: string;
+};
 
 export interface RuntimeVersionInfo {
   version: string;

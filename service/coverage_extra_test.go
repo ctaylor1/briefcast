@@ -170,6 +170,8 @@ func TestSearchLocalRecordsReturnsPodcastEpisodeChapterAndTranscriptMatches(t *t
 
 // TestSearchProviderQueriesUseInjectedBaseURLs handles the corresponding operation.
 func TestSearchProviderQueriesUseInjectedBaseURLs(t *testing.T) {
+	t.Setenv(outboundAllowPrivateEnv, "true")
+
 	origGpodder := gpodderBaseURL
 	origItunes := itunesBaseURL
 	t.Cleanup(func() {
@@ -411,6 +413,9 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	}
 	if err := TogglePodcastPause("missing", true); err == nil {
 		t.Fatalf("expected toggle pause to fail for missing podcast")
+	}
+	if err := TogglePodcastPause("missing", false); err == nil {
+		t.Fatalf("expected toggle unpause to fail for missing podcast")
 	}
 
 	if err := SetPodcastItemBookmarkStatus(item.ID, true); err != nil {
