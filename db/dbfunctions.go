@@ -79,6 +79,12 @@ func GetPaginatedPodcastItemsNew(queryModel model.EpisodesFilter) (*[]PodcastIte
 			query = applyPlayedStatusFilter(query, &isPlayed)
 		}
 	}
+	if queryModel.IsBookmarked != nil {
+		isBookmarked, err := strconv.ParseBool(*queryModel.IsBookmarked)
+		if err == nil {
+			query = applyBookmarkStatusFilter(query, &isBookmarked)
+		}
+	}
 
 	if queryModel.Q != "" {
 		query = query.Where("UPPER(title) like ?", "%"+strings.TrimSpace(strings.ToUpper(queryModel.Q))+"%")
@@ -306,8 +312,8 @@ func GetPodcastItemsForWhisperx(statuses []string, limit int) (*[]PodcastItem, e
 		Where("(transcript_json IS NULL OR transcript_json = '')").
 		Where("(transcript_next_attempt IS NULL OR transcript_next_attempt <= ?)", now).
 		Order(`CASE
-			WHEN transcript_status = 'pending_whisperx' THEN 0
-			WHEN transcript_status = 'processing' THEN 1
+			WHEN transcript_status = 'processing' THEN 0
+			WHEN transcript_status = 'pending_whisperx' THEN 1
 			WHEN transcript_status = 'failed' THEN 2
 			ELSE 3
 		END ASC`).
@@ -368,7 +374,7 @@ func GetPaginatedSummaries(page, count int, q string, podcastIds []string, sorti
 	}
 
 	if favoritesOnly {
-		query = query.Where("is_summary_favorited = ?", true)
+		query = applyEpisodeFavoriteFilter(query)
 	}
 
 	var order string
@@ -412,7 +418,15 @@ func GetDistinctSummaryModels() ([]string, error) {
 
 // SetSummaryFavorited toggles the is_summary_favorited flag on a podcast item.
 func SetSummaryFavorited(id string, favorited bool) error {
-	return DB.Model(&PodcastItem{}).Where("id = ?", id).Update("is_summary_favorited", favorited).Error
+	updates := map[string]interface{}{
+		"is_summary_favorited": favorited,
+	}
+	if favorited {
+		updates["bookmark_date"] = time.Now().UTC()
+	} else {
+		updates["bookmark_date"] = time.Time{}
+	}
+	return DB.Model(&PodcastItem{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // GetPodcastEpisodeStats handles the corresponding operation.
@@ -583,6 +597,7 @@ func GetOrCreateSetting() *Setting {
 			RetentionKeepAll:          true,
 			RetentionDeleteOnlyPlayed: true,
 			InitialDownloadMode:       "count",
+			ObsidianFolder:            DefaultObsidianFolder,
 		}
 		DB.Save(&setting)
 		DB.First(&setting)
@@ -595,6 +610,10 @@ func GetOrCreateSetting() *Setting {
 	}
 	if strings.TrimSpace(setting.InitialDownloadMode) == "" {
 		setting.InitialDownloadMode = "count"
+		DB.Save(&setting)
+	}
+	if strings.TrimSpace(setting.ObsidianFolder) == "" {
+		setting.ObsidianFolder = DefaultObsidianFolder
 		DB.Save(&setting)
 	}
 	return &setting

@@ -663,6 +663,7 @@ func SetPodcastItemBookmarkStatus(id string, bookmark bool) error {
 	} else {
 		podcastItem.BookmarkDate = time.Time{}
 	}
+	podcastItem.IsSummaryFavorited = bookmark
 	return db.UpdatePodcastItem(&podcastItem)
 }
 

@@ -334,6 +334,98 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	}
 }
 
+func TestEpisodeFavoriteFiltersAndSummaryFavoriteSync(t *testing.T) {
+	setupDBForTest(t)
+	now := time.Now().UTC()
+	podcast := newPodcast(t, "Favorite Podcast", "https://example.com/favorites.xml")
+
+	bookmarked := newPodcastItem(t, podcast.ID, "fav-1", "Bookmarked Episode", Downloaded, now.Add(-3*time.Hour))
+	bookmarked.BookmarkDate = now
+	bookmarked.LLMSummary = "bookmarked summary"
+	bookmarked.LLMSummaryStatus = "available"
+	if err := UpdatePodcastItem(&bookmarked); err != nil {
+		t.Fatalf("update bookmarked item failed: %v", err)
+	}
+
+	summaryFavorited := newPodcastItem(t, podcast.ID, "fav-2", "Summary Favorite Episode", Downloaded, now.Add(-2*time.Hour))
+	summaryFavorited.IsSummaryFavorited = true
+	summaryFavorited.LLMSummary = "summary favorite"
+	summaryFavorited.LLMSummaryStatus = "available"
+	if err := UpdatePodcastItem(&summaryFavorited); err != nil {
+		t.Fatalf("update summary-favorited item failed: %v", err)
+	}
+
+	plain := newPodcastItem(t, podcast.ID, "fav-3", "Plain Episode", Downloaded, now.Add(-time.Hour))
+	plain.LLMSummary = "plain summary"
+	plain.LLMSummaryStatus = "available"
+	if err := UpdatePodcastItem(&plain); err != nil {
+		t.Fatalf("update plain item failed: %v", err)
+	}
+
+	bookmarkedOnly := "true"
+	filter := model.EpisodesFilter{
+		Pagination: model.Pagination{
+			Page:  1,
+			Count: 10,
+		},
+		IsBookmarked: &bookmarkedOnly,
+	}
+	filter.VerifyPaginationValues()
+	favoriteEpisodes, total, err := GetPaginatedPodcastItemsNew(filter)
+	if err != nil {
+		t.Fatalf("GetPaginatedPodcastItemsNew favorites failed: %v", err)
+	}
+	if total != 2 || len(*favoriteEpisodes) != 2 {
+		t.Fatalf("expected two favorite episodes, got total=%d len=%d", total, len(*favoriteEpisodes))
+	}
+	favoriteIDs := map[string]bool{}
+	for _, item := range *favoriteEpisodes {
+		favoriteIDs[item.ID] = true
+	}
+	if !favoriteIDs[bookmarked.ID] || !favoriteIDs[summaryFavorited.ID] || favoriteIDs[plain.ID] {
+		t.Fatalf("unexpected favorite episode ids: %+v", favoriteIDs)
+	}
+
+	unbookmarkedOnly := "false"
+	filter.IsBookmarked = &unbookmarkedOnly
+	nonFavoriteEpisodes, total, err := GetPaginatedPodcastItemsNew(filter)
+	if err != nil {
+		t.Fatalf("GetPaginatedPodcastItemsNew non-favorites failed: %v", err)
+	}
+	if total != 1 || len(*nonFavoriteEpisodes) != 1 || (*nonFavoriteEpisodes)[0].ID != plain.ID {
+		t.Fatalf("expected only plain episode as non-favorite, got total=%d items=%+v", total, *nonFavoriteEpisodes)
+	}
+
+	favoriteSummaries, total, err := GetPaginatedSummaries(1, 10, "", nil, "newest", true)
+	if err != nil {
+		t.Fatalf("GetPaginatedSummaries favorites failed: %v", err)
+	}
+	if total != 2 || len(*favoriteSummaries) != 2 {
+		t.Fatalf("expected two favorite summaries, got total=%d len=%d", total, len(*favoriteSummaries))
+	}
+
+	if err := SetSummaryFavorited(plain.ID, true); err != nil {
+		t.Fatalf("SetSummaryFavorited true failed: %v", err)
+	}
+	var refreshedPlain PodcastItem
+	if err := GetPodcastItemByID(plain.ID, &refreshedPlain); err != nil {
+		t.Fatalf("reload summary-favorited item failed: %v", err)
+	}
+	if !refreshedPlain.IsSummaryFavorited || refreshedPlain.BookmarkDate.IsZero() {
+		t.Fatalf("expected summary favorite to set both favorite flags, got summary=%v bookmark=%v", refreshedPlain.IsSummaryFavorited, refreshedPlain.BookmarkDate)
+	}
+
+	if err := SetSummaryFavorited(plain.ID, false); err != nil {
+		t.Fatalf("SetSummaryFavorited false failed: %v", err)
+	}
+	if err := GetPodcastItemByID(plain.ID, &refreshedPlain); err != nil {
+		t.Fatalf("reload unfavorited item failed: %v", err)
+	}
+	if refreshedPlain.IsSummaryFavorited || !refreshedPlain.BookmarkDate.IsZero() {
+		t.Fatalf("expected unfavorite to clear both favorite flags, got summary=%v bookmark=%v", refreshedPlain.IsSummaryFavorited, refreshedPlain.BookmarkDate)
+	}
+}
+
 // TestSettingsLocksTagsAndSearchHelpers handles the corresponding operation.
 func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	setupDBForTest(t)
@@ -502,11 +594,11 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 		t.Fatalf("expected three items for whisperx (excluding scheduled future retry), got %d", len(*itemsForWhisperx))
 	}
 
-	if (*itemsForWhisperx)[0].ID != pending.ID {
-		t.Fatalf("expected pending item first in whisperx queue, got %s", (*itemsForWhisperx)[0].ID)
+	if (*itemsForWhisperx)[0].ID != processing.ID {
+		t.Fatalf("expected processing item first in whisperx queue, got %s", (*itemsForWhisperx)[0].ID)
 	}
-	if (*itemsForWhisperx)[1].ID != processing.ID {
-		t.Fatalf("expected processing item second in whisperx queue, got %s", (*itemsForWhisperx)[1].ID)
+	if (*itemsForWhisperx)[1].ID != pending.ID {
+		t.Fatalf("expected pending item second in whisperx queue, got %s", (*itemsForWhisperx)[1].ID)
 	}
 	if (*itemsForWhisperx)[2].ID != failedReady.ID {
 		t.Fatalf("expected failed-ready item last in whisperx queue, got %s", (*itemsForWhisperx)[2].ID)
@@ -520,6 +612,41 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	}
 	if err := DeletePodcastByID(podcast.ID); err != nil {
 		t.Fatalf("DeletePodcastByID failed: %v", err)
+	}
+}
+
+func TestGetPodcastItemsForWhisperxResumesProcessingBeforePending(t *testing.T) {
+	setupDBForTest(t)
+	podcast := newPodcast(t, "WhisperX Queue", "https://example.com/queue.xml")
+
+	pending := newPodcastItem(t, podcast.ID, "pending-new", "New pending transcript", Downloaded, time.Now().UTC())
+	pending.DownloadPath = filepath.Join(t.TempDir(), "pending.mp3")
+	pending.TranscriptStatus = "pending_whisperx"
+	pending.TranscriptJSON = ""
+	if err := UpdatePodcastItem(&pending); err != nil {
+		t.Fatalf("failed to create pending transcript item: %v", err)
+	}
+
+	processing := newPodcastItem(t, podcast.ID, "processing-stale", "Stale processing transcript", Downloaded, time.Now().UTC().Add(-10*24*time.Hour))
+	processing.DownloadPath = filepath.Join(t.TempDir(), "processing.mp3")
+	processing.TranscriptStatus = "processing"
+	processing.TranscriptJSON = ""
+	if err := UpdatePodcastItem(&processing); err != nil {
+		t.Fatalf("failed to create processing transcript item: %v", err)
+	}
+
+	itemsForWhisperx, err := GetPodcastItemsForWhisperx([]string{"pending_whisperx", "processing"}, 10)
+	if err != nil {
+		t.Fatalf("GetPodcastItemsForWhisperx failed: %v", err)
+	}
+	if len(*itemsForWhisperx) != 2 {
+		t.Fatalf("expected two items for whisperx, got %d", len(*itemsForWhisperx))
+	}
+	if (*itemsForWhisperx)[0].ID != processing.ID {
+		t.Fatalf("expected stale processing item first in whisperx queue, got %s", (*itemsForWhisperx)[0].ID)
+	}
+	if (*itemsForWhisperx)[1].ID != pending.ID {
+		t.Fatalf("expected pending item second in whisperx queue, got %s", (*itemsForWhisperx)[1].ID)
 	}
 }
 

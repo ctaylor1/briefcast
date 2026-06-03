@@ -1,5 +1,9 @@
 import { computed, ref } from "vue";
-import { episodesApi, getErrorMessage } from "../lib/api";
+import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
+import {
+  DEFAULT_OBSIDIAN_FOLDER,
+  buildPodcastSummaryObsidianUrl,
+} from "../lib/obsidian";
 import type { Chapter, ChaptersResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../types/api";
 
 type DrawerTab = "overview" | "chapters" | "transcript" | "summary";
@@ -36,6 +40,7 @@ export function useEpisodeDrawer() {
   const drawerSummaryDate = ref("");
   const drawerSummaryModel = ref("");
   const drawerLoadingSummary = ref(false);
+  const obsidianFolder = ref(DEFAULT_OBSIDIAN_FOLDER);
 
   const chaptersSearchQuery = computed(() => chaptersSearch.value.trim().toLowerCase());
   const transcriptSearchQuery = computed(() => transcriptSearch.value.trim().toLowerCase());
@@ -117,6 +122,7 @@ export function useEpisodeDrawer() {
     setDrawerTab(tab);
     drawerOpen.value = true;
     syncDrawerSearch(tab, searchTerm);
+    void refreshObsidianFolder();
     void fetchDrawerData(item.ID);
   }
 
@@ -164,6 +170,9 @@ export function useEpisodeDrawer() {
 
   function applyTranscriptResponse(response: TranscriptResponse): void {
     drawerTranscriptStatus.value = response.status || "missing";
+    if (typeof response.isFavorited === "boolean" && drawerItem.value) {
+      drawerItem.value.IsSummaryFavorited = response.isFavorited;
+    }
     drawerCanonicalTranscript.value = response.canonicalTranscript ?? "";
     const transcript = response.transcript;
     if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
@@ -211,6 +220,9 @@ export function useEpisodeDrawer() {
     try {
       const response: SummaryResponse = await episodesApi.getSummary(id);
       drawerSummaryStatus.value = response.status || "not_attempted";
+      if (typeof response.isFavorited === "boolean" && drawerItem.value) {
+        drawerItem.value.IsSummaryFavorited = response.isFavorited;
+      }
       drawerSummaryText.value = response.summary ?? "";
       drawerSummaryDate.value = response.generatedAt ?? "";
       drawerSummaryModel.value = response.model ?? "";
@@ -319,6 +331,29 @@ export function useEpisodeDrawer() {
     void sendToApp(`claude://chat?prompt=${encoded}`, "Claude");
   }
 
+  async function refreshObsidianFolder(): Promise<void> {
+    try {
+      const settings = await settingsApi.get();
+      obsidianFolder.value = settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER;
+    } catch {
+      obsidianFolder.value = DEFAULT_OBSIDIAN_FOLDER;
+    }
+  }
+
+  function sendSummaryToObsidian(): void {
+    if (!drawerItem.value || !drawerSummaryText.value) {
+      return;
+    }
+    window.location.href = buildPodcastSummaryObsidianUrl({
+      folder: obsidianFolder.value,
+      episodeTitle: drawerItem.value.Title,
+      podcastTitle: drawerItem.value.Podcast?.Title,
+      pubDate: drawerItem.value.PubDate,
+      model: drawerSummaryModel.value,
+      summary: drawerSummaryText.value,
+    });
+  }
+
   function drawerSummarySummary(): string {
     if (drawerSummaryStatus.value === "available") {
       return "AI summary is ready.";
@@ -359,6 +394,7 @@ export function useEpisodeDrawer() {
     downloadCanonicalTranscript,
     sendToChatGPT,
     sendToClaude,
+    sendSummaryToObsidian,
     // Summary
     drawerSummaryStatus,
     drawerSummaryText,

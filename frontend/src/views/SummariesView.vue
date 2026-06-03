@@ -10,9 +10,13 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
-import { episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
+import { episodesApi, getErrorMessage, podcastsApi, settingsApi } from "../lib/api";
 import { summariesApi } from "../lib/api/summaries";
 import { formatDate } from "../lib/format";
+import {
+  DEFAULT_OBSIDIAN_FOLDER,
+  buildPodcastSummaryObsidianUrl,
+} from "../lib/obsidian";
 import type { Podcast, SummaryListItem, SummarySorting } from "../types/api";
 
 const isLoading = ref(true);
@@ -57,6 +61,7 @@ const readerTab = ref<"summary" | "transcript">("summary");
 const readerTranscriptText = ref("");
 const readerLoadingTranscript = ref(false);
 const readerTranscriptStatus = ref("");
+const obsidianFolder = ref(DEFAULT_OBSIDIAN_FOLDER);
 
 // Scroll progress
 const scrollProgress = ref(0);
@@ -94,6 +99,15 @@ async function loadPodcastOptions(): Promise<void> {
     podcastOptions.value = await podcastsApi.list();
   } catch {
     podcastOptions.value = [];
+  }
+}
+
+async function loadObsidianSettings(): Promise<void> {
+  try {
+    const settings = await settingsApi.get();
+    obsidianFolder.value = settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER;
+  } catch {
+    obsidianFolder.value = DEFAULT_OBSIDIAN_FOLDER;
   }
 }
 
@@ -167,6 +181,9 @@ async function openReader(item: SummaryListItem): Promise<void> {
 
   try {
     const response = await episodesApi.getSummary(item.id);
+    if (typeof response.isFavorited === "boolean") {
+      item.isFavorited = response.isFavorited;
+    }
     if (response.summary) {
       readerSummaryRaw.value = response.summary;
       renderMarkdown(response.summary);
@@ -188,6 +205,9 @@ async function fetchTranscript(): Promise<void> {
   readerLoadingTranscript.value = true;
   try {
     const response = await episodesApi.getTranscript(readerItem.value.id);
+    if (typeof response.isFavorited === "boolean") {
+      readerItem.value.isFavorited = response.isFavorited;
+    }
     readerTranscriptStatus.value = response.status || "missing";
     const transcript = response.transcript;
 
@@ -364,33 +384,14 @@ function podcastFilterLabel(): string {
 function sendToObsidian(): void {
   if (!readerItem.value || !readerSummaryRaw.value) return;
 
-  const title = readerItem.value.episodeTitle;
-  const podcast = readerItem.value.podcastTitle;
-  const pubDate = readerItem.value.pubDate ? formatDate(readerItem.value.pubDate) : "";
-  const model = readerItem.value.model || "";
-
-  const frontmatter = [
-    "---",
-    `title: "${title.replace(/"/g, '\\"')}"`,
-    `podcast: "${podcast.replace(/"/g, '\\"')}"`,
-    pubDate ? `date: ${readerItem.value.pubDate.split("T")[0]}` : "",
-    model ? `model: ${model}` : "",
-    "tags: [briefcast, podcast-summary]",
-    "---",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const content = `${frontmatter}\n\n# ${title}\n\n${readerSummaryRaw.value}`;
-
-  const sanitizeName = (s: string) =>
-    s
-      .replace(/[\\/:*?"<>|#^[\]]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const name = encodeURIComponent(sanitizeName(`${podcast} - ${title}`));
-  const encodedContent = encodeURIComponent(content);
-  window.location.href = `obsidian://new?name=${name}&content=${encodedContent}`;
+  window.location.href = buildPodcastSummaryObsidianUrl({
+    folder: obsidianFolder.value,
+    episodeTitle: readerItem.value.episodeTitle,
+    podcastTitle: readerItem.value.podcastTitle,
+    pubDate: readerItem.value.pubDate,
+    model: readerItem.value.model,
+    summary: readerSummaryRaw.value,
+  });
 }
 
 watch(
@@ -413,6 +414,7 @@ useDebouncedWatch(
 onMounted(() => {
   void fetchSummaries();
   void loadPodcastOptions();
+  void loadObsidianSettings();
   window.addEventListener("keydown", onReaderKeydown);
   window.addEventListener("scroll", onScroll, { passive: true });
 });

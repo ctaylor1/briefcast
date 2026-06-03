@@ -1,26 +1,49 @@
 .git
 .gitignore
 
+.env
+.env.*
+!.env.example
+
 node_modules
 frontend/node_modules
 frontend/dist
 
 dist
 bin
+app
+briefcast
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
 *.log
+*.prof
+*.pprof
+*.trace
+
+docker-compose.override.yml
 
 # Runtime/state directories should never be part of image build context.
 config/
 assets/
 logs/
 builds/
+backups/
+data/
+exports/
 
 # Local tooling/worktree noise.
 .claude/
+.codex/
 .venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+__pycache__/
 coverage
 coverage*.out
 *.test.exe

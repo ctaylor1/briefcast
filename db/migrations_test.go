@@ -81,3 +81,16 @@ func TestInitialDownloadPolicyColumnsExistAfterMigrate(t *testing.T) {
 		t.Fatalf("expected initial_download_months column to exist after migrate")
 	}
 }
+
+func TestObsidianFolderColumnExistsAfterMigrate(t *testing.T) {
+	setupDBForTest(t)
+
+	if !DB.Migrator().HasColumn(&Setting{}, "obsidian_folder") {
+		t.Fatalf("expected obsidian_folder column to exist after migrate")
+	}
+
+	setting := GetOrCreateSetting()
+	if setting.ObsidianFolder != DefaultObsidianFolder {
+		t.Fatalf("expected default obsidian folder %q, got %q", DefaultObsidianFolder, setting.ObsidianFolder)
+	}
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { isBookmarkedDate } from "../../lib/bookmarks";
+import { isEpisodeFavorited } from "../../lib/bookmarks";
 import type { PodcastItem } from "../../types/api";
 import UiTooltip from "../ui/UiTooltip.vue";
 
@@ -19,13 +19,13 @@ const emit = defineEmits<{
 }>();
 
 const isPlayed = computed(() => props.item.IsPlayed);
-const isBookmarked = computed(() => isBookmarkedDate(props.item.BookmarkDate));
+const isBookmarked = computed(() => isEpisodeFavorited(props.item));
 const isDownloading = computed(() => props.item.DownloadStatus === 1);
 const isDownloaded = computed(() => props.item.DownloadStatus === 2);
 const canCancelDownload = computed(() => props.item.DownloadStatus === 0 || props.item.DownloadStatus === 1);
 
 const playedLabel = computed(() => (isPlayed.value ? "Mark as unplayed" : "Mark as played"));
-const bookmarkLabel = computed(() => (isBookmarked.value ? "Remove bookmark" : "Bookmark"));
+const bookmarkLabel = computed(() => (isBookmarked.value ? "Remove favorite" : "Favorite"));
 const downloadLabel = computed(() => {
   if (isDownloading.value) {
     return "Downloading";
@@ -129,7 +129,7 @@ function queueDownload(): void {
           focusable="false"
         >
           <path
-            d="M6 3h12a1 1 0 0 1 1 1v16l-7-4-7 4V4a1 1 0 0 1 1-1z"
+            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
             fill="currentColor"
           />
         </svg>
@@ -141,7 +141,7 @@ function queueDownload(): void {
           focusable="false"
         >
           <path
-            d="M6 3h12a1 1 0 0 1 1 1v16l-7-4-7 4V4a1 1 0 0 1 1-1z"
+            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
             fill="none"
             stroke="currentColor"
             stroke-width="2"

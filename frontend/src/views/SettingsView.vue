@@ -8,6 +8,7 @@ import UiInput from "../components/ui/UiInput.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
+import { DEFAULT_OBSIDIAN_FOLDER } from "../lib/obsidian";
 import type { AppSettings, PromptVersion } from "../types/api";
 
 type RetentionForm = {
@@ -38,6 +39,10 @@ type ModelSettingsForm = {
   llmConcurrency: number;
 };
 
+type ObsidianForm = {
+  obsidianFolder: string;
+};
+
 const {
   themeMode,
   timezone,
@@ -55,6 +60,7 @@ const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
 const isSavingAppearance = ref(false);
 const isSavingModelSettings = ref(false);
+const isSavingObsidian = ref(false);
 const isSavingBriefpoint = ref(false);
 const briefpointAPIKeyConfigured = ref(false);
 const defaultModel = ref("");
@@ -104,6 +110,10 @@ const modelSettingsForm = ref<ModelSettingsForm>({
   llmConcurrency: 1,
 });
 
+const obsidianForm = ref<ObsidianForm>({
+  obsidianFolder: DEFAULT_OBSIDIAN_FOLDER,
+});
+
 type BriefpointForm = {
   briefpointEnabled: boolean;
   briefpointServerURL: string;
@@ -147,6 +157,29 @@ function mapToBackCatalogForm(settings: AppSettings): BackCatalogForm {
   };
 }
 
+function mapToSummarizationForm(settings: AppSettings): SummarizationForm {
+  return {
+    summarizationEnabled: settings.summarizationEnabled,
+    summarizationModel: settings.summarizationModel ?? "",
+    summarizationPrompt:
+      settings.effectiveSystemPrompt ||
+      settings.summarizationPrompt ||
+      settings.defaultSystemPrompt ||
+      "",
+    summarizationUserPrompt:
+      settings.effectiveUserPrompt ||
+      settings.summarizationUserPrompt ||
+      settings.defaultUserPrompt ||
+      "",
+  };
+}
+
+function mapToObsidianForm(settings: AppSettings): ObsidianForm {
+  return {
+    obsidianFolder: settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER,
+  };
+}
+
 function sanitizeNumber(value: string): number {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed < 0) {
@@ -162,15 +195,11 @@ async function loadSettings(): Promise<void> {
     const settings = await settingsApi.get();
     retentionForm.value = mapToRetentionForm(settings);
     backCatalogForm.value = mapToBackCatalogForm(settings);
-    summarizationForm.value = {
-      summarizationEnabled: settings.summarizationEnabled,
-      summarizationModel: settings.summarizationModel ?? "",
-      summarizationPrompt: settings.summarizationPrompt || settings.defaultSystemPrompt || "",
-      summarizationUserPrompt: settings.summarizationUserPrompt || settings.defaultUserPrompt || "",
-    };
+    summarizationForm.value = mapToSummarizationForm(settings);
     modelSettingsForm.value = {
       llmConcurrency: settings.llmConcurrency ?? 1,
     };
+    obsidianForm.value = mapToObsidianForm(settings);
     briefpointForm.value = {
       briefpointEnabled: settings.briefpointEnabled ?? false,
       briefpointServerURL: settings.briefpointServerURL ?? "",
@@ -246,12 +275,7 @@ async function saveSummarizationSettings(): Promise<void> {
     });
     defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
-    summarizationForm.value = {
-      summarizationEnabled: updated.summarizationEnabled,
-      summarizationModel: updated.summarizationModel ?? "",
-      summarizationPrompt: updated.summarizationPrompt || updated.defaultSystemPrompt || "",
-      summarizationUserPrompt: updated.summarizationUserPrompt || updated.defaultUserPrompt || "",
-    };
+    summarizationForm.value = mapToSummarizationForm(updated);
     setSuccess("Summarization settings updated.");
   } catch (error) {
     setError(getErrorMessage(error, "Failed to update summarization settings."));
@@ -278,12 +302,7 @@ async function restorePromptVersion(id: string): Promise<void> {
     const updated = await settingsApi.restorePromptVersion(id);
     defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
-    summarizationForm.value = {
-      summarizationEnabled: updated.summarizationEnabled,
-      summarizationModel: updated.summarizationModel ?? "",
-      summarizationPrompt: updated.summarizationPrompt || updated.defaultSystemPrompt || "",
-      summarizationUserPrompt: updated.summarizationUserPrompt || updated.defaultUserPrompt || "",
-    };
+    summarizationForm.value = mapToSummarizationForm(updated);
     promptHistoryOpen.value = false;
     setSuccess("Prompt restored successfully.");
   } catch (error) {
@@ -310,6 +329,22 @@ async function saveModelSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to update model settings."));
   } finally {
     isSavingModelSettings.value = false;
+  }
+}
+
+async function saveObsidianSettings(): Promise<void> {
+  isSavingObsidian.value = true;
+  clearAll();
+  try {
+    const updated = await settingsApi.update({
+      obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
+    });
+    obsidianForm.value = mapToObsidianForm(updated);
+    setSuccess("Obsidian settings updated.");
+  } catch (error) {
+    setError(getErrorMessage(error, "Failed to update Obsidian settings."));
+  } finally {
+    isSavingObsidian.value = false;
   }
 }
 
@@ -732,7 +767,6 @@ onMounted(loadSettings);
           v-model="summarizationForm.summarizationPrompt"
           rows="6"
           class="settings-textarea"
-          :disabled="!summarizationForm.summarizationEnabled"
           placeholder="Enter a system prompt…"
         />
         <p class="meta-text">
@@ -750,7 +784,6 @@ onMounted(loadSettings);
           v-model="summarizationForm.summarizationUserPrompt"
           rows="4"
           class="settings-textarea"
-          :disabled="!summarizationForm.summarizationEnabled"
           placeholder="Enter a user prompt prefix…"
         />
         <p class="meta-text">
@@ -852,6 +885,32 @@ onMounted(loadSettings);
       <div class="surface-row">
         <UiButton :disabled="isSavingModelSettings" @click="saveModelSettings">
           {{ isSavingModelSettings ? "Saving..." : "Save model settings" }}
+        </UiButton>
+      </div>
+    </UiCard>
+
+    <!-- Obsidian Integration -->
+    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Obsidian</h3>
+        <p class="section-subtitle">
+          Choose the vault folder used when sending episode summaries to Obsidian.
+        </p>
+      </div>
+
+      <div class="surface-grid surface-grid--2">
+        <UiInput
+          v-model="obsidianForm.obsidianFolder"
+          type="text"
+          label="Folder"
+          :placeholder="DEFAULT_OBSIDIAN_FOLDER"
+          hint="Use a vault-relative folder such as Clippings or Podcasts/Summaries."
+        />
+      </div>
+
+      <div class="surface-row">
+        <UiButton :disabled="isSavingObsidian" @click="saveObsidianSettings">
+          {{ isSavingObsidian ? "Saving..." : "Save Obsidian settings" }}
         </UiButton>
       </div>
     </UiCard>

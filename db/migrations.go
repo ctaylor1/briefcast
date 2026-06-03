@@ -252,6 +252,14 @@ where id in (
 		Name:  "2026_05_24_02_04_AddSettingsBriefpointAPIKey",
 		Query: "alter table settings add column if not exists briefpoint_api_key text",
 	},
+	{
+		Name:  "2026_06_02_01_00_AddSettingsObsidianFolder",
+		Query: "alter table settings add column if not exists obsidian_folder text default 'Clippings'",
+	},
+	{
+		Name:  "2026_06_02_01_01_BackfillSettingsObsidianFolder",
+		Query: "update settings set obsidian_folder = 'Clippings' where obsidian_folder is null or trim(obsidian_folder) = ''",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

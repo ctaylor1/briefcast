@@ -53,6 +53,7 @@ func makeRouter() *gin.Engine {
 	router.GET("/settings", GetSettings)
 	router.PATCH("/settings", PatchSettings)
 	router.GET("/podcastitems/:id/transcript", GetPodcastItemTranscript)
+	router.GET("/podcastitems/:id/summary", GetPodcastItemSummary)
 	router.GET("/podcastitems/:id/chapters", GetPodcastItemChapters)
 	router.GET("/downloads/queue", GetDownloadQueue)
 	router.POST("/downloads/pause", PauseDownloads)
@@ -129,8 +130,93 @@ func TestSettingsEndpoints(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode settings response: %v", err)
 	}
+	if payload["obsidianFolder"] != db.DefaultObsidianFolder {
+		t.Fatalf("expected obsidianFolder default %q, got %+v", db.DefaultObsidianFolder, payload)
+	}
+
+	obsidianPatch := `{"obsidianFolder":"Research\\Podcasts/Summaries"}`
+	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(obsidianPatch))
+	req.Header.Set("Content-Type", "application/json")
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from obsidian PATCH /settings, got %d", resp.Code)
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode obsidian settings response: %v", err)
+	}
+	if payload["obsidianFolder"] != "Research/Podcasts/Summaries" {
+		t.Fatalf("expected normalized obsidian folder, got %+v", payload)
+	}
+
+	unsafeObsidianPatch := `{"obsidianFolder":"Research:Pods?/<Bad>|#^[Name]"}`
+	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(unsafeObsidianPatch))
+	req.Header.Set("Content-Type", "application/json")
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from unsafe obsidian PATCH /settings, got %d", resp.Code)
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode unsafe obsidian settings response: %v", err)
+	}
+	if payload["obsidianFolder"] != "ResearchPods/BadName" {
+		t.Fatalf("expected sanitized obsidian folder, got %+v", payload)
+	}
 	if payload["keepLatestEpisodes"] != float64(3) {
 		t.Fatalf("expected keepLatestEpisodes=3, got %+v", payload)
+	}
+}
+
+func TestSettingsResponseIncludesEffectivePrompts(t *testing.T) {
+	setupControllersTestDB(t)
+	t.Setenv("LLM_SUMMARIZATION_PROMPT", "env system prompt")
+	t.Setenv("LLM_SUMMARIZATION_USER_PROMPT", "env user prompt")
+	router := makeRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /settings, got %d", resp.Code)
+	}
+
+	var payload SettingsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode settings response: %v", err)
+	}
+	if payload.SummarizationPrompt != "" {
+		t.Fatalf("expected stored system prompt override to be empty, got %q", payload.SummarizationPrompt)
+	}
+	if payload.EffectiveSystemPrompt != "env system prompt" {
+		t.Fatalf("expected effective system prompt from env default, got %q", payload.EffectiveSystemPrompt)
+	}
+	if payload.EffectiveUserPrompt != "env user prompt" {
+		t.Fatalf("expected effective user prompt from env default, got %q", payload.EffectiveUserPrompt)
+	}
+
+	setting := db.GetOrCreateSetting()
+	setting.SummarizationPrompt = "custom system prompt"
+	setting.SummarizationUserPrompt = "custom user prompt"
+	if err := db.UpdateSettings(setting); err != nil {
+		t.Fatalf("failed to seed prompt settings: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/settings", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /settings with custom prompts, got %d", resp.Code)
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode settings response with custom prompts: %v", err)
+	}
+	if payload.EffectiveSystemPrompt != "custom system prompt" {
+		t.Fatalf("expected effective system prompt from custom setting, got %q", payload.EffectiveSystemPrompt)
+	}
+	if payload.EffectiveUserPrompt != "custom user prompt" {
+		t.Fatalf("expected effective user prompt from custom setting, got %q", payload.EffectiveUserPrompt)
 	}
 }
 
@@ -210,6 +296,12 @@ func TestEpisodeMediaEndpoints(t *testing.T) {
 	setupControllersTestDB(t)
 	router := makeRouter()
 	_, item := createControllerPodcastAndItem(t)
+	item.BookmarkDate = time.Now().UTC()
+	item.LLMSummaryStatus = "available"
+	item.LLMSummary = "controller summary"
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("update favorited media item failed: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/podcastitems/"+item.ID+"/transcript", nil)
 	resp := httptest.NewRecorder()
@@ -226,6 +318,23 @@ func TestEpisodeMediaEndpoints(t *testing.T) {
 	}
 	if _, ok := transcriptPayload["transcript"]; !ok {
 		t.Fatalf("expected transcript payload to include transcript body")
+	}
+	if transcriptPayload["isFavorited"] != true {
+		t.Fatalf("expected transcript payload favorite state, got %+v", transcriptPayload)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/podcastitems/"+item.ID+"/summary", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from summary endpoint, got %d", resp.Code)
+	}
+	var summaryPayload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &summaryPayload); err != nil {
+		t.Fatalf("failed to decode summary payload: %v", err)
+	}
+	if summaryPayload["isFavorited"] != true {
+		t.Fatalf("expected summary payload favorite state, got %+v", summaryPayload)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/podcastitems/"+item.ID+"/chapters", nil)

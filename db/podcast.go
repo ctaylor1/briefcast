@@ -149,6 +149,8 @@ const (
 	Paused
 )
 
+const DefaultObsidianFolder = "Clippings"
+
 // Setting represents a public type.
 type Setting struct {
 	Base
@@ -189,6 +191,9 @@ type Setting struct {
 	BriefpointEnabled   bool   `gorm:"default:false"`
 	BriefpointServerURL string `gorm:"type:text"`
 	BriefpointAPIKey    string `gorm:"type:text"`
+
+	// Obsidian integration settings.
+	ObsidianFolder string `gorm:"type:text;default:Clippings"`
 }
 
 // PromptVersion stores a snapshot of a prompt each time it is changed via settings.

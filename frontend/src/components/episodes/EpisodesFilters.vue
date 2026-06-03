@@ -17,6 +17,7 @@ const props = defineProps<{
   count: number;
   isDownloaded: EpisodeTriState;
   isPlayed: EpisodeTriState;
+  favoritesOnly: boolean;
   podcastOptions: PodcastFilterOption[];
   selectedPodcastIds: string[];
 }>();
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   (event: "update:count", value: number): void;
   (event: "update:isDownloaded", value: EpisodeTriState): void;
   (event: "update:isPlayed", value: EpisodeTriState): void;
+  (event: "update:favoritesOnly", value: boolean): void;
   (event: "update:selectedPodcastIds", value: string[]): void;
 }>();
 
@@ -76,6 +78,7 @@ function resetFilters(): void {
   emit("update:count", 20);
   emit("update:isDownloaded", "nil");
   emit("update:isPlayed", "nil");
+  emit("update:favoritesOnly", false);
 }
 </script>
 
@@ -185,6 +188,17 @@ function resetFilters(): void {
     </div>
 
     <div class="episodes-filters__actions">
+      <label class="episodes-filters__favorites-toggle">
+        <input
+          type="checkbox"
+          :checked="props.favoritesOnly"
+          @change="emit('update:favoritesOnly', !props.favoritesOnly)"
+        />
+        <svg width="14" height="14" viewBox="0 0 24 24" :fill="props.favoritesOnly ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+        <span>Favorites only</span>
+      </label>
       <UiButton size="sm" variant="ghost" @click="resetFilters">
         Reset filters
       </UiButton>
@@ -305,7 +319,37 @@ function resetFilters(): void {
 
 .episodes-filters__actions {
   display: flex;
+  align-items: center;
+  gap: var(--space-3);
   justify-content: flex-end;
+}
+
+.episodes-filters__favorites-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  white-space: nowrap;
+}
+
+.episodes-filters__favorites-toggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.episodes-filters__favorites-toggle svg {
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--ease-enter);
+}
+
+.episodes-filters__favorites-toggle:has(input:checked) svg {
+  color: var(--color-warning, #e5a00d);
 }
 
 @media (min-width: 768px) {

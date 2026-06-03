@@ -84,7 +84,7 @@ func GetSummaries(c *gin.Context) {
 			ReadTime:     readTime,
 			IsPlayed:     item.IsPlayed,
 			HasSummary:   true,
-			IsFavorited:  item.IsSummaryFavorited,
+			IsFavorited:  isPodcastItemFavorited(item),
 		})
 	}
 

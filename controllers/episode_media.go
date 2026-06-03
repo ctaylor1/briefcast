@@ -49,7 +49,8 @@ func GetPodcastItemTranscript(c *gin.Context) {
 	}
 
 	payload := gin.H{
-		"status": status,
+		"status":      status,
+		"isFavorited": isPodcastItemFavorited(item),
 	}
 
 	if strings.TrimSpace(item.CanonicalTranscript) != "" {
@@ -118,7 +119,8 @@ func GetPodcastItemSummary(c *gin.Context) {
 	}
 
 	payload := gin.H{
-		"status": status,
+		"status":      status,
+		"isFavorited": isPodcastItemFavorited(item),
 	}
 
 	if strings.TrimSpace(item.LLMSummary) != "" {

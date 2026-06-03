@@ -8,6 +8,7 @@ export interface EpisodeListQuery {
   q?: string;
   isDownloaded?: "true" | "false";
   isPlayed?: "true" | "false";
+  isBookmarked?: "true" | "false";
   podcastIds?: string[];
 }
 
@@ -26,6 +27,9 @@ export const episodesApi = {
     }
     if (query.isPlayed) {
       params.isPlayed = query.isPlayed;
+    }
+    if (query.isBookmarked) {
+      params.isBookmarked = query.isBookmarked;
     }
     if (query.podcastIds && query.podcastIds.length > 0) {
       params["podcastIds[]"] = query.podcastIds;

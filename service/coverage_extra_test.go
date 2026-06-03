@@ -421,8 +421,21 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	if err := SetPodcastItemBookmarkStatus(item.ID, true); err != nil {
 		t.Fatalf("set bookmark true failed: %v", err)
 	}
+	var favorited db.PodcastItem
+	if err := db.GetPodcastItemByID(item.ID, &favorited); err != nil {
+		t.Fatalf("reload favorited item failed: %v", err)
+	}
+	if favorited.BookmarkDate.IsZero() || !favorited.IsSummaryFavorited {
+		t.Fatalf("expected episode favorite to set bookmark date and summary favorite, got bookmark=%v summary=%v", favorited.BookmarkDate, favorited.IsSummaryFavorited)
+	}
 	if err := SetPodcastItemBookmarkStatus(item.ID, false); err != nil {
 		t.Fatalf("set bookmark false failed: %v", err)
+	}
+	if err := db.GetPodcastItemByID(item.ID, &favorited); err != nil {
+		t.Fatalf("reload unfavorited item failed: %v", err)
+	}
+	if !favorited.BookmarkDate.IsZero() || favorited.IsSummaryFavorited {
+		t.Fatalf("expected episode unfavorite to clear bookmark date and summary favorite, got bookmark=%v summary=%v", favorited.BookmarkDate, favorited.IsSummaryFavorited)
 	}
 	if err := SetPodcastItemPlayedStatus(item.ID, true); err != nil {
 		t.Fatalf("set played status failed: %v", err)

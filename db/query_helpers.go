@@ -1,6 +1,8 @@
 package db
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -47,4 +49,18 @@ func applyPlayedStatusFilter(query *gorm.DB, playedOnly *bool) *gorm.DB {
 		return query.Where("is_played=?", true)
 	}
 	return query.Where("is_played=?", false)
+}
+
+func applyBookmarkStatusFilter(query *gorm.DB, bookmarkedOnly *bool) *gorm.DB {
+	if bookmarkedOnly == nil {
+		return query
+	}
+	if *bookmarkedOnly {
+		return applyEpisodeFavoriteFilter(query)
+	}
+	return query.Where("(is_summary_favorited = ? OR is_summary_favorited IS NULL) AND (bookmark_date IS NULL OR bookmark_date = ?)", false, time.Time{})
+}
+
+func applyEpisodeFavoriteFilter(query *gorm.DB) *gorm.DB {
+	return query.Where("is_summary_favorited = ? OR (bookmark_date IS NOT NULL AND bookmark_date <> ?)", true, time.Time{})
 }

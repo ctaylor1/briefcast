@@ -22,3 +22,10 @@ export function isBookmarkedDate(value: string | null | undefined): boolean {
 
   return parsed.getUTCFullYear() > 1;
 }
+
+export function isEpisodeFavorited(item: {
+  BookmarkDate?: string | null;
+  IsSummaryFavorited?: boolean;
+}): boolean {
+  return Boolean(item.IsSummaryFavorited) || isBookmarkedDate(item.BookmarkDate);
+}

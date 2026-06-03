@@ -231,7 +231,7 @@ just up
 ### Pull Published Images
 
 ```bash
-docker pull ghcr.io/ctaylor1/briefcast:1.9.0
+docker pull ghcr.io/ctaylor1/briefcast:1.9.1
 docker pull ghcr.io/ctaylor1/briefcast:latest
 ```
 
@@ -248,7 +248,7 @@ docker run -d \
   -e CONFIG=/config \
   -e DATA=/assets \
   -e DATABASE_URL=sqlite:///config/briefcast.db \
-  ghcr.io/ctaylor1/briefcast:1.9.0
+  ghcr.io/ctaylor1/briefcast:1.9.1
 ```
 
 ### External Postgres
@@ -265,7 +265,7 @@ docker run -d \
   -e DATA=/assets \
   -e DB_DRIVER=postgres \
   -e DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable \
-  ghcr.io/ctaylor1/briefcast:1.9.0
+  ghcr.io/ctaylor1/briefcast:1.9.1
 ```
 
 ### Local WhisperX Image Tar
@@ -578,7 +578,7 @@ uv run pip-audit
 
 ## Release Basics
 
-The package version is defined in `pyproject.toml`. Current version: `1.9.0`.
+The package version is defined in `pyproject.toml`. Current version: `1.9.1`.
 
 Release helpers:
 
@@ -599,7 +599,7 @@ One-command GitHub Actions release:
 gh workflow run release.yml --ref <default-branch> -f bump=patch
 gh workflow run release.yml --ref <default-branch> -f bump=minor
 gh workflow run release.yml --ref <default-branch> -f bump=major
-gh workflow run release.yml --ref <default-branch> -f version=1.9.0
+gh workflow run release.yml --ref <default-branch> -f version=1.9.1
 ```
 
 Dry run:
@@ -612,7 +612,7 @@ Manual image publish:
 
 ```bash
 docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
-  -t ghcr.io/ctaylor1/briefcast:1.9.0 \
+  -t ghcr.io/ctaylor1/briefcast:1.9.1 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
 ```
@@ -671,7 +671,7 @@ uv sync --locked --group dev
 just test-full
 git add .
 git commit -m "release: ship-ready"
-git tag -a v1.9.0 -m "Briefcast v1.9.0"
+git tag -a v1.9.1 -m "Briefcast v1.9.1"
 git push origin HEAD
-git push origin v1.9.0
+git push origin v1.9.1
 ```

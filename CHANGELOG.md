@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-06-03
+
+### Added
+- Added a unified favorites flow for episodes and summaries, including favorites-only filtering and favorite state in detail responses.
+- Added Obsidian folder settings and summary export links for the summaries reader and episode drawer.
+
+### Changed
+- Kept summarization prompt fields populated from the effective configured prompts in settings responses and UI forms.
+- Prioritized in-progress WhisperX jobs before pending jobs when selecting transcription work.
+
+### Fixed
+- Kept bookmark and summary favorite state synchronized when toggling either favorite path.
+- Sanitized Obsidian folder paths before storing settings.
+
 ## [1.9.0] - 2026-05-27
 
 ### Added

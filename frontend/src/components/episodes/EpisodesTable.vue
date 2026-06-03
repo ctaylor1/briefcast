@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
-import { isBookmarkedDate } from "../../lib/bookmarks";
+import { isEpisodeFavorited } from "../../lib/bookmarks";
 import type { PodcastItem } from "../../types/api";
 import EpisodeTrackControls from "./EpisodeTrackControls.vue";
 import UiBadge from "../ui/UiBadge.vue";
@@ -158,8 +158,8 @@ function progressAriaText(item: PodcastItem): string {
                 <UiBadge :tone="item.IsPlayed ? 'success' : 'neutral'">
                   {{ item.IsPlayed ? "Played" : "Unplayed" }}
                 </UiBadge>
-                <UiBadge :tone="isBookmarkedDate(item.BookmarkDate) ? 'info' : 'neutral'">
-                  {{ isBookmarkedDate(item.BookmarkDate) ? "Bookmarked" : "No bookmark" }}
+                <UiBadge :tone="isEpisodeFavorited(item) ? 'info' : 'neutral'">
+                  {{ isEpisodeFavorited(item) ? "Favorited" : "No favorite" }}
                 </UiBadge>
                 <UiBadge :tone="downloadStatusTone(item.DownloadStatus)">
                   {{ downloadStatusLabel(item.DownloadStatus) }}

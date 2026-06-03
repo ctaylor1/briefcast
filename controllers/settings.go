@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
@@ -26,6 +27,8 @@ type SettingsResponse struct {
 	SummarizationModel      string `json:"summarizationModel"`
 	SummarizationPrompt     string `json:"summarizationPrompt"`
 	SummarizationUserPrompt string `json:"summarizationUserPrompt"`
+	EffectiveSystemPrompt   string `json:"effectiveSystemPrompt"`
+	EffectiveUserPrompt     string `json:"effectiveUserPrompt"`
 	// Model settings
 	LLMConcurrency int `json:"llmConcurrency"`
 	// Read-only defaults so the UI can show placeholders.
@@ -41,6 +44,8 @@ type SettingsResponse struct {
 	BriefpointEnabled          bool   `json:"briefpointEnabled"`
 	BriefpointServerURL        string `json:"briefpointServerURL"`
 	BriefpointAPIKeyConfigured bool   `json:"briefpointAPIKeyConfigured"`
+	// Obsidian
+	ObsidianFolder string `json:"obsidianFolder"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -72,6 +77,8 @@ type SettingsPatch struct {
 	BriefpointEnabled   *bool   `json:"briefpointEnabled"`
 	BriefpointServerURL *string `json:"briefpointServerURL"`
 	BriefpointAPIKey    *string `json:"briefpointAPIKey"`
+	// Obsidian
+	ObsidianFolder *string `json:"obsidianFolder"`
 }
 
 // GetSettings handles the corresponding operation.
@@ -183,6 +190,9 @@ func PatchSettings(c *gin.Context) {
 	}
 	if patch.BriefpointAPIKey != nil {
 		setting.BriefpointAPIKey = *patch.BriefpointAPIKey
+	}
+	if patch.ObsidianFolder != nil {
+		setting.ObsidianFolder = normalizeObsidianFolder(*patch.ObsidianFolder)
 	}
 
 	if err := db.UpdateSettings(setting); err != nil {
@@ -353,6 +363,8 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		SummarizationModel:         setting.SummarizationModel,
 		SummarizationPrompt:        setting.SummarizationPrompt,
 		SummarizationUserPrompt:    setting.SummarizationUserPrompt,
+		EffectiveSystemPrompt:      service.ResolveSummarizationPrompt(setting, cfg),
+		EffectiveUserPrompt:        service.ResolveSummarizationUserPrompt(setting, cfg),
 		LLMConcurrency:             setting.LLMConcurrency,
 		DefaultModel:               cfg.Model,
 		DefaultSystemPrompt:        cfg.DefaultPrompt,
@@ -364,5 +376,33 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		BriefpointEnabled:          setting.BriefpointEnabled,
 		BriefpointServerURL:        setting.BriefpointServerURL,
 		BriefpointAPIKeyConfigured: setting.BriefpointAPIKey != "",
+		ObsidianFolder:             normalizeObsidianFolder(setting.ObsidianFolder),
 	}
+}
+
+func normalizeObsidianFolder(value string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	parts := strings.Split(normalized, "/")
+	folders := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = normalizeObsidianPathPart(part)
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		folders = append(folders, part)
+	}
+	if len(folders) == 0 {
+		return db.DefaultObsidianFolder
+	}
+	return strings.Join(folders, "/")
+}
+
+func normalizeObsidianPathPart(value string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || strings.ContainsRune(`:*?"<>|#^[]`, r) {
+			return -1
+		}
+		return r
+	}, value)
+	return strings.Join(strings.Fields(cleaned), " ")
 }

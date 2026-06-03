@@ -43,6 +43,7 @@ type EpisodesFilter struct {
 	Pagination
 	IsDownloaded *string     `uri:"isDownloaded" query:"isDownloaded" json:"isDownloaded" form:"isDownloaded"`
 	IsPlayed     *string     `uri:"isPlayed" query:"isPlayed" json:"isPlayed" form:"isPlayed"`
+	IsBookmarked *string     `uri:"isBookmarked" query:"isBookmarked" json:"isBookmarked" form:"isBookmarked"`
 	Sorting      EpisodeSort `uri:"sorting" query:"sorting" json:"sorting" form:"sorting"`
 	Q            string      `uri:"q" query:"q" json:"q" form:"q"`
 	TagIds       []string    `uri:"tagIds" query:"tagIds[]" json:"tagIds" form:"tagIds[]"`

@@ -14,7 +14,7 @@ import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import { downloadsApi, episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
-import { isBookmarkedDate, UNBOOKMARKED_DATE } from "../lib/bookmarks";
+import { isEpisodeFavorited, UNBOOKMARKED_DATE } from "../lib/bookmarks";
 import { formatDuration } from "../lib/format";
 import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
@@ -52,6 +52,7 @@ const {
   downloadCanonicalTranscript,
   sendToChatGPT,
   sendToClaude,
+  sendSummaryToObsidian,
   drawerSummaryStatus,
   drawerSummaryText,
   drawerSummaryDate,
@@ -74,6 +75,7 @@ const filter = reactive<{
   sorting: EpisodeSorting;
   isDownloaded: EpisodeTriState;
   isPlayed: EpisodeTriState;
+  favoritesOnly: boolean;
   nextPage: number;
   previousPage: number;
   totalPages: number;
@@ -86,6 +88,7 @@ const filter = reactive<{
   sorting: "release_desc",
   isDownloaded: "nil",
   isPlayed: "nil",
+  favoritesOnly: false,
   nextPage: 0,
   previousPage: 0,
   totalPages: 0,
@@ -99,11 +102,20 @@ const hasActiveFilters = computed(
     filter.sorting !== "release_desc" ||
     filter.count !== 20 ||
     filter.isDownloaded !== "nil" ||
-    filter.isPlayed !== "nil",
+    filter.isPlayed !== "nil" ||
+    filter.favoritesOnly,
 );
 
 const sortedPodcastOptions = computed(() =>
   [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
+);
+
+const drawerItemFavorited = computed(() =>
+  drawerItem.value ? isEpisodeFavorited(drawerItem.value) : false,
+);
+
+const drawerFavoriteLabel = computed(() =>
+  drawerItemFavorited.value ? "Remove favorite" : "Favorite",
 );
 
 function parseQueryIdList(raw: unknown): string[] {
@@ -169,6 +181,7 @@ async function fetchEpisodes(): Promise<void> {
       q: filter.q.trim() || undefined,
       isDownloaded: filter.isDownloaded !== "nil" ? filter.isDownloaded : undefined,
       isPlayed: filter.isPlayed !== "nil" ? filter.isPlayed : undefined,
+      isBookmarked: filter.favoritesOnly ? "true" : undefined,
       podcastIds: filter.podcastIds.length > 0 ? filter.podcastIds : undefined,
     });
 
@@ -195,6 +208,7 @@ function resetFilters(): void {
   filter.sorting = "release_desc";
   filter.isDownloaded = "nil";
   filter.isPlayed = "nil";
+  filter.favoritesOnly = false;
   void fetchEpisodes();
 }
 
@@ -216,17 +230,20 @@ async function togglePlayed(item: PodcastItem): Promise<void> {
 
 async function toggleBookmark(item: PodcastItem): Promise<void> {
   const previousValue = item.BookmarkDate;
-  const currentlyBookmarked = isBookmarkedDate(previousValue);
+  const previousSummaryFavorite = item.IsSummaryFavorited;
+  const currentlyBookmarked = isEpisodeFavorited(item);
   item.BookmarkDate = currentlyBookmarked ? UNBOOKMARKED_DATE : new Date().toISOString();
+  item.IsSummaryFavorited = !currentlyBookmarked;
 
   infoMessage.value = "";
   errorMessage.value = "";
   try {
     await episodesApi.setBookmarked(item.ID, !currentlyBookmarked);
-    infoMessage.value = currentlyBookmarked ? "Bookmark removed." : "Bookmark saved.";
+    infoMessage.value = currentlyBookmarked ? "Favorite removed." : "Favorite saved.";
   } catch (error) {
     item.BookmarkDate = previousValue;
-    errorMessage.value = getErrorMessage(error, "Could not update bookmark.");
+    item.IsSummaryFavorited = previousSummaryFavorite;
+    errorMessage.value = getErrorMessage(error, "Could not update favorite.");
   }
 }
 
@@ -285,7 +302,7 @@ function openPlayerAt(item: PodcastItem, startSeconds: number): void {
 }
 
 watch(
-  () => [filter.count, filter.sorting, filter.isDownloaded, filter.isPlayed, filter.podcastIds.join(",")],
+  () => [filter.count, filter.sorting, filter.isDownloaded, filter.isPlayed, filter.favoritesOnly, filter.podcastIds.join(",")],
   () => {
     filter.page = 1;
     void fetchEpisodes();
@@ -354,12 +371,14 @@ onMounted(() => {
       :count="filter.count"
       :is-downloaded="filter.isDownloaded"
       :is-played="filter.isPlayed"
+      :favorites-only="filter.favoritesOnly"
       @update:query="filter.q = $event"
       @update:selected-podcast-ids="filter.podcastIds = $event"
       @update:sorting="filter.sorting = $event"
       @update:count="filter.count = $event"
       @update:is-downloaded="filter.isDownloaded = $event"
       @update:is-played="filter.isPlayed = $event"
+      @update:favorites-only="filter.favoritesOnly = $event"
     />
 
     <UiCard v-if="isLoading" padding="md" class="episodes-skeleton">
@@ -370,9 +389,16 @@ onMounted(() => {
     </UiCard>
 
     <UiCard v-else-if="items.length === 0" padding="lg" class="empty-state">
-      <p class="empty-state__title">No episodes match the current filter</p>
+      <p class="empty-state__title">
+        {{ filter.favoritesOnly ? "No favorite episodes" : "No episodes match the current filter" }}
+      </p>
       <p class="empty-state__copy">
-        Clear filters to see your full feed list or update downloads to pull fresh episodes.
+        <template v-if="filter.favoritesOnly">
+          Star episodes you want to revisit and they will appear here.
+        </template>
+        <template v-else>
+          Clear filters to see your full feed list or update downloads to pull fresh episodes.
+        </template>
       </p>
       <UiButton v-if="hasActiveFilters" variant="secondary" size="sm" @click="resetFilters">
         Reset filters
@@ -429,6 +455,26 @@ onMounted(() => {
       @close="closeDrawer"
     >
       <div class="stack-4">
+        <div v-if="drawerItem" class="drawer-favorite-row">
+          <UiBadge :tone="drawerItemFavorited ? 'info' : 'neutral'">
+            {{ drawerItemFavorited ? "Favorited" : "No favorite" }}
+          </UiBadge>
+          <button
+            type="button"
+            class="drawer-favorite-button"
+            :class="{ 'drawer-favorite-button--active': drawerItemFavorited }"
+            :title="drawerFavoriteLabel"
+            :aria-label="drawerFavoriteLabel"
+            :aria-pressed="drawerItemFavorited"
+            @click="toggleBookmark(drawerItem)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" :fill="drawerItemFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            <span>{{ drawerFavoriteLabel }}</span>
+          </button>
+        </div>
+
         <div class="drawer-tabs">
           <UiButton
             v-for="tab in drawerTabs"
@@ -559,6 +605,11 @@ onMounted(() => {
           <p v-if="drawerLoadingSummary" class="meta-text">Loading summary...</p>
           <p v-else-if="drawerSummaryStatus !== 'available'" class="meta-text">{{ drawerSummarySummary() }}</p>
           <div v-else class="stack-3">
+            <div class="drawer-transcript-actions">
+              <button type="button" class="drawer-action-link" @click="sendSummaryToObsidian">
+                Send to Obsidian
+              </button>
+            </div>
             <div class="drawer-summary-raw">
               <pre>{{ drawerSummaryText }}</pre>
             </div>
@@ -595,6 +646,43 @@ onMounted(() => {
 
 .episodes-list-desktop {
   display: none;
+}
+
+.drawer-favorite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.drawer-favorite-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-enter),
+    border-color var(--duration-fast) var(--ease-enter),
+    color var(--duration-fast) var(--ease-enter);
+}
+
+.drawer-favorite-button:hover {
+  background: var(--color-hover);
+  color: var(--color-text-primary);
+}
+
+.drawer-favorite-button--active {
+  border-color: color-mix(in srgb, var(--color-warning, #e5a00d) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning, #e5a00d) 12%, var(--color-bg-primary));
+  color: var(--color-warning, #e5a00d);
 }
 
 .drawer-tabs {

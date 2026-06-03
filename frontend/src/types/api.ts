@@ -62,6 +62,7 @@ export interface PodcastItem {
   HasTranscript: boolean;
   HasSummary: boolean;
   LLMSummaryStatus: string;
+  IsSummaryFavorited?: boolean;
   IsPlayed: boolean;
   BookmarkDate: string;
 }
@@ -92,12 +93,14 @@ export interface ChaptersResponse {
 
 export interface TranscriptResponse {
   status: string;
+  isFavorited?: boolean;
   transcript?: unknown;
   canonicalTranscript?: string;
 }
 
 export interface SummaryResponse {
   status: string;
+  isFavorited?: boolean;
   summary?: string;
   generatedAt?: string;
   model?: string;
@@ -112,6 +115,7 @@ export interface EpisodesFilter {
   totalPages: number;
   isDownloaded?: EpisodeTriState | null;
   isPlayed?: EpisodeTriState | null;
+  isBookmarked?: EpisodeTriState | null;
   sorting?: EpisodeSorting;
   q?: string;
   podcastIds?: string[];
@@ -159,6 +163,8 @@ export interface AppSettings {
   summarizationModel: string;
   summarizationPrompt: string;
   summarizationUserPrompt: string;
+  effectiveSystemPrompt: string;
+  effectiveUserPrompt: string;
   llmConcurrency: number;
   defaultModel: string;
   defaultSystemPrompt: string;
@@ -170,6 +176,7 @@ export interface AppSettings {
   briefpointEnabled: boolean;
   briefpointServerURL: string;
   briefpointAPIKeyConfigured: boolean;
+  obsidianFolder: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings> & {
