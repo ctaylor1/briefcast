@@ -597,6 +597,7 @@ func GetOrCreateSetting() *Setting {
 			RetentionKeepAll:          true,
 			RetentionDeleteOnlyPlayed: true,
 			InitialDownloadMode:       "count",
+			ObsidianVault:             DefaultObsidianVault,
 			ObsidianFolder:            DefaultObsidianFolder,
 		}
 		DB.Save(&setting)
@@ -614,6 +615,10 @@ func GetOrCreateSetting() *Setting {
 	}
 	if strings.TrimSpace(setting.ObsidianFolder) == "" {
 		setting.ObsidianFolder = DefaultObsidianFolder
+		DB.Save(&setting)
+	}
+	if strings.TrimSpace(setting.ObsidianVault) == "" {
+		setting.ObsidianVault = DefaultObsidianVault
 		DB.Save(&setting)
 	}
 	return &setting

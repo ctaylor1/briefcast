@@ -133,8 +133,11 @@ func TestSettingsEndpoints(t *testing.T) {
 	if payload["obsidianFolder"] != db.DefaultObsidianFolder {
 		t.Fatalf("expected obsidianFolder default %q, got %+v", db.DefaultObsidianFolder, payload)
 	}
+	if payload["obsidianVault"] != db.DefaultObsidianVault {
+		t.Fatalf("expected obsidianVault default %q, got %+v", db.DefaultObsidianVault, payload)
+	}
 
-	obsidianPatch := `{"obsidianFolder":"Research\\Podcasts/Summaries"}`
+	obsidianPatch := `{"obsidianVault":"Research Vault","obsidianFolder":"Research\\Podcasts/Summaries"}`
 	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(obsidianPatch))
 	req.Header.Set("Content-Type", "application/json")
 	resp = httptest.NewRecorder()
@@ -148,8 +151,11 @@ func TestSettingsEndpoints(t *testing.T) {
 	if payload["obsidianFolder"] != "Research/Podcasts/Summaries" {
 		t.Fatalf("expected normalized obsidian folder, got %+v", payload)
 	}
+	if payload["obsidianVault"] != "Research Vault" {
+		t.Fatalf("expected normalized obsidian vault, got %+v", payload)
+	}
 
-	unsafeObsidianPatch := `{"obsidianFolder":"Research:Pods?/<Bad>|#^[Name]"}`
+	unsafeObsidianPatch := `{"obsidianVault":"Work\\Vault/One","obsidianFolder":"Research:Pods?/<Bad>|#^[Name]"}`
 	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(unsafeObsidianPatch))
 	req.Header.Set("Content-Type", "application/json")
 	resp = httptest.NewRecorder()
@@ -162,6 +168,9 @@ func TestSettingsEndpoints(t *testing.T) {
 	}
 	if payload["obsidianFolder"] != "ResearchPods/BadName" {
 		t.Fatalf("expected sanitized obsidian folder, got %+v", payload)
+	}
+	if payload["obsidianVault"] != "WorkVaultOne" {
+		t.Fatalf("expected sanitized obsidian vault, got %+v", payload)
 	}
 	if payload["keepLatestEpisodes"] != float64(3) {
 		t.Fatalf("expected keepLatestEpisodes=3, got %+v", payload)

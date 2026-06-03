@@ -176,6 +176,7 @@ export interface AppSettings {
   briefpointEnabled: boolean;
   briefpointServerURL: string;
   briefpointAPIKeyConfigured: boolean;
+  obsidianVault: string;
   obsidianFolder: string;
 }
 

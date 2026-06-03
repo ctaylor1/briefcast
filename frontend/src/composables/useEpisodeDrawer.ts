@@ -2,7 +2,9 @@ import { computed, ref } from "vue";
 import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
+  DEFAULT_OBSIDIAN_VAULT,
   buildPodcastSummaryObsidianUrl,
+  buildPodcastTranscriptObsidianUrl,
 } from "../lib/obsidian";
 import type { Chapter, ChaptersResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../types/api";
 
@@ -40,6 +42,7 @@ export function useEpisodeDrawer() {
   const drawerSummaryDate = ref("");
   const drawerSummaryModel = ref("");
   const drawerLoadingSummary = ref(false);
+  const obsidianVault = ref(DEFAULT_OBSIDIAN_VAULT);
   const obsidianFolder = ref(DEFAULT_OBSIDIAN_FOLDER);
 
   const chaptersSearchQuery = computed(() => chaptersSearch.value.trim().toLowerCase());
@@ -122,7 +125,7 @@ export function useEpisodeDrawer() {
     setDrawerTab(tab);
     drawerOpen.value = true;
     syncDrawerSearch(tab, searchTerm);
-    void refreshObsidianFolder();
+    void refreshObsidianSettings();
     void fetchDrawerData(item.ID);
   }
 
@@ -208,6 +211,9 @@ export function useEpisodeDrawer() {
 
     if (typeof transcript === "string") {
       drawerTranscriptText.value = transcript;
+    }
+    if (!drawerTranscriptText.value && drawerCanonicalTranscript.value) {
+      drawerTranscriptText.value = drawerCanonicalTranscript.value;
     }
   }
 
@@ -331,11 +337,13 @@ export function useEpisodeDrawer() {
     void sendToApp(`claude://chat?prompt=${encoded}`, "Claude");
   }
 
-  async function refreshObsidianFolder(): Promise<void> {
+  async function refreshObsidianSettings(): Promise<void> {
     try {
       const settings = await settingsApi.get();
+      obsidianVault.value = settings.obsidianVault || DEFAULT_OBSIDIAN_VAULT;
       obsidianFolder.value = settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER;
     } catch {
+      obsidianVault.value = DEFAULT_OBSIDIAN_VAULT;
       obsidianFolder.value = DEFAULT_OBSIDIAN_FOLDER;
     }
   }
@@ -345,12 +353,27 @@ export function useEpisodeDrawer() {
       return;
     }
     window.location.href = buildPodcastSummaryObsidianUrl({
+      vault: obsidianVault.value,
       folder: obsidianFolder.value,
       episodeTitle: drawerItem.value.Title,
       podcastTitle: drawerItem.value.Podcast?.Title,
       pubDate: drawerItem.value.PubDate,
       model: drawerSummaryModel.value,
       summary: drawerSummaryText.value,
+    });
+  }
+
+  function sendTranscriptToObsidian(): void {
+    if (!drawerItem.value || !drawerCanonicalTranscript.value) {
+      return;
+    }
+    window.location.href = buildPodcastTranscriptObsidianUrl({
+      vault: obsidianVault.value,
+      folder: obsidianFolder.value,
+      episodeTitle: drawerItem.value.Title,
+      podcastTitle: drawerItem.value.Podcast?.Title,
+      pubDate: drawerItem.value.PubDate,
+      transcript: drawerCanonicalTranscript.value,
     });
   }
 
@@ -394,6 +417,7 @@ export function useEpisodeDrawer() {
     downloadCanonicalTranscript,
     sendToChatGPT,
     sendToClaude,
+    sendTranscriptToObsidian,
     sendSummaryToObsidian,
     // Summary
     drawerSummaryStatus,

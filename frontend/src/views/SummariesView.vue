@@ -15,7 +15,9 @@ import { summariesApi } from "../lib/api/summaries";
 import { formatDate } from "../lib/format";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
+  DEFAULT_OBSIDIAN_VAULT,
   buildPodcastSummaryObsidianUrl,
+  buildPodcastTranscriptObsidianUrl,
 } from "../lib/obsidian";
 import type { Podcast, SummaryListItem, SummarySorting } from "../types/api";
 
@@ -59,8 +61,10 @@ const readerTocItems = ref<Array<{ id: string; text: string; level: number }>>([
 // Reader tab state
 const readerTab = ref<"summary" | "transcript">("summary");
 const readerTranscriptText = ref("");
+const readerCanonicalTranscript = ref("");
 const readerLoadingTranscript = ref(false);
 const readerTranscriptStatus = ref("");
+const obsidianVault = ref(DEFAULT_OBSIDIAN_VAULT);
 const obsidianFolder = ref(DEFAULT_OBSIDIAN_FOLDER);
 
 // Scroll progress
@@ -105,8 +109,10 @@ async function loadPodcastOptions(): Promise<void> {
 async function loadObsidianSettings(): Promise<void> {
   try {
     const settings = await settingsApi.get();
+    obsidianVault.value = settings.obsidianVault || DEFAULT_OBSIDIAN_VAULT;
     obsidianFolder.value = settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER;
   } catch {
+    obsidianVault.value = DEFAULT_OBSIDIAN_VAULT;
     obsidianFolder.value = DEFAULT_OBSIDIAN_FOLDER;
   }
 }
@@ -176,6 +182,7 @@ async function openReader(item: SummaryListItem): Promise<void> {
   readerSummaryRaw.value = "";
   readerTocItems.value = [];
   readerTranscriptText.value = "";
+  readerCanonicalTranscript.value = "";
   readerTranscriptStatus.value = "";
   scrollProgress.value = 0;
 
@@ -209,6 +216,7 @@ async function fetchTranscript(): Promise<void> {
       readerItem.value.isFavorited = response.isFavorited;
     }
     readerTranscriptStatus.value = response.status || "missing";
+    readerCanonicalTranscript.value = response.canonicalTranscript || "";
     const transcript = response.transcript;
 
     if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
@@ -232,6 +240,9 @@ async function fetchTranscript(): Promise<void> {
     }
     if (typeof transcript === "string") {
       readerTranscriptText.value = transcript;
+    }
+    if (!readerTranscriptText.value && readerCanonicalTranscript.value) {
+      readerTranscriptText.value = readerCanonicalTranscript.value;
     }
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load transcript.");
@@ -381,16 +392,32 @@ function podcastFilterLabel(): string {
   return `${filter.podcastIds.length} podcasts`;
 }
 
-function sendToObsidian(): void {
+function sendSummaryToObsidian(): void {
   if (!readerItem.value || !readerSummaryRaw.value) return;
 
   window.location.href = buildPodcastSummaryObsidianUrl({
+    vault: obsidianVault.value,
     folder: obsidianFolder.value,
     episodeTitle: readerItem.value.episodeTitle,
     podcastTitle: readerItem.value.podcastTitle,
     pubDate: readerItem.value.pubDate,
     model: readerItem.value.model,
     summary: readerSummaryRaw.value,
+  });
+}
+
+function sendTranscriptToObsidian(): void {
+  if (!readerItem.value) return;
+  const transcript = readerCanonicalTranscript.value || readerTranscriptText.value;
+  if (!transcript) return;
+
+  window.location.href = buildPodcastTranscriptObsidianUrl({
+    vault: obsidianVault.value,
+    folder: obsidianFolder.value,
+    episodeTitle: readerItem.value.episodeTitle,
+    podcastTitle: readerItem.value.podcastTitle,
+    pubDate: readerItem.value.pubDate,
+    transcript,
   });
 }
 
@@ -516,8 +543,8 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="reader__obsidian-btn"
-                title="Send to Obsidian"
-                @click="sendToObsidian"
+                title="Send summary to Obsidian"
+                @click="sendSummaryToObsidian"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -525,7 +552,7 @@ onBeforeUnmount(() => {
                   <line x1="12" y1="18" x2="12" y2="12" />
                   <line x1="9" y1="15" x2="15" y2="15" />
                 </svg>
-                <span>Send to Obsidian</span>
+                <span>Send summary</span>
               </button>
             </div>
           </div>
@@ -585,11 +612,17 @@ onBeforeUnmount(() => {
           <!-- Tab: Summary -->
           <div v-if="readerTab === 'summary'" class="reader__body">
             <p v-if="readerLoadingSummary" class="meta-text">Loading summary...</p>
-            <div
-              v-else-if="readerSummaryHtml"
-              class="reader__prose"
-              v-html="readerSummaryHtml"
-            ></div>
+            <template v-else-if="readerSummaryHtml">
+              <div class="reader__body-actions">
+                <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendSummaryToObsidian">
+                  Send summary to Obsidian
+                </button>
+              </div>
+              <div
+                class="reader__prose"
+                v-html="readerSummaryHtml"
+              ></div>
+            </template>
             <p v-else class="meta-text">No summary content available.</p>
           </div>
 
@@ -597,6 +630,11 @@ onBeforeUnmount(() => {
           <div v-else-if="readerTab === 'transcript'" class="reader__body">
             <p v-if="readerLoadingTranscript" class="meta-text">Loading transcript...</p>
             <template v-else-if="readerTranscriptText">
+              <div class="reader__body-actions">
+                <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendTranscriptToObsidian">
+                  Send transcript to Obsidian
+                </button>
+              </div>
               <div class="reader__transcript">
                 <pre>{{ readerTranscriptText }}</pre>
               </div>
@@ -1025,6 +1063,12 @@ onBeforeUnmount(() => {
   min-height: 40vh;
 }
 
+.reader__body-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-3);
+}
+
 /* ── Prose typography ───────────────────────────────────── */
 .reader__prose {
   color: var(--color-text-primary);
@@ -1238,6 +1282,10 @@ onBeforeUnmount(() => {
 .reader__obsidian-btn:hover {
   background: var(--color-hover);
   color: var(--color-text-primary);
+}
+
+.reader__obsidian-btn--inline {
+  width: auto;
 }
 
 /* ═══════════════════════════════════════════════════════════════

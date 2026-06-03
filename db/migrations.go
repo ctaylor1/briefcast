@@ -260,6 +260,14 @@ where id in (
 		Name:  "2026_06_02_01_01_BackfillSettingsObsidianFolder",
 		Query: "update settings set obsidian_folder = 'Clippings' where obsidian_folder is null or trim(obsidian_folder) = ''",
 	},
+	{
+		Name:  "2026_06_03_01_00_AddSettingsObsidianVault",
+		Query: "alter table settings add column if not exists obsidian_vault text default 'Vault'",
+	},
+	{
+		Name:  "2026_06_03_01_01_BackfillSettingsObsidianVault",
+		Query: "update settings set obsidian_vault = 'Vault' where obsidian_vault is null or trim(obsidian_vault) = ''",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

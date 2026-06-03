@@ -45,6 +45,7 @@ type SettingsResponse struct {
 	BriefpointServerURL        string `json:"briefpointServerURL"`
 	BriefpointAPIKeyConfigured bool   `json:"briefpointAPIKeyConfigured"`
 	// Obsidian
+	ObsidianVault  string `json:"obsidianVault"`
 	ObsidianFolder string `json:"obsidianFolder"`
 }
 
@@ -78,6 +79,7 @@ type SettingsPatch struct {
 	BriefpointServerURL *string `json:"briefpointServerURL"`
 	BriefpointAPIKey    *string `json:"briefpointAPIKey"`
 	// Obsidian
+	ObsidianVault  *string `json:"obsidianVault"`
 	ObsidianFolder *string `json:"obsidianFolder"`
 }
 
@@ -190,6 +192,9 @@ func PatchSettings(c *gin.Context) {
 	}
 	if patch.BriefpointAPIKey != nil {
 		setting.BriefpointAPIKey = *patch.BriefpointAPIKey
+	}
+	if patch.ObsidianVault != nil {
+		setting.ObsidianVault = normalizeObsidianVault(*patch.ObsidianVault)
 	}
 	if patch.ObsidianFolder != nil {
 		setting.ObsidianFolder = normalizeObsidianFolder(*patch.ObsidianFolder)
@@ -376,8 +381,23 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		BriefpointEnabled:          setting.BriefpointEnabled,
 		BriefpointServerURL:        setting.BriefpointServerURL,
 		BriefpointAPIKeyConfigured: setting.BriefpointAPIKey != "",
+		ObsidianVault:              normalizeObsidianVault(setting.ObsidianVault),
 		ObsidianFolder:             normalizeObsidianFolder(setting.ObsidianFolder),
 	}
+}
+
+func normalizeObsidianVault(value string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || r == '/' || r == '\\' {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(value))
+	normalized := strings.Join(strings.Fields(cleaned), " ")
+	if normalized == "" {
+		return db.DefaultObsidianVault
+	}
+	return normalized
 }
 
 func normalizeObsidianFolder(value string) string {

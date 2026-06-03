@@ -150,6 +150,7 @@ const (
 )
 
 const DefaultObsidianFolder = "Clippings"
+const DefaultObsidianVault = "Vault"
 
 // Setting represents a public type.
 type Setting struct {
@@ -193,6 +194,7 @@ type Setting struct {
 	BriefpointAPIKey    string `gorm:"type:text"`
 
 	// Obsidian integration settings.
+	ObsidianVault  string `gorm:"type:text;default:Vault"`
 	ObsidianFolder string `gorm:"type:text;default:Clippings"`
 }
 

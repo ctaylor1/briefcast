@@ -52,6 +52,7 @@ const {
   downloadCanonicalTranscript,
   sendToChatGPT,
   sendToClaude,
+  sendTranscriptToObsidian,
   sendSummaryToObsidian,
   drawerSummaryStatus,
   drawerSummaryText,
@@ -562,6 +563,9 @@ onMounted(() => {
             </button>
             <button type="button" class="drawer-action-link" @click="sendToClaude">
               Open in Claude
+            </button>
+            <button type="button" class="drawer-action-link" @click="sendTranscriptToObsidian">
+              Send to Obsidian
             </button>
           </div>
           <p v-if="drawerLoadingTranscript" class="meta-text">Loading transcript...</p>

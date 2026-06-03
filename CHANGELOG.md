@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-06-03
+
+### Added
+- Added an Obsidian vault setting, defaulting to `Vault`, so summary and transcript exports can target a specific Obsidian vault.
+- Added Obsidian transcript export actions in the episode drawer and summaries reader.
+
+### Changed
+- Included the configured Obsidian vault in generated Obsidian URLs while preserving the vault-relative folder setting.
+
 ## [1.9.1] - 2026-06-03
 
 ### Added

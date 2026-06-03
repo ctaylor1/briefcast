@@ -8,7 +8,7 @@ import UiInput from "../components/ui/UiInput.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
-import { DEFAULT_OBSIDIAN_FOLDER } from "../lib/obsidian";
+import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
 import type { AppSettings, PromptVersion } from "../types/api";
 
 type RetentionForm = {
@@ -40,6 +40,7 @@ type ModelSettingsForm = {
 };
 
 type ObsidianForm = {
+  obsidianVault: string;
   obsidianFolder: string;
 };
 
@@ -111,6 +112,7 @@ const modelSettingsForm = ref<ModelSettingsForm>({
 });
 
 const obsidianForm = ref<ObsidianForm>({
+  obsidianVault: DEFAULT_OBSIDIAN_VAULT,
   obsidianFolder: DEFAULT_OBSIDIAN_FOLDER,
 });
 
@@ -176,6 +178,7 @@ function mapToSummarizationForm(settings: AppSettings): SummarizationForm {
 
 function mapToObsidianForm(settings: AppSettings): ObsidianForm {
   return {
+    obsidianVault: settings.obsidianVault || DEFAULT_OBSIDIAN_VAULT,
     obsidianFolder: settings.obsidianFolder || DEFAULT_OBSIDIAN_FOLDER,
   };
 }
@@ -337,6 +340,7 @@ async function saveObsidianSettings(): Promise<void> {
   clearAll();
   try {
     const updated = await settingsApi.update({
+      obsidianVault: obsidianForm.value.obsidianVault.trim() || DEFAULT_OBSIDIAN_VAULT,
       obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
     });
     obsidianForm.value = mapToObsidianForm(updated);
@@ -894,11 +898,18 @@ onMounted(loadSettings);
       <div class="stack-2">
         <h3 class="settings-section-title">Obsidian</h3>
         <p class="section-subtitle">
-          Choose the vault folder used when sending episode summaries to Obsidian.
+          Choose where episode summaries and transcripts are sent in Obsidian.
         </p>
       </div>
 
       <div class="surface-grid surface-grid--2">
+        <UiInput
+          v-model="obsidianForm.obsidianVault"
+          type="text"
+          label="Vault"
+          :placeholder="DEFAULT_OBSIDIAN_VAULT"
+          hint="Use the exact Obsidian vault name."
+        />
         <UiInput
           v-model="obsidianForm.obsidianFolder"
           type="text"
