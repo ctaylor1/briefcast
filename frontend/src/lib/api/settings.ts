@@ -1,7 +1,9 @@
 import type {
+  AppLogsResponse,
   AppSettings,
   AppSettingsUpdate,
   PromptVersion,
+  RepairWorkResponse,
   ResummarizeFilter,
   ResummarizeResult,
 } from "../../types/api";
@@ -31,5 +33,14 @@ export const settingsApi = {
   },
   restorePromptVersion(id: string): Promise<AppSettings> {
     return httpClient.post<AppSettings>(`/settings/prompt-versions/${id}/restore`);
+  },
+  getLogs(limit = 200): Promise<AppLogsResponse> {
+    return httpClient.get<AppLogsResponse>(`/settings/logs?limit=${encodeURIComponent(String(limit))}`);
+  },
+  getRepairWork(limit = 50): Promise<RepairWorkResponse> {
+    return httpClient.get<RepairWorkResponse>(`/settings/repair-work?limit=${encodeURIComponent(String(limit))}`);
+  },
+  startRepairWork(limit = 50): Promise<RepairWorkResponse> {
+    return httpClient.post<RepairWorkResponse>(`/settings/repair-work?limit=${encodeURIComponent(String(limit))}`);
   },
 };

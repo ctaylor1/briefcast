@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-07-04
+
+### Added
+- Added a Settings Logs tab that consolidates recent file-backed app logs, highlights user-impacting failures, and redacts common secret fields.
+- Added a Settings Work Queue tab showing transcript and summary completion, queued work, active processing, failed work, retry timing, retry counts, and blockers.
+- Added a repair action for failed and missing work that backfills missing/failed summaries and forces failed transcript retries due before invoking the existing transcript worker.
+
+### Changed
+- Exposed configured log file paths for runtime log discovery.
+- Reused existing transcript worker locking and summary backfill behavior for repair runs to avoid overlapping background jobs.
+
 ## [1.9.2] - 2026-06-03
 
 ### Added

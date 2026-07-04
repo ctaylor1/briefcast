@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,6 +52,9 @@ func makeRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/settings", GetSettings)
+	router.GET("/settings/logs", GetAppLogs)
+	router.GET("/settings/repair-work", GetRepairWork)
+	router.POST("/settings/repair-work", StartRepairWork)
 	router.PATCH("/settings", PatchSettings)
 	router.GET("/podcastitems/:id/transcript", GetPodcastItemTranscript)
 	router.GET("/podcastitems/:id/summary", GetPodcastItemSummary)
@@ -280,6 +284,89 @@ func TestSettingsBriefpointAPIKeyIsWriteOnly(t *testing.T) {
 	refreshed = db.GetOrCreateSetting()
 	if refreshed.BriefpointAPIKey != "new-secret" {
 		t.Fatalf("expected provided briefpoint key to update, got %q", refreshed.BriefpointAPIKey)
+	}
+}
+
+func TestGetAppLogsEndpoint(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "briefcast-test.log")
+	t.Setenv("LOG_OUTPUT", "file:"+logPath)
+	logTimestamp := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if err := os.WriteFile(logPath, []byte(
+		`{"level":"error","ts":"`+logTimestamp+`","caller":"service/podcastService.go:874","msg":"failed to download episode","episode":"Episode","podcast":"Podcast","error":"download failed"}`+"\n",
+	), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/settings/logs", GetAppLogs)
+	req := httptest.NewRequest(http.MethodGet, "/settings/logs?limit=5", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /settings/logs, got %d", resp.Code)
+	}
+
+	var payload service.AppLogResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode logs response: %v", err)
+	}
+	foundSeededImpact := false
+	for _, entry := range payload.Entries {
+		if entry.UserImpact && strings.Contains(entry.HumanMessage, `Download failed for "Episode" from "Podcast"`) {
+			foundSeededImpact = true
+			break
+		}
+	}
+	if !foundSeededImpact {
+		t.Fatalf("expected seeded user-impacting log entry, got %+v", payload.Entries)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/settings/logs?limit=bad", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid logs limit, got %d", resp.Code)
+	}
+}
+
+func TestRepairWorkEndpoints(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeRouter()
+	podcast, item := createControllerPodcastAndItem(t)
+	item.PodcastID = podcast.ID
+	item.DownloadStatus = db.Downloaded
+	item.DownloadPath = filepath.Join(t.TempDir(), "repair.mp3")
+	item.TranscriptStatus = "failed"
+	item.TranscriptRetryCount = 2
+	futureAttempt := time.Now().UTC().Add(time.Hour)
+	item.TranscriptNextAttempt = &futureAttempt
+	item.TranscriptJSON = ""
+	if err := db.UpdatePodcastItem(&item); err != nil {
+		t.Fatalf("failed to update repair item: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/settings/repair-work?limit=10", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /settings/repair-work, got %d", resp.Code)
+	}
+
+	var payload service.RepairWorkResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode repair work response: %v", err)
+	}
+	if payload.Queue.Transcripts.Failed != 1 || payload.Queue.Transcripts.RetryScheduled != 1 {
+		t.Fatalf("unexpected repair queue transcript counts: %+v", payload.Queue.Transcripts)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/settings/repair-work?limit=bad", nil)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid repair work limit, got %d", resp.Code)
 	}
 }
 

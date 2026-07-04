@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -87,6 +88,55 @@ type SettingsPatch struct {
 func GetSettings(c *gin.Context) {
 	setting := db.GetOrCreateSetting()
 	c.JSON(http.StatusOK, settingsFromModel(setting))
+}
+
+// GetAppLogs returns the most recent human-readable application log entries.
+func GetAppLogs(c *gin.Context) {
+	limit, err := service.ParseAppLogLimit(c.Query("limit"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	logs, err := service.GetRecentAppLogs(limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load application logs"})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
+// GetRepairWork returns the current transcript and summary work queue.
+func GetRepairWork(c *gin.Context) {
+	limit, err := service.ParseWorkQueueLimit(c.Query("limit"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	status, err := service.GetRepairWorkStatus(limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load work queue"})
+		return
+	}
+	c.JSON(http.StatusOK, status)
+}
+
+// StartRepairWork starts a background repair pass for failed and missing work.
+func StartRepairWork(c *gin.Context) {
+	limit, err := service.ParseWorkQueueLimit(c.Query("limit"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	status, err := service.StartRepairWork(limit)
+	if err != nil {
+		if errors.Is(err, service.ErrRepairWorkAlreadyRunning) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start repair work"})
+		return
+	}
+	c.JSON(http.StatusAccepted, status)
 }
 
 // PatchSettings handles the corresponding operation.

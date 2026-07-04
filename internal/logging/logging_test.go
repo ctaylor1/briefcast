@@ -102,6 +102,29 @@ func TestResolveLogFilePathExpandsTimestampTokens(t *testing.T) {
 	}
 }
 
+func TestConfiguredLogFilePathsAndGlobs(t *testing.T) {
+	resetBaseLogger()
+	t.Setenv(LogRunTimestamp, "20260221-014500")
+	logPath := filepath.Join(t.TempDir(), "briefcast-{startup_ts}.log")
+	t.Setenv("LOG_OUTPUT", "stdout,file:"+logPath+",stderr")
+
+	paths := ConfiguredLogFilePaths()
+	if len(paths) != 1 {
+		t.Fatalf("expected one file output path, got %+v", paths)
+	}
+	if strings.Contains(paths[0], "{startup_ts}") || !strings.Contains(paths[0], "20260221-014500") {
+		t.Fatalf("expected timestamp-expanded log path, got %q", paths[0])
+	}
+
+	globs := ConfiguredLogFileGlobs()
+	if len(globs) != 1 {
+		t.Fatalf("expected one file output glob, got %+v", globs)
+	}
+	if !strings.Contains(globs[0], "*") {
+		t.Fatalf("expected timestamp token to become glob wildcard, got %q", globs[0])
+	}
+}
+
 // TestLoggerWithRequestIDAndJobLogger handles the corresponding operation.
 func TestLoggerWithRequestIDAndJobLogger(t *testing.T) {
 	resetBaseLogger()

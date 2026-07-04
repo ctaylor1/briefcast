@@ -158,6 +158,70 @@ func resolveLogOutputs() []zapcore.WriteSyncer {
 	return outputs
 }
 
+// ConfiguredLogFilePaths returns the concrete file sinks configured by LOG_OUTPUT.
+func ConfiguredLogFilePaths() []string {
+	return configuredLogFileValues(false)
+}
+
+// ConfiguredLogFileGlobs returns glob patterns matching LOG_OUTPUT file sinks.
+func ConfiguredLogFileGlobs() []string {
+	return configuredLogFileValues(true)
+}
+
+func configuredLogFileValues(asGlob bool) []string {
+	raw := strings.TrimSpace(os.Getenv("LOG_OUTPUT"))
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		switch strings.ToLower(token) {
+		case "stdout", "stderr":
+			continue
+		}
+
+		pathValue := strings.TrimPrefix(token, "file:")
+		if pathValue == "" {
+			continue
+		}
+		if asGlob {
+			pathValue = logFileGlob(pathValue)
+		} else {
+			pathValue = resolveLogFilePath(pathValue)
+		}
+		if pathValue == "" {
+			continue
+		}
+		pathValue = filepath.Clean(pathValue)
+		if _, exists := seen[pathValue]; exists {
+			continue
+		}
+		seen[pathValue] = struct{}{}
+		values = append(values, pathValue)
+	}
+	return values
+}
+
+func logFileGlob(path string) string {
+	resolved := strings.TrimSpace(path)
+	if resolved == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"{startup_ts}", "*",
+		"{timestamp}", "*",
+		"{run_ts}", "*",
+	)
+	return replacer.Replace(resolved)
+}
+
 func resolveLogFilePath(path string) string {
 	resolved := strings.TrimSpace(path)
 	if resolved == "" {

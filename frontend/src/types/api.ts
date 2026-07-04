@@ -184,6 +184,120 @@ export type AppSettingsUpdate = Partial<AppSettings> & {
   briefpointAPIKey?: string;
 };
 
+export interface AppLogEntry {
+  id: string;
+  timestamp: string;
+  level: "debug" | "info" | "warn" | "error" | "fatal";
+  source: string;
+  service?: string;
+  caller?: string;
+  message: string;
+  humanMessage: string;
+  category: string;
+  userImpact: boolean;
+  fields?: Record<string, unknown>;
+  raw?: string;
+}
+
+export interface AppLogSource {
+  name: string;
+  updatedAt: string;
+  sizeBytes: number;
+}
+
+export interface AppLogsResponse {
+  entries: AppLogEntry[];
+  impactEntries: AppLogEntry[];
+  sources: AppLogSource[];
+  readErrors?: string[];
+  limit: number;
+  totalDiscovered: number;
+}
+
+export interface WorkQueueSummaryCounts {
+  complete: number;
+  processing: number;
+  failed: number;
+  missing: number;
+  eligibleForBackfill: number;
+  blockedNoTranscript: number;
+}
+
+export interface WorkQueueTranscriptCounts {
+  complete: number;
+  queued: number;
+  processing: number;
+  failed: number;
+  retryDue: number;
+  retryScheduled: number;
+  blocked: number;
+}
+
+export interface WorkQueueConfig {
+  whisperxEnabled: boolean;
+  llmEnabled: boolean;
+  llmApiKeyConfigured: boolean;
+  summarizationEnabled: boolean;
+}
+
+export interface WorkQueueItem {
+  id: string;
+  kind: "transcript" | "summary";
+  status: string;
+  statusLabel: string;
+  category: "active" | "queued" | "failed" | "retry" | "blocked" | string;
+  title: string;
+  podcastTitle?: string;
+  pubDate: string;
+  updatedAt: string;
+  progressPct?: number;
+  progressStage?: string;
+  retryCount?: number;
+  nextAttempt?: string | null;
+  lastError?: string;
+  model?: string;
+}
+
+export interface WorkQueueSnapshot {
+  summary: WorkQueueSummaryCounts;
+  transcripts: WorkQueueTranscriptCounts;
+  config: WorkQueueConfig;
+  items: WorkQueueItem[];
+  limit: number;
+}
+
+export interface RepairSummaryResult {
+  eligible: number;
+  started: boolean;
+  succeeded: number;
+  failed: number;
+  error?: string;
+}
+
+export interface RepairTranscriptResult {
+  readyNow: number;
+  forcedDue: number;
+  queued: number;
+  workerStarted: boolean;
+  workerLockHeld: boolean;
+  error?: string;
+}
+
+export interface RepairWorkRun {
+  startedAt: string;
+  finishedAt?: string;
+  summary: RepairSummaryResult;
+  transcripts: RepairTranscriptResult;
+  error?: string;
+}
+
+export interface RepairWorkResponse {
+  running: boolean;
+  startedAt?: string;
+  lastRun?: RepairWorkRun;
+  queue: WorkQueueSnapshot;
+}
+
 export interface RuntimeVersionInfo {
   version: string;
   repoUrl: string;

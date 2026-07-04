@@ -9,6 +9,7 @@ import (
 
 func resetServiceTestState() {
 	resetDownloadManagerState()
+	resetRepairWorkState()
 	exportAllRunning.Store(false)
 	briefpointSyncRunning.Store(false)
 	linkBackfillRunning.Store(false)

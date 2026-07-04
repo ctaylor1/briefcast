@@ -52,11 +52,14 @@ func TestBuildRouterRegistersRoutes(t *testing.T) {
 	}
 
 	required := map[string]bool{
-		"GET /app":       false,
-		"GET /app/":      false,
-		"POST /podcasts": false,
-		"GET /version":   false,
-		"GET /ws":        false,
+		"GET /app":                   false,
+		"GET /app/":                  false,
+		"POST /podcasts":             false,
+		"GET /settings/repair-work":  false,
+		"POST /settings/repair-work": false,
+		"GET /settings/logs":         false,
+		"GET /version":               false,
+		"GET /ws":                    false,
 	}
 	for _, route := range routes {
 		key := route.Method + " " + route.Path
