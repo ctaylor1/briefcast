@@ -468,7 +468,7 @@ func TestCharacterize_TranscriptFailure(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Hour)
 	_, item := seedCharacterizationPodcastItem(t, func(item *db.PodcastItem, tempDir string) {
 		item.DownloadPath = filepath.Join(tempDir, "transcript-failure.mp3")
-		if err := os.WriteFile(item.DownloadPath, []byte("audio"), 0o644); err != nil {
+		if err := os.WriteFile(item.DownloadPath, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
 			t.Fatalf("write failure-path audio: %v", err)
 		}
 		item.DownloadStatus = db.Downloaded
@@ -511,7 +511,7 @@ func TestCharacterize_TranscriptSuccess(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Hour)
 	_, item := seedCharacterizationPodcastItem(t, func(item *db.PodcastItem, tempDir string) {
 		item.DownloadPath = filepath.Join(tempDir, "transcript-success.mp3")
-		if err := os.WriteFile(item.DownloadPath, []byte("audio"), 0o644); err != nil {
+		if err := os.WriteFile(item.DownloadPath, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
 			t.Fatalf("write success-path audio: %v", err)
 		}
 		item.DownloadStatus = db.Downloaded

@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.4] - 2026-07-11
+
+### Added
+- Added full-row characterization tests for podcast-item download, playback, bookmark, transcript, retry, redownload, and LLM-summary state transitions.
+- Added lock-contention and overlapping-refresh regression tests for background jobs.
+- Added interrupted-download, range-resume, incomplete-response, and zero-byte cleanup regression tests.
+- Added a local Docker Compose GPU override for CUDA WhisperX deployments.
+
+### Changed
+- Migrated refresh, missing-download, and retention jobs to atomic `TryLock` acquisition; long-running download jobs now renew their lease.
+- Improved test-only Python interpreter discovery so unusable platform aliases fall through to a working interpreter.
+- Updated local Docker builds to pass patch-release version metadata into the image.
+
+### Fixed
+- Closed download output files and response bodies exactly once across success, pause, cancellation, HTTP error, read error, and write error paths.
+- Retained non-empty incomplete downloads so the existing HTTP range workflow can resume them; zero-byte and cancelled downloads are still removed.
+- Removed the committed coverage artifact and stale credential-bearing comments.
+
+### Security
+- Removed the tracked local agent configuration that enabled repository-wide permission bypasses; personal agent settings remain local and ignored.
+
 ## [1.9.3] - 2026-07-04
 
 ### Added

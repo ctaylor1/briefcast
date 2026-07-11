@@ -3,9 +3,13 @@
 # commit: 65339368a354821b563517b46d07485da6756d6b (main, v1.9.3)
 # scoring: total = 2*risk + blast_radius + frequency + confidence + payoff - effort
 # effort scale: S=1, M=3, L=5
+# implementation_status_as_of: 2026-07-10 (v1.9.4)
 
 items:
   - id: P1
+    status: in_progress
+    completed_slices: [PR4-tests]
+    next_slice: PR5-impl
     title: Replace whole-row Save with column-scoped state-transition updates
     category: correctness
     finding: F1
@@ -23,6 +27,8 @@ items:
     pr_group: [PR4-tests, PR5-impl]
 
   - id: P2
+    status: completed
+    completed_in: v1.9.4
     title: Unify job locking on atomic TryLock
     category: correctness
     finding: F2
@@ -84,6 +90,8 @@ items:
     pr_group: [PR9]
 
   - id: P6
+    status: completed
+    completed_in: v1.9.4
     title: Download loop fd hygiene; retain resumable partials
     category: reliability
     finding: F6
@@ -177,6 +185,8 @@ items:
     pr_group: [PR14]
 
   - id: P12
+    status: completed
+    completed_in: v1.9.4
     title: Remove committed bypassPermissions settings, tracked coverage artifact, stale API-key comment
     category: security
     finding: [F5, F8]

@@ -5,6 +5,14 @@
 - **Working tree:** clean except untracked `docker-compose.override.yml`
 - **Assessment mode:** read-only; deliverables written as new files under `docs/refactor-assessment/` only
 
+### Implementation update — 2026-07-10 / v1.9.4
+
+- **Completed:** P2/F2 atomic job locking, including a lease heartbeat for missing-download jobs.
+- **Completed:** P12/F5/F8 repository hygiene: local agent settings and coverage output are ignored/untracked, and stale credential-bearing comments are removed.
+- **Completed:** P6/F6 download cleanup and resumable partial retention.
+- **Completed:** P1a characterization coverage for podcast-item state transitions; P1b column-scoped persistence remains the next foundational implementation PR.
+- The original assessment evidence and line references below remain anchored to `6533936`; use symbols rather than historical line numbers when implementing remaining work.
+
 ---
 
 ## 1. Scope & confidence
@@ -42,14 +50,14 @@
 - **Top production risk 2 — racy job locks:** `RefreshEpisodes`, `DownloadMissingEpisodes`, and `RetentionCleanup` use a check-then-act `GetLock`/`Lock` idiom while a correct atomic `TryLock` already exists and is used by transcription. Concurrent triggers (cron tick + API-initiated refresh) can double-run jobs. [F2] → P2.
 - **Top security risk — state-changing GET routes:** deprecated-but-live `GET /podcastitems/:id/delete`, `/download`, `/markPlayed`, etc. make destructive actions CSRF-able; combined with browser-cached Basic Auth (and `PASSWORD=` empty by default) a hostile page can delete a library. [F4] → P3.
 - **Quick win 1:** unify job locking on `db.TryLock` — small, mechanical, kills a real race (P2, recommended first PR).
-- **Quick win 2:** close leaked file handles on download error paths and stop deleting resumable partial files (`service/fileService.go:159-191`) (P5).
-- **Quick win 3:** add `http.Server` timeouts and stop hitting the DB once per request (+ once per outbound request) for the settings row (P8).
+- **Quick win 2:** close leaked file handles on download error paths and stop deleting resumable partial files (`service/fileService.go:159-191`) (P6, completed in v1.9.4).
+- **Quick win 3:** add `http.Server` timeouts and stop hitting the DB once per request (+ once per outbound request) for the settings row (P4).
 - **Foundational refactor 1:** column-scoped state-transition updates for `PodcastItem` behind characterization tests (P1).
-- **Foundational refactor 2:** decouple LLM summarization and transcript/chapter fetching from the feed-refresh loop; refresh should never block on a 120 s LLM call (P9).
-- **Foundational refactor 3:** lighten hot queries — cron jobs and local search currently drag full transcript/summary text through memory (P7).
+- **Foundational refactor 2:** decouple LLM summarization and transcript/chapter fetching from the feed-refresh loop; refresh should never block on a 120 s LLM call (P8).
+- **Foundational refactor 3:** lighten hot queries — cron jobs and local search currently drag full transcript/summary text through memory (P11).
 - **Biggest testing gap:** no characterization tests for `PodcastItem` state transitions (download/transcript/summary status machine) — the exact area the riskiest refactor touches; controller tests exist but don't pin error-path status codes.
 - **Biggest architectural risk:** shared global `db.DB` + whole-struct saves + fire-and-forget goroutines (~20 `go func` sites) with no cancellation/ownership model — concurrency correctness rests on convention.
-- **Recommended first PR:** P2 (TryLock unification) — smallest safe change with immediate risk reduction; full prompt in `PROMPTS.md`.
+- **Recommended next PR:** P1b (column-scoped state-transition persistence), now protected by the completed P1a characterization suite.
 
 ---
 

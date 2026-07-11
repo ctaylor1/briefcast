@@ -4,9 +4,11 @@
 - Each prompt is self-contained: the implementing agent needs no other context. Line numbers reference commit `6533936`; re-locate by symbol if drifted.
 - All prompts assume: repo root is the working directory; `go test ./...` is green before starting (run it and stop if not — report instead of proceeding).
 
+**Implementation status (2026-07-10 / v1.9.4):** Prompts 1–4 are complete. Prompt 5 is the next implementation slice. The completed prompts remain as historical work orders and verification references.
+
 ---
 
-## Prompt 1 — PR 1: Unify background-job locking on atomic `TryLock` (P2)
+## Prompt 1 — PR 1: Unify background-job locking on atomic `TryLock` (P2) — completed
 
 **Why first:** smallest safe change with the largest immediate risk cut. Three background jobs use a check-then-act lock idiom that lets cron and API-triggered runs execute concurrently, double-fetching feeds and interleaving writes. A correct, tested, atomic lock (`db.TryLock`) already exists and is used by the transcription job — this PR copies a proven in-repo pattern, requires no schema or API change, and unblocks later refactors by making job execution single-flight.
 
@@ -105,7 +107,7 @@ COMPLETION REPORT (required)
 
 ---
 
-## Prompt 2 — PR 2: Repository hygiene — remove committed agent-bypass config, tracked build artifact, and stale API-key comment (P12 + F8)
+## Prompt 2 — PR 2: Repository hygiene — remove committed agent-bypass config, tracked build artifact, and stale API-key comment (P12 + F8) — completed
 
 ```text
 GOAL
@@ -174,7 +176,7 @@ COMPLETION REPORT (required)
 
 ---
 
-## Prompt 3 — PR 3: Download loop — close files on all error paths; keep resumable partials (P6)
+## Prompt 3 — PR 3: Download loop — close files on all error paths; keep resumable partials (P6) — completed
 
 ```text
 GOAL
@@ -260,7 +262,7 @@ COMPLETION REPORT (required)
 
 ---
 
-## Prompt 4 — PR 4: Characterization tests for PodcastItem state transitions (P1a, test-only)
+## Prompt 4 — PR 4: Characterization tests for PodcastItem state transitions (P1a, test-only) — completed
 
 ```text
 GOAL
@@ -346,7 +348,7 @@ COMPLETION REPORT (required)
 
 ---
 
-## Prompt 5 — PR 5: Column-scoped state-transition updates (P1b)
+## Prompt 5 — PR 5: Column-scoped state-transition updates (P1b) — next
 
 ```text
 GOAL

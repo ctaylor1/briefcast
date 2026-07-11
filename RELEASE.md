@@ -33,6 +33,21 @@ Direct script invocation remains available:
 .\RELEASE.ps1 test
 ```
 
+### Local Docker patch release (no publish)
+
+Use this path when the goal is to build and replace only the local Compose deployment without committing, tagging, pushing, or exporting a release tar:
+
+```powershell
+$version = "1.9.4"
+$env:APP_VERSION = $version
+$env:BRIEFCAST_IMAGE = "briefcast:$version"
+docker compose build briefcast
+docker compose up -d --force-recreate briefcast
+Invoke-RestMethod http://127.0.0.1:8080/version
+```
+
+Set `BRIEFCAST_IMAGE=briefcast:1.9.4` in the local `.env` so subsequent Compose operations keep using the same patch image. `docker-compose.override.yml` passes `APP_VERSION` into local GPU builds and keeps the CUDA-specific WhisperX settings local to that deployment path.
+
 ## Stages
 
 | Stage       | Description |

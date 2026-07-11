@@ -2,6 +2,7 @@ package service
 
 import (
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -29,16 +30,26 @@ func runPostOpmlRefreshSynchronously(t *testing.T) {
 
 func requireWorkingPython(t *testing.T) string {
 	t.Helper()
-	pythonPath, err := resolvePython()
-	if err != nil {
-		t.Skipf("python not available: %v", err)
+	candidates := []string{"python3", "python", "py"}
+	if explicit := strings.TrimSpace(os.Getenv(feedparserPythonEnv)); explicit != "" {
+		candidates = []string{explicit}
 	}
 
-	cmd := exec.Command(pythonPath, "-c", "print('ok')")
-	output, runErr := cmd.CombinedOutput()
-	if runErr != nil {
-		t.Skipf("python is not runnable (%s): %v (%s)", pythonPath, runErr, strings.TrimSpace(string(output)))
+	failures := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		pythonPath, err := exec.LookPath(candidate)
+		if err != nil {
+			failures = append(failures, candidate+": not found")
+			continue
+		}
+		cmd := exec.Command(pythonPath, "-c", "print('ok')")
+		output, runErr := cmd.CombinedOutput()
+		if runErr == nil {
+			return pythonPath
+		}
+		failures = append(failures, pythonPath+": "+runErr.Error()+" ("+strings.TrimSpace(string(output))+")")
 	}
 
-	return pythonPath
+	t.Skipf("python is not runnable: %s", strings.Join(failures, "; "))
+	return ""
 }

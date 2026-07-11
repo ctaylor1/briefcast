@@ -5,9 +5,17 @@
 - **Baseline caveat:** no build/test commands could be run during this assessment (toolchain unavailable in sandbox; installs forbidden). All verification commands below come from `justfile`/CI and must be run by the implementer: `go test ./...`, `go test ./service -run <Name>`, `npm --prefix frontend run test:unit`, `npm --prefix frontend run build`, `just ci-python`. Establish a green baseline with `just test-full` before PR 1.
 - Default refactor type is **behavior-preserving**; anything else is labeled.
 
+## Implementation status — 2026-07-10 / v1.9.4
+
+- **Completed:** P2 / PR1 (atomic background-job locking).
+- **Completed:** P12 / PR2 (repository hygiene and stale credential-comment removal).
+- **Completed:** P6 / PR3 (download cleanup and resumable partial retention).
+- **Completed:** P1a / PR4 (state-transition characterization tests).
+- **Next:** P1b / PR5 (column-scoped state-transition persistence). P1 remains open until this implementation slice lands.
+
 ---
 
-## P1 — Replace whole-row `Save` with column-scoped state-transition updates (F1) — **Score 24**
+## P1 — Replace whole-row `Save` with column-scoped state-transition updates (F1) — **Score 24** — P1a complete, P1b pending
 
 - **Category:** Correctness / Data integrity
 - **Score:** Risk 4 (silent user-visible state loss, can resurrect deleted episodes — not quite "outage" so not 5) ×2 = 8 · Blast 5 (`PodcastItem` is the core entity; ~15 setters + 3 workers) · Freq 4 (every download/transcription/user action; collisions guaranteed on multi-hour transcriptions) · Conf 5 (Confirmed, snippets) · Payoff 5 (removes an entire class of lost-update bugs) · Effort −3 (M: 2–3 PRs incl. tests)
@@ -30,7 +38,7 @@
 
 ---
 
-## P2 — Unify job locking on atomic `TryLock` (F2) — **Score 23** ← recommended first PR
+## P2 — Unify job locking on atomic `TryLock` (F2) — **Score 23** — completed in v1.9.4
 
 - **Category:** Correctness / Concurrency
 - **Score:** Risk 4 (duplicate concurrent jobs double-write state and hammer feeds; amplifies F1) ×2 = 8 · Blast 3 (jobs subsystem) · Freq 4 (every cron tick + every API-triggered refresh can collide) · Conf 5 (Confirmed) · Payoff 4 (one locking idiom, removes a race class) · Effort −1 (S)
@@ -102,7 +110,7 @@
 
 ---
 
-## P6 — Download loop hygiene: close files on all paths; keep resumable partials (F6) — **Score 20**
+## P6 — Download loop hygiene: close files on all paths; keep resumable partials (F6) — **Score 20** — completed in v1.9.4
 
 - **Category:** Correctness / Reliability
 - **Score:** Risk 3 (fd leak in long-lived process; lost resume progress) ×2 = 6 · Blast 3 (download subsystem) · Freq 4 (hot path, flaky feeds routine) · Conf 5 (Confirmed) · Payoff 3 · Effort −1 (S)
@@ -189,10 +197,10 @@
 **P11 — Lighten hot-path queries (F10) — Score 18** · Perf · M · Confirmed
 `db/dbfunctions.go:291-302` (cron loads all columns + associations), `:226-230` (RSS), `service/export.go:162-165` (unbounded), `db/search_helpers.go:26-36` (`lower(transcript_json) LIKE`). Reuse `podcastItemListColumns` (`dbfunctions.go:200-214`) for cron/RSS; batch `ExportAll` (limit/offset loop); split local search into metadata query + per-item snippet queries. Behavior-preserving. Verify: `go test ./...` + `go test ./service -run "Search|Export"`. (Risk 2·2=4, Blast 3, Freq 5, Conf 5, Payoff 4, Effort −3.)
 
-**P12 — Remove `.claude/settings.local.json` bypassPermissions from git (F5) — Score 17** · Security/DX · S · Confirmed
+**P12 — Remove `.claude/settings.local.json` bypassPermissions from git (F5) — Score 17 — completed in v1.9.4** · Security/DX · S · Confirmed
 Delete tracked file (`.claude/settings.local.json:2-3` `"defaultMode": "bypassPermissions"`), add to `.gitignore`. Also remove the stray tracked `coverage` artifact (git ls-files shows root `coverage`, 159 KB). Mechanical. Verify: `git ls-files | grep -E '^coverage$|settings.local'` → empty. (Risk 3·2=6, Blast 2, Freq 2, Conf 5, Payoff 3, Effort −1.)
 
-**P13 — Delete dead legacy UI layer & unused/broken db helpers (F15) — Score 15** · DX/Complexity · S · Confirmed
+**P13 — Delete dead legacy UI layer & unused/broken db helpers (F15) — Score 13** · DX/Complexity · S · Confirmed
 `controllers/pages.go` page handlers (`:54`, `:60`, `:68`, `:148`, `:201`, `:214`, `:260`, `:286`, `:443`) — keep `Search`, `GetOPML`, `UploadOpml`, `SettingModel`, helpers; `client/*.html` (13 files); `controllers/podcast.go:410-425` (`DeletePodcasDeleteOnlyPodcasttEpisodesByID`); `db/dbfunctions.go:22-26` (`GetPodcastsByURLList` — also buggy `First` into slice), `:113-132` (`GetPaginatedPodcastItems`, only dead-page caller), `:525-530` (`GetPodcastByTitleAndAuthor` unused). Mechanical, test-guarded by compile + route test. Verify: `go test ./...`, `npm --prefix frontend run build`. (Risk 1·2=2, Blast 2, Freq 2, Conf 5, Payoff 3, Effort −1... net 13; bumped ordering for review-noise payoff with P12 pairing.)
 
 **P14 — WebSocket hub hardening (F11) — Score 15** · Reliability · M · Confirmed(pattern)

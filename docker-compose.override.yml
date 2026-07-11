@@ -4,6 +4,7 @@ services:
     build:
       context: .
       args:
+        APP_VERSION: ${APP_VERSION:-dev}
         TORCH_INDEX_URL: https://download.pytorch.org/whl/cu128
         TORCH_BUILD: +cu128
     gpus: all
