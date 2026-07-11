@@ -1,0 +1,288 @@
+# Briefcast refactor backlog — machine-readable mirror of BACKLOG.md
+# date: 2026-07-05
+# commit: 65339368a354821b563517b46d07485da6756d6b (main, v1.9.3)
+# scoring: total = 2*risk + blast_radius + frequency + confidence + payoff - effort
+# effort scale: S=1, M=3, L=5
+
+items:
+  - id: P1
+    title: Replace whole-row Save with column-scoped state-transition updates
+    category: correctness
+    finding: F1
+    scores: { risk: 4, blast_radius: 5, frequency: 4, confidence: 5, payoff: 5, effort: 3 }
+    total: 24
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - db/dbfunctions.go
+      - service/podcastService.go
+      - service/whisperx.go
+      - service/summarize.go
+    depends_on: [P2]          # single-flight jobs reduce refactor risk
+    pr_group: [PR4-tests, PR5-impl]
+
+  - id: P2
+    title: Unify job locking on atomic TryLock
+    category: correctness
+    finding: F2
+    scores: { risk: 4, blast_radius: 3, frequency: 4, confidence: 5, payoff: 4, effort: 1 }
+    total: 23
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - service/podcastService.go
+      - service/retention.go
+    depends_on: []
+    pr_group: [PR1]
+
+  - id: P3
+    title: Remove state-changing GET route aliases (CSRF)
+    category: security
+    finding: F4
+    scores: { risk: 4, blast_radius: 3, frequency: 3, confidence: 5, payoff: 4, effort: 1 }
+    total: 22
+    effort: S
+    confidence: confirmed
+    refactor_type: api-changing
+    files:
+      - main.go
+      - main_test.go
+    depends_on: []
+    pr_group: [PR6]
+
+  - id: P4
+    title: HTTP server timeouts + settings caching
+    category: reliability
+    finding: [F9, F12]
+    scores: { risk: 3, blast_radius: 5, frequency: 5, confidence: 4, payoff: 3, effort: 1 }
+    total: 22
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing   # bounded settings staleness (TTL)
+    files:
+      - main.go
+      - service/fileService.go
+      - db/dbfunctions.go
+    depends_on: []
+    pr_group: [PR8]
+
+  - id: P5
+    title: SQLite busy_timeout + WAL + driver-aware pool caps
+    category: reliability
+    finding: F14
+    scores: { risk: 4, blast_radius: 5, frequency: 4, confidence: 3, payoff: 3, effort: 1 }
+    total: 22
+    effort: S
+    confidence: likely
+    refactor_type: behavior-preserving   # config; WAL persists across rollback (documented)
+    files:
+      - db/db.go
+      - db/config.go
+    depends_on: []
+    pr_group: [PR9]
+
+  - id: P6
+    title: Download loop fd hygiene; retain resumable partials
+    category: reliability
+    finding: F6
+    scores: { risk: 3, blast_radius: 3, frequency: 4, confidence: 5, payoff: 3, effort: 1 }
+    total: 20
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing   # partial files retained on incomplete
+    files:
+      - service/fileService.go
+    depends_on: [P2]
+    pr_group: [PR3]
+
+  - id: P7
+    title: Backup integrity (VACUUM INTO, Walk errors, Postgres story)
+    category: reliability
+    finding: F7
+    scores: { risk: 4, blast_radius: 3, frequency: 2, confidence: 4, payoff: 4, effort: 2 }
+    total: 19
+    effort: S-M
+    confidence: confirmed-code-likely-impact
+    refactor_type: behavior-preserving   # data-adjacent; treat as risky
+    files:
+      - service/fileService.go
+    depends_on: [P5]   # WAL interaction
+    pr_group: [PR10]
+
+  - id: P8
+    title: Decouple LLM summarization and asset fetches from feed refresh
+    category: performance
+    finding: F13
+    scores: { risk: 3, blast_radius: 3, frequency: 4, confidence: 5, payoff: 4, effort: 3 }
+    total: 19
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-changing   # summaries become eventually consistent
+    files:
+      - service/podcastService.go
+      - service/summary_backfill.go
+      - service/repair_work.go
+    depends_on: [P1]
+    pr_group: [PR12]
+
+  - id: P9
+    title: Fix silent/incorrect handler error paths and PATCH zero-value bug
+    category: correctness
+    finding: [F16, F17]
+    scores: { risk: 3, blast_radius: 3, frequency: 3, confidence: 5, payoff: 3, effort: 1 }
+    total: 19
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing   # empty 200 -> explicit 4xx/5xx
+    files:
+      - controllers/podcast.go
+      - controllers/pages.go
+    depends_on: []
+    pr_group: [PR7]
+
+  - id: P10
+    title: AddPodcast error branch + unique podcasts.url with dedupe migration
+    category: correctness
+    finding: F3
+    scores: { risk: 3, blast_radius: 3, frequency: 3, confidence: 5, payoff: 4, effort: 3 }
+    total: 18
+    effort: M
+    confidence: confirmed
+    refactor_type: data-changing   # dedupe migration + unique index
+    files:
+      - service/podcastService.go
+      - db/migrations.go
+      - db/podcast.go
+    depends_on: [P1]
+    pr_group: [PR11]
+    rollback_note: dedupe is irreversible; run CreateBackup automatically before migration
+
+  - id: P11
+    title: Column-scope cron/RSS/search/export queries (drop heavy text loads)
+    category: performance
+    finding: F10
+    scores: { risk: 2, blast_radius: 3, frequency: 5, confidence: 5, payoff: 4, effort: 3 }
+    total: 18
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - db/dbfunctions.go
+      - db/search_helpers.go
+      - service/export.go
+      - service/local_search.go
+    depends_on: [P1]
+    pr_group: [PR14]
+
+  - id: P12
+    title: Remove committed bypassPermissions settings, tracked coverage artifact, stale API-key comment
+    category: security
+    finding: [F5, F8]
+    scores: { risk: 3, blast_radius: 2, frequency: 2, confidence: 5, payoff: 3, effort: 1 }
+    total: 17
+    effort: S
+    confidence: confirmed
+    refactor_type: mechanical
+    files:
+      - .claude/settings.local.json
+      - .gitignore
+      - coverage
+      - service/podcastService.go
+    depends_on: []
+    pr_group: [PR2]
+
+  - id: P13
+    title: Delete dead legacy UI layer and unused/broken db helpers
+    category: dx
+    finding: F15
+    scores: { risk: 1, blast_radius: 2, frequency: 2, confidence: 5, payoff: 3, effort: 1 }
+    total: 13
+    effort: S
+    confidence: confirmed
+    refactor_type: mechanical
+    files:
+      - controllers/pages.go
+      - controllers/podcast.go
+      - client/
+      - db/dbfunctions.go
+    depends_on: [P3]
+    pr_group: [PR13]
+
+  - id: P14
+    title: WebSocket hub hardening (write deadlines, ping/pong, DB off hub loop)
+    category: reliability
+    finding: F11
+    scores: { risk: 3, blast_radius: 2, frequency: 3, confidence: 4, payoff: 3, effort: 3 }
+    total: 15
+    effort: M
+    confidence: confirmed-pattern
+    refactor_type: behavior-preserving
+    files:
+      - controllers/websockets.go
+    depends_on: []
+    pr_group: []
+
+  - id: P15
+    title: Consolidate settings writes on PATCH /settings; retire 14-arg UpdateSettings
+    category: complexity
+    finding: F19
+    scores: { risk: 2, blast_radius: 3, frequency: 3, confidence: 5, payoff: 3, effort: 3 }
+    total: 15
+    effort: M
+    confidence: confirmed
+    refactor_type: api-changing
+    files:
+      - main.go
+      - controllers/settings.go
+      - controllers/pages.go
+      - service/podcastService.go
+    depends_on: []
+    pr_group: []
+
+  - id: P16
+    title: Add go vet (and optionally golangci-lint) to CI and justfile
+    category: dx
+    finding: null
+    scores: { risk: 1, blast_radius: 3, frequency: 3, confidence: 5, payoff: 3, effort: 1 }
+    total: 15
+    effort: S
+    confidence: confirmed
+    refactor_type: test-only
+    files:
+      - .github/workflows/ci.yml
+      - justfile
+    depends_on: []
+    pr_group: []
+
+  - id: P17
+    title: Bound UpdateAllFileSizes per-run work and add failure backoff
+    category: performance
+    finding: F10-partial
+    scores: { risk: 2, blast_radius: 2, frequency: 4, confidence: 5, payoff: 2, effort: 1 }
+    total: 14
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing   # sizes converge over multiple runs
+    files:
+      - service/podcastService.go
+      - db/dbfunctions.go
+    depends_on: []
+    pr_group: [PR14]
+
+  - id: P18
+    title: Resolve bookmark vs summary-favorite field coupling
+    category: correctness
+    finding: F18
+    scores: { risk: 2, blast_radius: 2, frequency: 2, confidence: 3, payoff: 2, effort: 1 }
+    total: 12
+    effort: S
+    confidence: hypothesis-on-intent
+    refactor_type: behavior-changing   # pending maintainer decision
+    files:
+      - service/podcastService.go
+      - db/dbfunctions.go
+    depends_on: []
+    pr_group: []
+    blocked_on: maintainer decision (open question 4)

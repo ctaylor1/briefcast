@@ -804,13 +804,32 @@ func DownloadMissingEpisodes() error {
 		return nil
 	}
 
-	lock := db.GetLock(jobName)
-	if lock.IsLocked() {
+	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+	if lockErr != nil {
+		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
+		return lockErr
+	}
+	if !acquired {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock(jobName, 120)
-	defer db.UnlockByID(jobLock.ID)
+	if jobLock == nil || jobLock.ID == "" {
+		acquireErr := errors.New("failed to acquire download job lock")
+		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
+		return acquireErr
+	}
+	stopLockHeartbeat := startJobLockHeartbeat(
+		jobLock.ID,
+		120,
+		60,
+		func(lockErr error) {
+			jobLogger.Warnw("failed to refresh download job lock", "error", lockErr)
+		},
+	)
+	defer func() {
+		stopLockHeartbeat()
+		db.UnlockByID(jobLock.ID)
+	}()
 
 	setting := db.GetOrCreateSetting()
 
@@ -1044,12 +1063,20 @@ func RefreshEpisodes() error {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	lock := db.GetLock(jobName)
-	if lock.IsLocked() {
+	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+	if lockErr != nil {
+		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
+		return lockErr
+	}
+	if !acquired {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock(jobName, 120)
+	if jobLock == nil || jobLock.ID == "" {
+		acquireErr := errors.New("failed to acquire refresh job lock")
+		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
+		return acquireErr
+	}
 	defer db.UnlockByID(jobLock.ID)
 
 	var data []db.Podcast
@@ -1213,8 +1240,6 @@ func DeleteTag(id string) error {
 }
 
 func makeQuery(url string) ([]byte, error) {
-	//link := "https://www.goodreads.com/search/index.xml?q=Good%27s+Omens&key=" + "jCmNlIXjz29GoB8wYsrd0w"
-	//link := "https://www.goodreads.com/search/index.xml?key=jCmNlIXjz29GoB8wYsrd0w&q=Ender%27s+Game"
 	Logger.Debugw("executing outbound query", "url", url)
 	req, err := getRequest(url)
 	if err != nil {

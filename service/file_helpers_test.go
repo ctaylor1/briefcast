@@ -126,6 +126,153 @@ func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
 	}
 }
 
+// TestDownloadRetainsAndResumesInterruptedTransfer verifies read errors preserve resumable bytes.
+func TestDownloadRetainsAndResumesInterruptedTransfer(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	fullBody := []byte("0123456789")
+	var requests atomic.Int32
+	var sawExpectedRange atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestNumber := requests.Add(1)
+		if requestNumber == 1 {
+			w.Header().Set("Content-Length", "10")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(fullBody[:5])
+			return
+		}
+
+		if r.Header.Get("Range") == "bytes=5-" {
+			sawExpectedRange.Store(true)
+		}
+		w.Header().Set("Content-Length", "5")
+		w.Header().Set("Content-Range", "bytes 5-9/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(fullBody[5:])
+	}))
+	t.Cleanup(server.Close)
+
+	const (
+		podcastName = "Interrupted Transfer Podcast"
+		episodeName = "Interrupted Transfer Episode"
+	)
+	link := server.URL + "/audio.mp3"
+	targetPath := path.Join(createAudioFolderIfNotExists(podcastName), getFileName(link, episodeName, ".mp3"))
+
+	if _, err := Download("", link, episodeName, podcastName, ""); err == nil {
+		t.Fatal("expected interrupted transfer to return an error")
+	}
+	partial, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("expected interrupted transfer to retain partial file: %v", err)
+	}
+	if !bytes.Equal(partial, fullBody[:5]) {
+		t.Fatalf("expected five retained bytes, got %q", string(partial))
+	}
+
+	downloadPath, err := Download("", link, episodeName, podcastName, "")
+	if err != nil {
+		t.Fatalf("expected resumed transfer to succeed: %v", err)
+	}
+	if downloadPath != targetPath {
+		t.Fatalf("expected resumed path %q, got %q", targetPath, downloadPath)
+	}
+	if !sawExpectedRange.Load() {
+		t.Fatal("expected resumed transfer to request bytes from the retained offset")
+	}
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("expected two requests, got %d", got)
+	}
+	completed, err := os.ReadFile(downloadPath)
+	if err != nil {
+		t.Fatalf("read completed transfer: %v", err)
+	}
+	if !bytes.Equal(completed, fullBody) {
+		t.Fatalf("expected completed body %q, got %q", string(fullBody), string(completed))
+	}
+}
+
+// TestDownloadRetainsPartialOnIncompleteResponse verifies clean short responses preserve resumable bytes.
+func TestDownloadRetainsPartialOnIncompleteResponse(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	fullBody := []byte("abcdefghij")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestNumber := requests.Add(1)
+		if requestNumber == 1 {
+			w.Header().Set("Content-Range", "bytes 0-4/10")
+			w.WriteHeader(http.StatusPartialContent)
+			w.(http.Flusher).Flush()
+			_, _ = w.Write(fullBody[:5])
+			return
+		}
+
+		if r.Header.Get("Range") != "bytes=5-" {
+			t.Errorf("expected resume range bytes=5-, got %q", r.Header.Get("Range"))
+		}
+		w.Header().Set("Content-Range", "bytes 5-9/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(fullBody[5:])
+	}))
+	t.Cleanup(server.Close)
+
+	const (
+		podcastName = "Incomplete Response Podcast"
+		episodeName = "Incomplete Response Episode"
+	)
+	link := server.URL + "/audio.mp3"
+	targetPath := path.Join(createAudioFolderIfNotExists(podcastName), getFileName(link, episodeName, ".mp3"))
+
+	if _, err := Download("", link, episodeName, podcastName, ""); err == nil || !strings.Contains(err.Error(), "download incomplete") {
+		t.Fatalf("expected incomplete download error, got %v", err)
+	}
+	partial, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("expected incomplete response to retain partial file: %v", err)
+	}
+	if !bytes.Equal(partial, fullBody[:5]) {
+		t.Fatalf("expected five retained bytes, got %q", string(partial))
+	}
+
+	downloadPath, err := Download("", link, episodeName, podcastName, "")
+	if err != nil {
+		t.Fatalf("expected incomplete response to resume successfully: %v", err)
+	}
+	completed, err := os.ReadFile(downloadPath)
+	if err != nil {
+		t.Fatalf("read resumed download: %v", err)
+	}
+	if !bytes.Equal(completed, fullBody) {
+		t.Fatalf("expected completed body %q, got %q", string(fullBody), string(completed))
+	}
+}
+
+// TestDownloadRemovesZeroByteFile preserves the existing empty-download cleanup behavior.
+func TestDownloadRemovesZeroByteFile(t *testing.T) {
+	setupRetentionTestDB(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	const (
+		podcastName = "Empty Download Podcast"
+		episodeName = "Empty Download Episode"
+	)
+	link := server.URL + "/audio.mp3"
+	targetPath := path.Join(createAudioFolderIfNotExists(podcastName), getFileName(link, episodeName, ".mp3"))
+
+	if _, err := Download("", link, episodeName, podcastName, ""); err == nil || !strings.Contains(err.Error(), "download produced empty file") {
+		t.Fatalf("expected empty download error, got %v", err)
+	}
+	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("expected zero-byte download file to be removed, stat error=%v", err)
+	}
+}
+
 // TestFileExistsDeleteAndGetSize handles the corresponding operation.
 func TestFileExistsDeleteAndGetSize(t *testing.T) {
 	tempDir := t.TempDir()

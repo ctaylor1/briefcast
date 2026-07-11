@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"sort"
 	"time"
 
@@ -28,12 +29,20 @@ func ApplyRetentionPolicies() error {
 		jobLogger.Infow("job_finished", "duration_ms", retentionNow().Sub(start).Milliseconds())
 	}()
 
-	lock := db.GetLock(jobName)
-	if lock.IsLocked() {
+	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+	if lockErr != nil {
+		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
+		return lockErr
+	}
+	if !acquired {
 		jobLogger.Infow("job_skipped_lock_exists")
 		return nil
 	}
-	jobLock := db.Lock(jobName, 120)
+	if jobLock == nil || jobLock.ID == "" {
+		acquireErr := errors.New("failed to acquire retention job lock")
+		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
+		return acquireErr
+	}
 	defer db.UnlockByID(jobLock.ID)
 
 	setting := db.GetOrCreateSetting()

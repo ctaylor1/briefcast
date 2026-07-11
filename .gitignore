@@ -10,6 +10,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+.claude/settings.local.json
 
 # Go build artifacts
 bin/
@@ -26,6 +27,7 @@ briefcast
 *.out
 
 # Go test / coverage / profiling
+/coverage
 coverage.out
 coverage.html
 *.coverprofile

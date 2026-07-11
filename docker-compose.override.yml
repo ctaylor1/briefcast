@@ -1,0 +1,15 @@
+services:
+  briefcast:
+    # Local GPU override. Docker Compose auto-loads this file when present.
+    build:
+      context: .
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu128
+        TORCH_BUILD: +cu128
+    gpus: all
+    environment:
+      WHISPERX_DEVICE: cuda
+      WHISPERX_COMPUTE_TYPE: float16
+      WHISPERX_BATCH_SIZE: "16"
+      # One GPU worker avoids loading multiple WhisperX models onto a single 16 GB card.
+      WHISPERX_MAX_CONCURRENCY: "1"

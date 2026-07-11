@@ -95,8 +95,8 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
+		_ = resp.Body.Close()
 		if resumeOffset > 0 && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-			resp.Body.Close()
 			// Some hosts reject stale resume offsets (416). Drop the partial file and retry once.
 			if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
 				Logger.Warnw("failed to reset partial file after range rejection", "path", finalPath, "error", removeErr)
@@ -105,9 +105,9 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 				return Download(downloadID, link, episodeTitle, podcastName, prefix)
 			}
 		}
-		resp.Body.Close()
 		return "", &DownloadHTTPError{StatusCode: resp.StatusCode, Status: resp.Status, URL: link}
 	}
+	defer resp.Body.Close()
 
 	var file *os.File
 	if resumeOffset > 0 && resp.StatusCode == http.StatusPartialContent {
@@ -124,7 +124,13 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		logError("error creating file", err, "path", finalPath, "url", link)
 		return "", err
 	}
-	defer resp.Body.Close()
+	removeFileOnReturn := false
+	defer func() {
+		_ = file.Close()
+		if removeFileOnReturn {
+			_ = os.Remove(finalPath)
+		}
+	}()
 
 	buffer := make([]byte, 32*1024)
 	downloadedBytes := resumeOffset
@@ -139,17 +145,13 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	const minReportInterval = 750 * time.Millisecond
 	for {
 		if DownloadsPaused() || (downloadID != "" && IsDownloadPaused(downloadID)) {
-			_ = file.Close()
-			_ = resp.Body.Close()
 			if downloadID != "" {
 				ClearDownloadPause(downloadID)
 			}
 			return "", ErrDownloadPaused
 		}
 		if downloadID != "" && IsDownloadCancelled(downloadID) {
-			_ = file.Close()
-			_ = resp.Body.Close()
-			_ = os.Remove(finalPath)
+			removeFileOnReturn = true
 			ClearDownloadCancellation(downloadID)
 			return "", ErrDownloadCancelled
 		}
@@ -179,14 +181,12 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 	if downloadID != "" {
 		_ = db.UpdatePodcastItemDownloadProgress(downloadID, downloadedBytes, totalBytes)
 	}
-	defer file.Close()
 
 	if downloadedBytes == 0 {
-		_ = os.Remove(finalPath)
+		removeFileOnReturn = true
 		return "", fmt.Errorf("download produced empty file (0 bytes) for %s", link)
 	}
 	if totalBytes > 0 && downloadedBytes < totalBytes {
-		_ = os.Remove(finalPath)
 		return "", fmt.Errorf("download incomplete: got %d of %d bytes for %s", downloadedBytes, totalBytes, link)
 	}
 
