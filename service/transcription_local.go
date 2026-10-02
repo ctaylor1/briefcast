@@ -46,6 +46,10 @@ func RunWhisperXWithProgress(audioPath string, cfg WhisperXConfig, resumeCheckpo
 }
 
 func (b localTranscriptionBackend) Transcribe(ctx context.Context, audioPath, resumeCheckpoint string, onProgress func(whisperxProgressUpdate)) ([]byte, error) {
+	var marker map[string]json.RawMessage
+	if json.Unmarshal([]byte(resumeCheckpoint), &marker) == nil && (marker["version"] != nil || marker["backend"] != nil) {
+		return nil, errors.New("remote or versioned checkpoint requires explicit rollback reconciliation")
+	}
 	cfg := b.cfg
 	pythonPath, err := resolveWhisperXPython(cfg)
 	if err != nil {

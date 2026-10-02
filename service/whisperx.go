@@ -20,6 +20,11 @@ import (
 
 // WhisperXConfig represents a public type.
 type WhisperXConfig struct {
+	Backend            string
+	ServiceURL         string
+	ServiceTokenFile   string
+	EngineProfile      string
+	ServiceResultLimit int64
 	Enabled            bool
 	Python             string
 	Script             string
@@ -93,6 +98,11 @@ type whisperxQueueSnapshot struct {
 // LoadWhisperXConfig handles the corresponding operation.
 func LoadWhisperXConfig() WhisperXConfig {
 	cfg := WhisperXConfig{
+		Backend:            getEnvString("WHISPERX_BACKEND", "local"),
+		ServiceURL:         getEnvString("WHISPERX_SERVICE_URL", "http://whisperx:8090"),
+		ServiceTokenFile:   getEnvString("WHISPERX_SERVICE_TOKEN_FILE", ""),
+		EngineProfile:      getEnvString("WHISPERX_ENGINE_PROFILE", ""),
+		ServiceResultLimit: int64(getEnvInt("WHISPERX_SERVICE_RESULT_LIMIT_BYTES", 64<<20)),
 		Enabled:            getEnvBool(whisperxEnabledEnv, false),
 		Python:             strings.TrimSpace(os.Getenv(whisperxPythonEnv)),
 		Script:             strings.TrimSpace(os.Getenv(whisperxScriptEnv)),
@@ -167,7 +177,14 @@ func LoadWhisperXConfig() WhisperXConfig {
 // TranscribePendingEpisodes handles the corresponding operation.
 func TranscribePendingEpisodes() error {
 	cfg := LoadWhisperXConfig()
-	return transcribePendingEpisodes(context.Background(), cfg, localTranscriptionBackend{cfg: cfg})
+	if !cfg.Enabled {
+		return nil
+	}
+	backend, err := configuredTranscriptionBackend(cfg)
+	if err != nil {
+		return err
+	}
+	return transcribePendingEpisodes(context.Background(), cfg, backend)
 }
 
 func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend transcriptionBackend) error {
@@ -196,6 +213,9 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 		acquireErr := errors.New("failed to acquire transcription job lock")
 		jobLogger.Errorw("job_lock_acquire_failed", "error", acquireErr)
 		return acquireErr
+	}
+	if remote, ok := backend.(*httpTranscriptionBackend); ok {
+		return transcribeRemotePending(ctx, cfg, remote, jobLock)
 	}
 	stopLockHeartbeat := startJobLockHeartbeat(
 		jobLock.ID,
