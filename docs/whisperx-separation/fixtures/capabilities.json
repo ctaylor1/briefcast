@@ -1,0 +1,29 @@
+{
+  "contract_versions": [1],
+  "worker_instance_id": "55555555-5555-4555-8555-555555555555",
+  "worker_version": "1.0.0",
+  "pipeline_version": "briefcast-script-v1",
+  "engine_profile": "baseline-whisperx-3.8.6-cuda128",
+  "package_versions": {
+    "whisperx": "3.8.6",
+    "torch": "2.8.0+cu128",
+    "torchaudio": "2.8.0+cu128",
+    "ctranslate2": "4.8.1",
+    "faster-whisper": "1.2.1",
+    "pyannote.audio": "4.0.7"
+  },
+  "supported_models": ["medium.en"],
+  "supported_diarization_models": ["pyannote/speaker-diarization-3.1"],
+  "supported_vad_methods": ["pyannote", "silero"],
+  "checkpoint_formats": ["briefcast-whisperx-chunks-v1"],
+  "device": "cuda",
+  "compute_type": "float16",
+  "model_ready": true,
+  "capacity": {
+    "max_running": 1,
+    "max_waiting": 4,
+    "running": 0,
+    "waiting": 0,
+    "accepting": true
+  }
+}

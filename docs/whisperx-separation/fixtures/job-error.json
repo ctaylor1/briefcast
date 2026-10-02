@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "MODEL_UNAVAILABLE",
+    "message": "Configured model is unavailable; check the worker cache and model access.",
+    "retryable": true
+  }
+}

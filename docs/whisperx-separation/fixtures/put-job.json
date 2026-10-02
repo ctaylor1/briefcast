@@ -1,0 +1,36 @@
+{
+  "contract_version": 1,
+  "deployment_id": "11111111-1111-4111-8111-111111111111",
+  "episode_id": "22222222-2222-4222-8222-222222222222",
+  "generation_id": "33333333-3333-4333-8333-333333333333",
+  "attempt": 1,
+  "input": {
+    "relative_path": "audio/example/episode.mp3",
+    "size_bytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "engine_profile": "baseline-whisperx-3.8.6-cuda128",
+  "options": {
+    "model": "medium.en",
+    "language": "en",
+    "chunk_seconds": 120,
+    "align": true,
+    "diarization": false,
+    "diarization_model": "pyannote/speaker-diarization-3.1",
+    "min_speakers": 2,
+    "max_speakers": 2,
+    "vad_method": "pyannote",
+    "asr_options": {
+      "beam_size": 5,
+      "patience": 1,
+      "condition_on_previous_text": true,
+      "initial_prompt": "Podcast interview. Speakers are Host and Guest. Use punctuation and capitalization."
+    },
+    "vad_options": {
+      "chunk_size": 45,
+      "vad_onset": 0.5,
+      "vad_offset": 0.5
+    }
+  },
+  "resume_from_job_id": null
+}
