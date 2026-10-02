@@ -23,6 +23,8 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:size=536870912,mode=1777
+      # PythonRunner owns TMPDIR=/cache/tmp; bound its scratch space as well.
+      - /cache/tmp:size=536870912,mode=1777
     stop_grace_period: 210s
     restart: unless-stopped
     environment:

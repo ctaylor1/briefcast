@@ -28,7 +28,18 @@ else:
     assert packages['whisperx'] == '3.8.6' and packages['ctranslate2'] == '4.8.1'
     assert packages['torch'] == '2.8.0+' + kind and packages['torchaudio'] == '2.8.0+' + kind
     assert not pathlib.Path('/api/app').exists()
-    import torch, torchaudio, ctranslate2, torchcodec
+    import torch, torchaudio, ctranslate2, whisperx
+    if kind == 'cpu':
+        import torchcodec
+    else:
+        try:
+            import torchcodec
+        except RuntimeError as error:
+            # The preserved baseline has this exact optional CUDA file-decoder
+            # failure. WhisperX supplies FFmpeg-decoded waveforms to pyannote.
+            # Reject any other import failure; do not silently mask regressions.
+            assert 'libnppicc.so.12' in str(error), str(error)
+            print('Baseline limitation: optional CUDA TorchCodec file decoder requires libnppicc.so.12')
     assert torch.__version__ == packages['torch']
     assert manifest['pipeline_sha256']
     if kind == 'cpu': assert not any(n.startswith('nvidia-') for n in packages)

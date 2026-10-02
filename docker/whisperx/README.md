@@ -16,6 +16,8 @@ uv pip compile docker/app/requirements.in --python-version 3.12 --python-platfor
 
 Do not remove constraints or upgrade packages as part of separation. Hash checking and `pip check` fail the build on unavailable/incompatible artifacts. ANTLR's baseline release and sgmllib3k have source distributions; they build without isolation using the hashed build-tool lock in `docker/build-requirements.lock`. The pinned Python base is Debian 13, matching the baseline. FFmpeg is pinned to baseline 7.1.5; every Debian package is pinned in `system-packages.lock` and inventoried in the runtime manifest. Missing mirror versions fail the build and require reviewed archival/snapshot recovery, not substitution.
 
+The baseline CUDA TorchCodec wheel cannot import its optional file decoder without `libnppicc.so.12`; the preserved monolith image has the same failure. The content check reports that exact known limitation and rejects other failures. WhisperX uses FFmpeg-decoded waveforms for the default ASR/VAD path. Gated diarization/file decoding needs separate acceptance before enabling it; this phase does not add NPP or change the baseline engine.
+
 ```bash
 pwsh -File RELEASE.ps1 build -Target app
 pwsh -File RELEASE.ps1 build -Target worker -Runtime cpu
@@ -36,7 +38,7 @@ Requires PowerShell 7 and [Docker Compose >= 2.24](https://docs.docker.com/compo
 
 Set `WHISPERX_RUNTIME` in the primary env file, or pass `-Runtime` to the scripts. The optional advanced env file is loaded after the primary file for both interpolation and app environment. Process environment overrides still take precedence. Plain Docker commands must specify the same files and env files explicitly. No implicit override is present.
 
-Worker image/token/HF-token mounts are required when selecting CPU/CUDA. State, cache and media directories must already exist; bind mounts refuse to create missing host paths. Provision ownership for the configured UID/GID (default 1000:1000). Worker media is read-only, state/cache writable, root filesystem read-only, temporary memory limited to 512 MiB, capabilities dropped, and no host port is published. The default Compose network permits model egress when `WHISPERX_OFFLINE=false`; it does not block app startup on worker readiness.
+Worker image/token/HF-token mounts are required when selecting CPU/CUDA. State, cache and media directories must already exist; bind mounts refuse to create missing host paths. Provision ownership for the configured UID/GID (default 1000:1000). Worker media is read-only, state/cache writable, root filesystem read-only, `/tmp` and Python's `/cache/tmp` each limited to 512 MiB of temporary memory, capabilities dropped, and no host port is published. The default Compose network permits model egress when `WHISPERX_OFFLINE=false`; it does not block app startup on worker readiness.
 
 | Configuration | Owner/default |
 | --- | --- |

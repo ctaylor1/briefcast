@@ -99,6 +99,7 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
     if source_build:
         assert worker["build"]["args"]["RUNTIME"] == ("cu128" if runtime == "cuda" else "cpu")
     assert worker["read_only"] and worker["user"] == "1000:1000"
+    assert any(entry.startswith("/cache/tmp:size=536870912") for entry in worker["tmpfs"])
     assert set(worker["environment"]) == {
         "HF_HUB_OFFLINE",
         "TRANSFORMERS_OFFLINE",
