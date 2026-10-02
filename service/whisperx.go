@@ -480,6 +480,7 @@ func TranscribePendingEpisodes() error {
 		llmCfg := LoadLLMConfig()
 		setting := db.GetOrCreateSetting()
 		if llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != "" {
+			llmCfg.Model = ResolveSummarizationModel(setting, llmCfg)
 			prompt := ResolveSummarizationPrompt(setting, llmCfg)
 			userPrompt := ResolveSummarizationUserPrompt(setting, llmCfg)
 			if sumErr := SummarizeEpisode(&item, llmCfg, prompt, userPrompt); sumErr != nil {

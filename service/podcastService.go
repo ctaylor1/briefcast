@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -333,6 +334,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	summarizationPrompt := ""
 	summarizationUserPrompt := ""
 	if summarizationEnabled {
+		llmCfg.Model = ResolveSummarizationModel(setting, llmCfg)
 		summarizationPrompt = ResolveSummarizationPrompt(setting, llmCfg)
 		summarizationUserPrompt = ResolveSummarizationUserPrompt(setting, llmCfg)
 	}
@@ -424,21 +426,27 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 					if transcriptAssets[i].URL == "" {
 						continue
 					}
-					body, err := makeQuery(transcriptAssets[i].URL)
+					body, err := fetchFeedTranscript(transcriptAssets[i].URL)
 					if err != nil {
 						Logger.Warnw("failed to fetch podcast transcript", "url", transcriptAssets[i].URL, "podcast_id", podcast.ID, "error", err)
 						continue
 					}
 					transcriptAssets[i].Content = string(body)
 				}
-				transcriptJSON = feedmeta.MarshalMetadata(transcriptAssets)
-				canonicalTranscript = buildCanonicalTranscriptFromTranscriptJSON(transcriptJSON)
-				canonicalTranscriptVersion = canonicalTranscriptVersionCurrent
-				updatedAt := time.Now().UTC()
-				canonicalUpdatedAt = &updatedAt
-				transcriptStatus = "available"
-				transcriptProgressPct = 100
-				transcriptProgressStage = "complete"
+				candidateJSON := feedmeta.MarshalMetadata(transcriptAssets)
+				candidateCanonical := buildCanonicalTranscriptFromTranscriptJSON(candidateJSON)
+				if strings.TrimSpace(candidateCanonical) != "" {
+					transcriptJSON = candidateJSON
+					canonicalTranscript = candidateCanonical
+					canonicalTranscriptVersion = canonicalTranscriptVersionCurrent
+					updatedAt := time.Now().UTC()
+					canonicalUpdatedAt = &updatedAt
+					transcriptStatus = "available"
+					transcriptProgressPct = 100
+					transcriptProgressStage = "complete"
+				} else {
+					Logger.Infow("podcast feed transcript unavailable; queued for WhisperX", "podcast_id", podcast.ID, "episode_guid", guid)
+				}
 			} else {
 				// Keep missing transcripts in a pending state so WhisperX workers can process them later.
 				Logger.Infow("podcast transcript missing; queued for WhisperX", "podcast_id", podcast.ID, "episode_guid", guid)
@@ -1260,6 +1268,22 @@ func makeQuery(url string) ([]byte, error) {
 
 	return body, nil
 
+}
+
+func fetchFeedTranscript(url string) ([]byte, error) {
+	req, err := getRequest(url)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := doRequestWithHostLimit(httpClient(), req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("transcript request returned status %d", resp.StatusCode)
+	}
+	return readBoundedOutboundBody(resp.Body, resp.ContentLength)
 }
 
 // GetSearchFromGpodder handles the corresponding operation.

@@ -131,11 +131,18 @@ type openAIChatMessage struct {
 }
 
 type openAIChatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -176,11 +183,16 @@ func ResolveSummarizationUserPrompt(setting *db.Setting, cfg LLMConfig) string {
 
 // SummarizeTranscript sends the canonical transcript to the configured LLM and returns the summary.
 func SummarizeTranscript(transcript string, prompt string, userPrompt string, cfg LLMConfig) (string, error) {
+	summary, _, err := summarizeTranscriptWithModel(transcript, prompt, userPrompt, cfg)
+	return summary, err
+}
+
+func summarizeTranscriptWithModel(transcript string, prompt string, userPrompt string, cfg LLMConfig) (string, string, error) {
 	if strings.TrimSpace(transcript) == "" {
-		return "", fmt.Errorf("transcript is empty")
+		return "", "", fmt.Errorf("transcript is empty")
 	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return "", fmt.Errorf("LLM API key is not configured")
+		return "", "", fmt.Errorf("LLM API key is not configured")
 	}
 
 	if len(transcript) > maxTranscriptChars {
@@ -199,12 +211,12 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode LLM request: %w", err)
+		return "", "", fmt.Errorf("failed to encode LLM request: %w", err)
 	}
 
 	url, err := llmChatCompletionsURL(cfg.BaseURL)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	ctx := context.Background()
@@ -216,45 +228,68 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("failed to create LLM request: %w", err)
+		return "", "", fmt.Errorf("failed to create LLM request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
 	resp, err := llmHTTPClient(cfg).Do(req)
 	if err != nil {
-		return "", fmt.Errorf("LLM request failed: %w", err)
+		return "", "", fmt.Errorf("LLM request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := readBoundedOutboundBody(resp.Body, resp.ContentLength)
 	if err != nil {
-		return "", fmt.Errorf("failed to read LLM response: %w", err)
+		return "", "", fmt.Errorf("failed to read LLM response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("LLM API returned status %d: %s", resp.StatusCode, truncateForLog(string(body), 500))
+		return "", "", fmt.Errorf("LLM API returned status %d", resp.StatusCode)
 	}
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return "", fmt.Errorf("failed to parse LLM response: %w", err)
+		return "", "", fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
 	if chatResp.Error != nil && chatResp.Error.Message != "" {
-		return "", fmt.Errorf("LLM API error: %s", chatResp.Error.Message)
+		return "", "", fmt.Errorf("LLM API returned an error")
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("LLM returned no choices")
+		return "", "", fmt.Errorf("LLM returned no choices")
+	}
+	if chatResp.Choices[0].FinishReason == "length" {
+		return "", "", fmt.Errorf("LLM response reached the output token limit (max_tokens=%d)", cfg.MaxTokens)
+	}
+	if chatResp.Choices[0].FinishReason == "content_filter" {
+		return "", "", fmt.Errorf("LLM response was blocked by the provider content filter")
 	}
 
 	summary := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	if summary == "" {
-		return "", fmt.Errorf("LLM returned empty summary")
+		metadata := make([]string, 0, 3)
+		if model := strings.TrimSpace(chatResp.Model); model != "" {
+			metadata = append(metadata, "model="+truncateForLog(model, 120))
+		}
+		if reason := strings.TrimSpace(chatResp.Choices[0].FinishReason); reason != "" {
+			metadata = append(metadata, "finish_reason="+truncateForLog(reason, 80))
+		}
+		if chatResp.Usage != nil {
+			metadata = append(metadata, fmt.Sprintf("tokens=%d/%d/%d", chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, chatResp.Usage.TotalTokens))
+		}
+		if len(metadata) > 0 {
+			return "", "", fmt.Errorf("LLM returned empty summary (%s)", strings.Join(metadata, ", "))
+		}
+		return "", "", fmt.Errorf("LLM returned empty summary")
 	}
 
-	return summary, nil
+	model := strings.TrimSpace(chatResp.Model)
+	if model == "" {
+		model = cfg.Model
+	}
+	return summary, model, nil
 }
 
 func llmChatCompletionsURL(baseURL string) (string, error) {
@@ -283,22 +318,43 @@ func llmHTTPClient(cfg LLMConfig) *http.Client {
 // It persists the result (including lineage: model and prompt used) to the database.
 func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string) error {
 	jobLogger := logging.Sugar()
+	hasExistingSummary := strings.TrimSpace(item.LLMSummary) != ""
 
 	transcript := strings.TrimSpace(item.CanonicalTranscript)
 	if transcript == "" {
-		item.LLMSummaryStatus = "failed"
-		item.LLMSummaryError = "no canonical transcript available"
-		return db.UpdatePodcastItem(item)
+		missingTranscriptErr := fmt.Errorf("no canonical transcript available")
+		if hasExistingSummary {
+			item.LLMSummaryStatus = "available"
+		} else {
+			item.LLMSummaryStatus = "failed"
+		}
+		item.LLMSummaryError = missingTranscriptErr.Error()
+		if err := db.UpdatePodcastItem(item); err != nil {
+			return err
+		}
+		return missingTranscriptErr
 	}
 
-	item.LLMSummaryStatus = "processing"
-	if err := db.UpdatePodcastItem(item); err != nil {
-		jobLogger.Warnw("failed to mark summary processing", "podcast_item_id", item.ID, "error", err)
+	// Keep an existing summary visible while its replacement is generated.
+	if hasExistingSummary && item.LLMSummaryStatus != "available" {
+		item.LLMSummaryStatus = "available"
+		if err := db.UpdatePodcastItem(item); err != nil {
+			return err
+		}
+	} else if !hasExistingSummary {
+		item.LLMSummaryStatus = "processing"
+		if err := db.UpdatePodcastItem(item); err != nil {
+			jobLogger.Warnw("failed to mark summary processing", "podcast_item_id", item.ID, "error", err)
+		}
 	}
 
-	summary, err := SummarizeTranscript(transcript, prompt, userPrompt, cfg)
+	summary, model, err := summarizeTranscriptWithModel(transcript, prompt, userPrompt, cfg)
 	if err != nil {
-		item.LLMSummaryStatus = "failed"
+		if hasExistingSummary {
+			item.LLMSummaryStatus = "available"
+		} else {
+			item.LLMSummaryStatus = "failed"
+		}
 		item.LLMSummaryError = trimToLength(err.Error(), 1000)
 		if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
 			jobLogger.Warnw("failed to mark summary failure", "podcast_item_id", item.ID, "error", updateErr)
@@ -312,7 +368,7 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	item.LLMSummaryError = ""
 	item.LLMSummaryDate = &now
 	// Lineage: record which model and prompt produced this summary.
-	item.LLMSummaryModel = cfg.Model
+	item.LLMSummaryModel = model
 	item.LLMSummaryPrompt = prompt
 	if err := db.UpdatePodcastItem(item); err != nil {
 		return err

@@ -166,6 +166,7 @@ export interface AppSettings {
   effectiveSystemPrompt: string;
   effectiveUserPrompt: string;
   llmConcurrency: number;
+  defaultProvider: string;
   defaultModel: string;
   defaultSystemPrompt: string;
   defaultUserPrompt: string;
@@ -183,6 +184,24 @@ export interface AppSettings {
 export type AppSettingsUpdate = Partial<AppSettings> & {
   briefpointAPIKey?: string;
 };
+
+export interface OpenRouterRecommendedModel {
+  id: string;
+  name: string;
+  contextLength: number;
+  maxCompletionTokens: number;
+  promptPrice: string;
+  completionPrice: string;
+  recommendation: string;
+}
+
+export interface OpenRouterModelsResponse {
+  provider: string;
+  configured: boolean;
+  models: OpenRouterRecommendedModel[];
+  fetchedAt: string;
+  stale: boolean;
+}
 
 export interface AppLogEntry {
   id: string;
@@ -346,6 +365,19 @@ export interface ResummarizeResult {
   total: number;
   succeeded?: number;
   failed?: number;
+}
+
+export interface SummaryJobStatus {
+  running: boolean;
+  total: number;
+  completed: number;
+  failed: number;
+  error?: string;
+}
+
+export interface SummaryJobStartResponse {
+  message: string;
+  status: SummaryJobStatus;
 }
 
 export interface SummariesFilter {

@@ -470,6 +470,17 @@ Summarization uses an OpenAI-compatible chat completion API and requires transcr
 - `LLM_SUMMARIZATION_PROMPT`: optional system prompt override
 - `LLM_SUMMARIZATION_USER_PROMPT`: optional user prompt template override
 
+For OpenRouter, set `LLM_PROVIDER=openrouter`,
+`LLM_BASE_URL=https://openrouter.ai/api/v1`, and `LLM_API_KEY` to your
+OpenRouter key. The Settings page shows the configured provider and offers a
+refreshable list of OpenRouter models suited to long transcripts. The server
+fetches the list from OpenRouter's public catalog without sending your API key;
+it shows each model's context limit and current token prices. Selecting a model
+changes future summaries after you save the summarization settings. The default
+option continues to use `LLM_MODEL` from the environment. Existing summaries
+retain the actual model reported by the completion response, including when
+`LLM_MODEL=openrouter/auto` routes dynamically.
+
 ## Back Catalog Downloads
 
 The app does not intentionally truncate RSS feed entries during parsing. It stores the entries returned by the podcast RSS feed.

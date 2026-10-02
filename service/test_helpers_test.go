@@ -15,6 +15,7 @@ func resetServiceTestState() {
 	briefpointSyncRunning.Store(false)
 	linkBackfillRunning.Store(false)
 	summaryBackfillRunning.Store(false)
+	setSummaryJobStatus(SummaryBackfillStatus{})
 	lookupOutboundIPAddrs = net.DefaultResolver.LookupIPAddr
 	resetOutboundRequestLimiterForTests()
 }

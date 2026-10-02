@@ -170,6 +170,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/settings/backfill-summaries", controllers.GetBackfillSummariesStatus)
 	router.POST("/settings/resummarize", controllers.ResummarizeSummaries)
 	router.GET("/settings/summary-models", controllers.GetSummaryModels)
+	router.GET("/settings/openrouter-models", controllers.GetOpenRouterModels)
 	router.POST("/settings/backfill-links", controllers.BackfillLinks)
 	router.GET("/settings/backfill-links", controllers.GetBackfillLinksStatus)
 	router.POST("/settings/export-all", controllers.ExportAll)

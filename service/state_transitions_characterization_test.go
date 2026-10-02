@@ -578,10 +578,10 @@ func TestCharacterize_SummarizeEpisodeFailure(t *testing.T) {
 		t.Fatal("expected summary failure")
 	}
 	after := snapshotPodcastItemRow(t, item.ID)
-	assertPodcastItemChangedColumns(t, before, after, "llm_summary_status", "llm_summary_error")
+	assertPodcastItemChangedColumns(t, before, after, "llm_summary_error")
 
 	got := loadCharacterizationPodcastItem(t, item.ID)
-	if got.LLMSummaryStatus != "failed" || !strings.Contains(got.LLMSummaryError, "status 500") {
+	if got.LLMSummaryStatus != "available" || got.LLMSummary != "seed llm summary" || !strings.Contains(got.LLMSummaryError, "status 500") {
 		t.Fatalf("unexpected summary failure state: status=%q error=%q", got.LLMSummaryStatus, got.LLMSummaryError)
 	}
 }

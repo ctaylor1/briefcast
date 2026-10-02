@@ -52,6 +52,7 @@ func makeRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/settings", GetSettings)
+	router.GET("/settings/openrouter-models", GetOpenRouterModels)
 	router.GET("/settings/logs", GetAppLogs)
 	router.GET("/settings/repair-work", GetRepairWork)
 	router.POST("/settings/repair-work", StartRepairWork)

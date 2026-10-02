@@ -34,6 +34,7 @@ type SettingsResponse struct {
 	LLMConcurrency int `json:"llmConcurrency"`
 	// Read-only defaults so the UI can show placeholders.
 	DefaultModel        string `json:"defaultModel"`
+	DefaultProvider     string `json:"defaultProvider"`
 	DefaultSystemPrompt string `json:"defaultSystemPrompt"`
 	DefaultUserPrompt   string `json:"defaultUserPrompt"`
 	// Appearance
@@ -261,21 +262,21 @@ func PatchSettings(c *gin.Context) {
 // BackfillSummaries kicks off background summarization of all episodes that
 // have a transcript but no summary yet. Returns 409 if already running.
 func BackfillSummaries(c *gin.Context) {
-	if service.GetSummaryBackfillRunning() {
-		c.JSON(http.StatusConflict, gin.H{"error": "backfill is already running"})
+	if !summaryJobConfigured(c) {
 		return
 	}
 
-	go func() {
-		service.BackfillSummaries(nil)
-	}()
-
-	c.JSON(http.StatusAccepted, gin.H{"message": "summary backfill started"})
+	status, err := service.StartSummaryBackfill()
+	if err != nil {
+		respondSummaryJobStartError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"message": "summary backfill started", "status": status})
 }
 
-// GetBackfillSummariesStatus returns whether a backfill is currently running.
+// GetBackfillSummariesStatus returns progress and the last summary job outcome.
 func GetBackfillSummariesStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"running": service.GetSummaryBackfillRunning()})
+	c.JSON(http.StatusOK, service.GetSummaryJobStatus())
 }
 
 // GetSummaryModels returns the distinct LLM models that have been used to generate summaries.
@@ -288,16 +289,33 @@ func GetSummaryModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"models": models})
 }
 
-// ResummarizeSummaries regenerates summaries for episodes matching filter criteria.
-func ResummarizeSummaries(c *gin.Context) {
-	if service.GetSummaryBackfillRunning() {
-		c.JSON(http.StatusConflict, gin.H{"error": "a summary job is already running"})
+// GetOpenRouterModels returns current catalog metadata for a short list of
+// models compatible with Briefcast's transcript summarization request.
+func GetOpenRouterModels(c *gin.Context) {
+	refresh := c.Query("refresh") == "true"
+	catalog, err := service.GetOpenRouterRecommendedModels(c.Request.Context(), refresh)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "OpenRouter model catalog is unavailable"})
 		return
 	}
+	cfg := service.LoadLLMConfig()
+	c.JSON(http.StatusOK, gin.H{
+		"provider":   cfg.Provider,
+		"configured": strings.EqualFold(cfg.Provider, "openrouter") && cfg.APIKey != "",
+		"models":     catalog.Models,
+		"fetchedAt":  catalog.FetchedAt,
+		"stale":      catalog.Stale,
+	})
+}
 
+// ResummarizeSummaries regenerates summaries for episodes matching filter criteria.
+func ResummarizeSummaries(c *gin.Context) {
 	var filter service.ResummarizeFilter
 	if err := c.ShouldBindJSON(&filter); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !summaryJobConfigured(c) {
 		return
 	}
 
@@ -311,11 +329,33 @@ func ResummarizeSummaries(c *gin.Context) {
 		return
 	}
 
-	go func() {
-		service.ResummarizeSummaries(filter, nil)
-	}()
+	status, err := service.StartResummarizeSummaries(filter)
+	if err != nil {
+		respondSummaryJobStartError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"message": "re-summarize started", "status": status})
+}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "re-summarize started"})
+func summaryJobConfigured(c *gin.Context) bool {
+	cfg := service.LoadLLMConfig()
+	if !cfg.Enabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LLM summarization is not enabled (set LLM_ENABLED=true)"})
+		return false
+	}
+	if cfg.APIKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LLM_API_KEY is not configured"})
+		return false
+	}
+	return true
+}
+
+func respondSummaryJobStartError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrSummaryJobAlreadyRunning) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start summary job"})
 }
 
 // BackfillLinks kicks off background extraction of show note links for all
@@ -422,6 +462,7 @@ func settingsFromModel(setting *db.Setting) SettingsResponse {
 		EffectiveUserPrompt:        service.ResolveSummarizationUserPrompt(setting, cfg),
 		LLMConcurrency:             setting.LLMConcurrency,
 		DefaultModel:               cfg.Model,
+		DefaultProvider:            cfg.Provider,
 		DefaultSystemPrompt:        cfg.DefaultPrompt,
 		DefaultUserPrompt:          cfg.DefaultUserPrompt,
 		ThemeMode:                  setting.ThemeMode,

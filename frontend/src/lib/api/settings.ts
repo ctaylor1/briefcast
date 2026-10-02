@@ -2,10 +2,13 @@ import type {
   AppLogsResponse,
   AppSettings,
   AppSettingsUpdate,
+  OpenRouterModelsResponse,
   PromptVersion,
   RepairWorkResponse,
   ResummarizeFilter,
   ResummarizeResult,
+  SummaryJobStartResponse,
+  SummaryJobStatus,
 } from "../../types/api";
 import { httpClient } from "./http";
 
@@ -16,17 +19,23 @@ export const settingsApi = {
   update(payload: AppSettingsUpdate): Promise<AppSettings> {
     return httpClient.patch<AppSettings, AppSettingsUpdate>("/settings", payload);
   },
-  backfillSummaries(): Promise<{ message: string }> {
-    return httpClient.post("/settings/backfill-summaries");
+  backfillSummaries(): Promise<SummaryJobStartResponse> {
+    return httpClient.post<SummaryJobStartResponse>("/settings/backfill-summaries");
   },
-  getBackfillStatus(): Promise<{ running: boolean }> {
-    return httpClient.get("/settings/backfill-summaries");
+  getBackfillStatus(): Promise<SummaryJobStatus> {
+    return httpClient.get<SummaryJobStatus>("/settings/backfill-summaries");
   },
-  resummarize(filter: ResummarizeFilter): Promise<ResummarizeResult> {
-    return httpClient.post("/settings/resummarize", filter);
+  previewResummarize(filter: ResummarizeFilter): Promise<ResummarizeResult> {
+    return httpClient.post<ResummarizeResult, ResummarizeFilter>("/settings/resummarize", filter);
+  },
+  startResummarize(filter: ResummarizeFilter): Promise<SummaryJobStartResponse> {
+    return httpClient.post<SummaryJobStartResponse, ResummarizeFilter>("/settings/resummarize", filter);
   },
   getSummaryModels(): Promise<{ models: string[] }> {
     return httpClient.get("/settings/summary-models");
+  },
+  getOpenRouterModels(refresh = false): Promise<OpenRouterModelsResponse> {
+    return httpClient.get<OpenRouterModelsResponse>(`/settings/openrouter-models${refresh ? "?refresh=true" : ""}`);
   },
   getPromptVersions(type: "system" | "user"): Promise<PromptVersion[]> {
     return httpClient.get<PromptVersion[]>(`/settings/prompt-versions?type=${type}`);

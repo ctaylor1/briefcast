@@ -485,7 +485,7 @@ func countSummaryBackfillEligible() (int, error) {
 	return countPodcastItems(db.DB.Model(&db.PodcastItem{}).
 		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
 		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed')"))
+		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(LoadLLMConfig(), time.Now())))
 }
 
 func summaryMissingQuery() *gorm.DB {

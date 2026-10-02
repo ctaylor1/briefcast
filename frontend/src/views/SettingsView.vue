@@ -10,7 +10,8 @@ import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
-import type { AppLogEntry, AppLogsResponse, AppSettings, PromptVersion, RepairWorkResponse, WorkQueueItem } from "../types/api";
+import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
+import type { AppLogEntry, AppLogsResponse, AppSettings, OpenRouterModelsResponse, PromptVersion, RepairWorkResponse, SummaryJobStatus, WorkQueueItem } from "../types/api";
 
 type SettingsTab = "configuration" | "work" | "logs";
 
@@ -76,6 +77,10 @@ const workQueuePayload = ref<RepairWorkResponse | null>(null);
 const workQueueErrorMessage = ref("");
 const briefpointAPIKeyConfigured = ref(false);
 const defaultModel = ref("");
+const defaultProvider = ref("");
+const openRouterCatalog = ref<OpenRouterModelsResponse | null>(null);
+const isLoadingOpenRouterModels = ref(false);
+const openRouterModelsErrorMessage = ref("");
 const defaultSystemPrompt = ref("");
 const defaultUserPrompt = ref("");
 const usedModels = ref<string[]>([]);
@@ -83,6 +88,8 @@ const isResummarizing = ref(false);
 const resummarizeModelFilter = ref("");
 const resummarizeBeforeDate = ref("");
 const resummarizeDryRunCount = ref<number | null>(null);
+const summaryJobStatus = ref<SummaryJobStatus | null>(null);
+const summaryJobErrorMessage = ref("");
 const promptHistoryOpen = ref(false);
 const promptHistoryType = ref<"system" | "user">("system");
 const promptHistoryVersions = ref<PromptVersion[]>([]);
@@ -96,6 +103,7 @@ const {
   setSuccess,
 } = useStatusMessage(5000);
 let workQueuePollTimer: number | undefined;
+let summaryJobPollTimer: number | undefined;
 
 const retentionForm = ref<RetentionForm>({
   keepAllEpisodes: true,
@@ -141,11 +149,16 @@ const briefpointForm = ref<BriefpointForm>({
 });
 
 const modelOptions = computed(() => {
-  const set = new Set<string>();
-  if (defaultModel.value) set.add(defaultModel.value);
-  for (const m of usedModels.value) set.add(m);
-  return Array.from(set).sort();
+  return availableModelOptions(
+    defaultModel.value,
+    summarizationForm.value.summarizationModel,
+    usedModels.value,
+    openRouterCatalog.value?.models.map((model) => model.id) ?? [],
+  );
 });
+const openRouterModels = computed(() => openRouterCatalog.value?.models ?? []);
+const isOpenRouterProvider = computed(() => defaultProvider.value.toLowerCase() === "openrouter");
+const providerLabel = computed(() => isOpenRouterProvider.value ? "OpenRouter" : defaultProvider.value || "Unknown");
 
 const retentionEnabled = computed(() => !retentionForm.value.keepAllEpisodes);
 const usesInitialDownloadCount = computed(() => backCatalogForm.value.initialDownloadMode === "count");
@@ -230,8 +243,10 @@ async function loadSettings(): Promise<void> {
     };
     briefpointAPIKeyConfigured.value = settings.briefpointAPIKeyConfigured ?? false;
     defaultModel.value = settings.defaultModel ?? "";
+    defaultProvider.value = settings.defaultProvider ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
+    if (isOpenRouterProvider.value) void loadOpenRouterModels();
     try {
       const { models } = await settingsApi.getSummaryModels();
       usedModels.value = models ?? [];
@@ -242,6 +257,19 @@ async function loadSettings(): Promise<void> {
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function loadOpenRouterModels(refresh = false): Promise<void> {
+  if (isLoadingOpenRouterModels.value) return;
+  isLoadingOpenRouterModels.value = true;
+  openRouterModelsErrorMessage.value = "";
+  try {
+    openRouterCatalog.value = await settingsApi.getOpenRouterModels(refresh);
+  } catch (error) {
+    openRouterModelsErrorMessage.value = getErrorMessage(error, "Could not load OpenRouter models. Try refreshing the list.");
+  } finally {
+    isLoadingOpenRouterModels.value = false;
   }
 }
 
@@ -271,6 +299,32 @@ function clearWorkQueuePoll(): void {
   if (workQueuePollTimer !== undefined) {
     window.clearTimeout(workQueuePollTimer);
     workQueuePollTimer = undefined;
+  }
+}
+
+function clearSummaryJobPoll(): void {
+  if (summaryJobPollTimer !== undefined) {
+    window.clearTimeout(summaryJobPollTimer);
+    summaryJobPollTimer = undefined;
+  }
+}
+
+function scheduleSummaryJobPoll(): void {
+  clearSummaryJobPoll();
+  if (!summaryJobStatus.value?.running) return;
+  summaryJobPollTimer = window.setTimeout(() => {
+    void loadSummaryJobStatus();
+  }, 5000);
+}
+
+async function loadSummaryJobStatus(): Promise<void> {
+  try {
+    summaryJobStatus.value = await settingsApi.getBackfillStatus();
+    summaryJobErrorMessage.value = "";
+    scheduleSummaryJobPoll();
+  } catch (error) {
+    summaryJobErrorMessage.value = getErrorMessage(error, "Failed to load summary job status.");
+    clearSummaryJobPoll();
   }
 }
 
@@ -596,7 +650,7 @@ async function resummarizeDryRun(): Promise<void> {
     const filter: Record<string, unknown> = { dryRun: true };
     if (resummarizeModelFilter.value) filter.model = resummarizeModelFilter.value;
     if (resummarizeBeforeDate.value) filter.before = new Date(resummarizeBeforeDate.value).toISOString();
-    const result = await settingsApi.resummarize(filter as import("../types/api").ResummarizeFilter);
+    const result = await settingsApi.previewResummarize(filter as import("../types/api").ResummarizeFilter);
     resummarizeDryRunCount.value = result.total;
   } catch (error) {
     setError(getErrorMessage(error, "Failed to preview re-summarize."));
@@ -611,7 +665,10 @@ async function startResummarize(): Promise<void> {
     const filter: Record<string, unknown> = {};
     if (resummarizeModelFilter.value) filter.model = resummarizeModelFilter.value;
     if (resummarizeBeforeDate.value) filter.before = new Date(resummarizeBeforeDate.value).toISOString();
-    await settingsApi.resummarize(filter as import("../types/api").ResummarizeFilter);
+    const result = await settingsApi.startResummarize(filter as import("../types/api").ResummarizeFilter);
+    summaryJobStatus.value = result.status;
+    summaryJobErrorMessage.value = "";
+    scheduleSummaryJobPoll();
     setSuccess("Re-summarize job started. Summaries will be regenerated in the background.");
   } catch (error) {
     setError(getErrorMessage(error, "Failed to start re-summarize."));
@@ -620,8 +677,14 @@ async function startResummarize(): Promise<void> {
   }
 }
 
-onMounted(loadSettings);
-onUnmounted(clearWorkQueuePoll);
+onMounted(() => {
+  void loadSettings();
+  void loadSummaryJobStatus();
+});
+onUnmounted(() => {
+  clearWorkQueuePoll();
+  clearSummaryJobPoll();
+});
 </script>
 
 <template>
@@ -944,7 +1007,14 @@ onUnmounted(clearWorkQueuePoll);
           :disabled="!summarizationForm.summarizationEnabled"
         >
           <option value="">Default{{ defaultModel ? ` (${defaultModel})` : '' }}</option>
-          <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+          <optgroup v-if="openRouterModels.length" label="Recommended on OpenRouter">
+            <option v-for="model in openRouterModels" :key="model.id" :value="model.id">
+              {{ model.name }} ({{ model.id }})
+            </option>
+          </optgroup>
+          <optgroup v-if="modelOptions.length" label="Configured and previously used">
+            <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+          </optgroup>
         </select>
         <p class="meta-text">
           The LLM model to use for summarization. "Default" uses the model from your .env configuration.
@@ -1040,7 +1110,7 @@ onUnmounted(clearWorkQueuePoll);
           Preview
         </UiButton>
         <UiButton
-          :disabled="!summarizationForm.summarizationEnabled || isResummarizing"
+          :disabled="!summarizationForm.summarizationEnabled || isResummarizing || summaryJobStatus?.running"
           @click="startResummarize"
         >
           {{ isResummarizing ? "Starting..." : "Re-summarize" }}
@@ -1049,6 +1119,16 @@ onUnmounted(clearWorkQueuePoll);
           {{ resummarizeDryRunCount }} {{ resummarizeDryRunCount === 1 ? 'summary' : 'summaries' }} will be regenerated.
         </p>
       </div>
+      <UiAlert v-if="summaryJobErrorMessage" tone="warning">{{ summaryJobErrorMessage }}</UiAlert>
+      <UiAlert v-else-if="summaryJobStatus?.error" tone="warning">{{ summaryJobStatus.error }}</UiAlert>
+      <p v-else-if="summaryJobStatus?.running" class="meta-text">
+        Summary job running: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
+        {{ summaryJobStatus.failed }} failed.
+      </p>
+      <p v-else-if="summaryJobStatus && summaryJobStatus.total > 0" class="meta-text">
+        Last summary job: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
+        {{ summaryJobStatus.failed }} failed.
+      </p>
     </UiCard>
 
     <!-- Model Settings -->
@@ -1057,6 +1137,75 @@ onUnmounted(clearWorkQueuePoll);
         <h3 class="settings-section-title">Model Settings</h3>
         <p class="section-subtitle">
           Configure how the LLM is used during batch summarization jobs.
+        </p>
+      </div>
+
+      <div class="stack-2">
+        <div class="surface-row surface-row--between">
+          <div class="stack-1">
+            <h4 class="settings-section-subtitle">Model provider</h4>
+            <p class="meta-text">Configured by LLM_PROVIDER in the server environment.</p>
+          </div>
+          <UiBadge :tone="isOpenRouterProvider ? 'info' : 'neutral'">{{ providerLabel }}</UiBadge>
+        </div>
+        <UiAlert v-if="isOpenRouterProvider && openRouterCatalog && !openRouterCatalog.configured" tone="warning">
+          OpenRouter is selected, but no LLM API key is configured. Summaries need an API key.
+        </UiAlert>
+      </div>
+
+      <div v-if="isOpenRouterProvider" class="stack-2">
+        <div class="surface-row surface-row--between">
+          <div class="stack-1">
+            <h4 class="settings-section-subtitle">Recommended OpenRouter models</h4>
+            <p class="meta-text">Models suited to long podcast transcripts. Availability and prices come from OpenRouter.</p>
+          </div>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="isLoadingOpenRouterModels"
+            @click="loadOpenRouterModels(true)"
+          >
+            {{ isLoadingOpenRouterModels ? "Refreshing..." : "Refresh list" }}
+          </UiButton>
+        </div>
+        <p v-if="openRouterCatalog?.fetchedAt" class="meta-text">
+          Updated {{ formatDate(openRouterCatalog.fetchedAt) }}. Prices are estimates and may change.
+        </p>
+        <UiAlert v-if="openRouterModelsErrorMessage" tone="warning">{{ openRouterModelsErrorMessage }}</UiAlert>
+        <UiAlert v-if="openRouterCatalog?.stale" tone="warning">
+          OpenRouter could not be reached. Showing the last available model list.
+        </UiAlert>
+        <p v-if="isLoadingOpenRouterModels && !openRouterCatalog" class="meta-text" role="status">Loading models from OpenRouter...</p>
+        <div v-else-if="openRouterModels.length" class="recommended-model-list">
+          <div v-for="model in openRouterModels" :key="model.id" class="recommended-model">
+            <div class="recommended-model__heading">
+              <div class="stack-1">
+                <strong>{{ model.name }}</strong>
+                <code class="recommended-model__id">{{ model.id }}</code>
+              </div>
+              <UiButton
+                variant="outline"
+                size="sm"
+                :disabled="!summarizationForm.summarizationEnabled || summarizationForm.summarizationModel === model.id"
+                @click="summarizationForm.summarizationModel = model.id"
+              >
+                {{ summarizationForm.summarizationModel === model.id ? "Selected" : "Use model" }}
+              </UiButton>
+            </div>
+            <p v-if="model.recommendation" class="meta-text">{{ model.recommendation }}</p>
+            <div class="recommended-model__facts meta-text">
+              <span>Context: {{ formatTokenCapacity(model.contextLength) }}</span>
+              <span v-if="model.maxCompletionTokens > 0">Max output: {{ formatTokenCapacity(model.maxCompletionTokens) }}</span>
+              <span>Input: {{ formatPricePerMillion(model.promptPrice) }}</span>
+              <span>Output: {{ formatPricePerMillion(model.completionPrice) }}</span>
+            </div>
+          </div>
+        </div>
+        <p v-else-if="!isLoadingOpenRouterModels && !openRouterModelsErrorMessage" class="meta-text">
+          No recommended models are currently available from OpenRouter.
+        </p>
+        <p v-if="openRouterModels.length" class="meta-text">
+          Choose a model here, then save summarization settings above to apply it to future summaries.
         </p>
       </div>
 
@@ -1834,6 +1983,38 @@ onUnmounted(clearWorkQueuePoll);
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.recommended-model-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.recommended-model {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg-secondary);
+}
+
+.recommended-model__heading,
+.recommended-model__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
+}
+
+.recommended-model__heading {
+  justify-content: space-between;
+}
+
+.recommended-model__id {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .prompt-version-list {
