@@ -24,6 +24,8 @@ manifest = {
 if pipeline.exists():
     manifest.update(
         api_major=1,
+        pipeline_version="briefcast-script-v1",
+        checkpoint_format="briefcast-whisperx-chunks-v1",
         pipeline_sha256=hashlib.sha256(pipeline.read_bytes()).hexdigest(),
     )
 print(json.dumps(manifest, indent=2, sort_keys=True))

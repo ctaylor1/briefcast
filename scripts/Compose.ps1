@@ -1,14 +1,16 @@
 #Requires -Version 7.0
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$EnvFile = '.env',
-    [string]$ComposeFile = 'docker-compose.yml',
+    [string]$EnvFile = $env:ENV_FILE,
+    [string]$ComposeFile = $env:COMPOSE_FILE,
     [ValidateSet('disabled', 'cpu', 'cuda', '')][string]$Runtime = '',
     [switch]$SourceBuild,
     [string]$ProjectName = '',
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]]$Arguments
 )
 $ErrorActionPreference = 'Stop'
+if (-not $EnvFile) { $EnvFile = '.env' }
+if (-not $ComposeFile) { $ComposeFile = 'docker-compose.yml' }
 Import-Module (Join-Path $PSScriptRoot 'Packaging.psm1') -Force -DisableNameChecking
 $root = Split-Path $PSScriptRoot -Parent
 Assert-ComposeVersion

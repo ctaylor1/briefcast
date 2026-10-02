@@ -5,13 +5,16 @@ param(
     [ValidateSet('app','worker')][string]$Target = 'app',
     [ValidateSet('disabled','cpu','cuda','')][string]$Runtime = '',
     [ValidateSet('major','minor','patch','')][string]$Bump = '',
-    [string]$Version = '', [string]$EnvFile = '.env', [string]$ComposeFile = 'docker-compose.yml',
-    [string]$BuildDir = 'builds', [string]$Remote = 'origin',
+    [string]$Version = '', [string]$EnvFile = $env:ENV_FILE, [string]$ComposeFile = $env:COMPOSE_FILE,
+    [string]$BuildDir = $env:BUILD_DIR, [string]$Remote = 'origin',
     [switch]$SkipTests, [switch]$SkipSmoke, [switch]$SkipVerify,
     [switch]$NoCache, [switch]$NoPush, [switch]$Force
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $EnvFile) { $EnvFile = '.env' }
+if (-not $ComposeFile) { $ComposeFile = 'docker-compose.yml' }
+if (-not $BuildDir) { $BuildDir = 'builds' }
 Import-Module (Join-Path $PSScriptRoot 'Packaging.psm1') -Force -DisableNameChecking
 $root = Split-Path $PSScriptRoot -Parent
 $config = Get-Content -LiteralPath (Join-Path $root 'release.config.json') -Raw | ConvertFrom-Json
@@ -182,10 +185,10 @@ function Invoke-Verify {
             if ($Target -eq 'worker') {
                 Invoke-Docker ($compose + @('exec','-T','whisperx','python','-c',"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/ready',timeout=5).close()"))
             } else {
-                $port = Get-DeploymentValue $EnvFile HOST_PORT 8080
-                if ($port -notmatch '^\d+$') { throw 'Invalid host port.' }
-                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -TimeoutSec 5
-                if ($response.StatusCode -ne 200) { throw 'App is not ready.' }
+                # Use the running container's auth settings without exposing credentials
+                # in arguments, logs, or an operator environment dump.
+                $probe = "import os,base64,urllib.request; r=urllib.request.Request('http://127.0.0.1:8080/'); p=os.getenv('PASSWORD',''); r.add_header('Authorization','Basic '+base64.b64encode(('briefcast:'+p).encode()).decode()) if p else None; assert urllib.request.urlopen(r,timeout=5).status==200"
+                Invoke-Docker ($compose + @('exec','-T','briefcast','python','-c',$probe))
             }
             break
         } catch {

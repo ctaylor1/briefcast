@@ -1,6 +1,6 @@
 services:
   briefcast:
-    image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
+    image: ${BRIEFCAST_IMAGE:?Set BRIEFCAST_IMAGE to a release digest or explicit development tag}
     container_name: ${BRIEFCAST_CONTAINER_NAME:-briefcast}
     env_file:
       - path: ${BRIEFCAST_ENV_FILE:-.env}

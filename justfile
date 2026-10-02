@@ -13,10 +13,7 @@
 set shell := ["bash", "-c"]
 set windows-shell := ["powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass", "-Command"]
 
-env_file := env_var_or_default("ENV_FILE", ".env")
-compose_file := env_var_or_default("COMPOSE_FILE", "docker-compose.yml")
-build_dir := env_var_or_default("BUILD_DIR", "builds")
-compose := "pwsh -NoLogo -File scripts/Compose.ps1 -EnvFile \"" + env_file + "\" -ComposeFile \"" + compose_file + "\""
+compose := "pwsh -NoLogo -File scripts/Compose.ps1"
 
 default:
     @just --list
@@ -193,16 +190,16 @@ release-publish *args="":
     just release publish {{args}}
 
 release-deploy *args="":
-    just release deploy -EnvFile "{{env_file}}" -ComposeFile "{{compose_file}}" -BuildDir "{{build_dir}}" {{args}}
+    just release deploy {{args}}
 
 release-verify *args="":
-    just release verify -EnvFile "{{env_file}}" -ComposeFile "{{compose_file}}" {{args}}
+    just release verify {{args}}
 
 release-rollback *args="":
-    just release rollback -EnvFile "{{env_file}}" -ComposeFile "{{compose_file}}" -BuildDir "{{build_dir}}" {{args}}
+    just release rollback {{args}}
 
 release-reset *args="":
-    just release reset -EnvFile "{{env_file}}" -ComposeFile "{{compose_file}}" {{args}}
+    just release reset {{args}}
 
 ship *args="":
-    just release ship -EnvFile "{{env_file}}" -ComposeFile "{{compose_file}}" -BuildDir "{{build_dir}}" {{args}}
+    just release ship {{args}}

@@ -35,7 +35,7 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
     advanced_file = tmp_path / "advanced.env"
     if advanced:
         advanced_file.write_text("WHISPERX_DIARIZATION=true\nWHISPERX_MAX_CONCURRENCY=3\n")
-    env_file = tmp_path / "fixture config.env"
+    env_file = tmp_path / "fixture $literal config.env"
     env_file.write_text(
         f"WHISPERX_RUNTIME={runtime}\nWHISPERX_ENV_FILE={advanced_file.as_posix()}\n"
         "DATABASE_URL=sqlite:///config/fixture.db\nLLM_ENABLED=false\n"
@@ -67,11 +67,10 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
         }
     }
     source_args = ["-SourceBuild"] if source_build else []
+    env["ENV_FILE"] = str(env_file)
     output = run_ps(
         "-File",
         ROOT / "scripts/Compose.ps1",
-        "-EnvFile",
-        env_file,
         "-Runtime",
         runtime,
         *source_args,

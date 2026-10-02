@@ -83,4 +83,3 @@ COPY --from=frontend-builder /frontend/dist ./frontend/dist
 EXPOSE 8080
 
 ENTRYPOINT ["./app"]
-

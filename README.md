@@ -182,9 +182,10 @@ PASSWORD=
 DATABASE_URL=sqlite:///config/briefcast.db
 ```
 
-Start the app:
+Set `BRIEFCAST_IMAGE` to a published release digest, or build the example development tag before starting:
 
 ```bash
+just docker-build image=briefcast:local
 just up
 ```
 
