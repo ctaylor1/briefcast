@@ -1,0 +1,69 @@
+services:
+  briefcast:
+    image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
+    container_name: ${BRIEFCAST_CONTAINER_NAME:-briefcast}
+    env_file:
+      # Keep short syntax for compatibility with older Docker Compose parsers (for example Synology).
+      - .env
+      - ${WHISPERX_ENV_FILE:-.env.whisperx}
+    environment:
+      - CONFIG=/config
+      - DATA=/assets
+      - CHECK_FREQUENCY=${CHECK_FREQUENCY:-15}
+      - PASSWORD=${PASSWORD:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///config/briefcast.db}
+      - DB_DRIVER=${DB_DRIVER:-}
+      - DATABASE_DRIVER=${DATABASE_DRIVER:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_OUTPUT=${LOG_OUTPUT}
+      - LOG_FILE_MAX_SIZE_MB=${LOG_FILE_MAX_SIZE_MB:-50}
+      - LOG_FILE_MAX_BACKUPS=${LOG_FILE_MAX_BACKUPS:-7}
+      - LOG_FILE_MAX_AGE_DAYS=${LOG_FILE_MAX_AGE_DAYS:-14}
+      - LOG_FILE_COMPRESS=${LOG_FILE_COMPRESS:-true}
+      - LOG_RUN_TIMESTAMP=${LOG_RUN_TIMESTAMP:-}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - WHISPERX_ENABLED=${WHISPERX_ENABLED:-false}
+      - WHISPERX_DIARIZATION=false
+      - WHISPERX_CHECK_FREQUENCY=${WHISPERX_CHECK_FREQUENCY:-30}
+      - WHISPERX_MAX_CONCURRENCY=4
+      - WHISPERX_MAX_ITEMS=25
+      - LLM_ENABLED=${LLM_ENABLED:-false}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-120}
+      - LLM_SUMMARIZATION_PROMPT=${LLM_SUMMARIZATION_PROMPT:-}
+      # For an external postgres use:
+      # - DB_DRIVER=postgres
+      # - DATABASE_URL=postgres://operator:${BRIEFCAST_DB_PASSWORD}@192.168.1.2:5432/briefcast?sslmode=disable
+      # For local postgres service below use:
+      # - DATABASE_URL=postgres://briefcast:briefcast@postgres:5432/briefcast?sslmode=disable
+      # - DB_DRIVER=postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${HOST_CONFIG_DIR:-./config}:/config
+      - ${HOST_ASSETS_DIR:-./assets}:/assets
+      - ${HOST_LOGS_DIR:-./logs}:/logs
+    ports:
+      - ${HOST_PORT:-8080}:8080
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      - POSTGRES_USER=briefcast
+      - POSTGRES_PASSWORD=briefcast
+      - POSTGRES_DB=briefcast
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -1,0 +1,17 @@
+{
+  "api_major": 1,
+  "worker_version_file": "docker/whisperx/VERSION",
+  "baseline_source_image": "sha256:a7542b94500a5ac7e00271451ef2a51db233bd5e2bec92c615b240302b06d052",
+  "python": "3.12.13",
+  "whisperx": "3.8.6",
+  "ctranslate2": "4.8.1",
+  "faster_whisper": "1.2.1",
+  "pyannote_audio": "4.0.7",
+  "cpu": {"torch": "2.8.0+cpu", "torchaudio": "2.8.0+cpu", "torchcodec": "0.7.0", "compute_type": "int8"},
+  "cu128": {"torch": "2.8.0+cu128", "torchaudio": "2.8.0+cu128", "torchcodec": "0.7.0+cu128", "compute_type": "float16"},
+  "models": [{"repository": "Systran/faster-whisper-medium.en", "cached_revision": "a29b04bd15381511a9af671baec01072039215e3"}],
+  "model_policy": "Reuse the baseline cache; offline mode prevents mutable upstream refs changing weights. Alignment/VAD/diarization inventory and acceptance remain Stage G gates.",
+  "tested_hardware": [],
+  "checkpoint_schema": 1,
+  "runtime_manifest": "/opt/briefcast/runtime.json"
+}

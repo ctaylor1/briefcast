@@ -1,0 +1,82 @@
+services:
+  briefcast:
+    environment:
+      WHISPERX_ENABLED: ${WHISPERX_ENABLED:-true}
+      WHISPERX_BACKEND: http
+      WHISPERX_SERVICE_URL: http://whisperx:8090
+      WHISPERX_SERVICE_TOKEN_FILE: /run/secrets/whisperx-service-token
+      WHISPERX_ENGINE_PROFILE: ${WHISPERX_ENGINE_PROFILE:-baseline-wx3.8.6-cpu-v1}
+    volumes:
+      - type: bind
+        source: ${HOST_WHISPERX_TOKEN_FILE:?Set HOST_WHISPERX_TOKEN_FILE to a private token file}
+        target: /run/secrets/whisperx-service-token
+        read_only: true
+        bind:
+          create_host_path: false
+
+  whisperx:
+    image: ${WHISPERX_IMAGE:?Set WHISPERX_IMAGE to an immutable CPU worker reference}
+    user: ${WHISPERX_UID:-1000}:${WHISPERX_GID:-1000}
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=536870912,mode=1777
+    stop_grace_period: 210s
+    restart: unless-stopped
+    environment:
+      HF_HUB_OFFLINE: ${WHISPERX_OFFLINE:-true}
+      TRANSFORMERS_OFFLINE: ${WHISPERX_OFFLINE:-true}
+      HF_DATASETS_OFFLINE: ${WHISPERX_OFFLINE:-true}
+    command:
+      - serve
+      - --token-file=/run/secrets/whisperx-service-token
+      - --hf-token-file=/run/secrets/whisperx-hf-token
+      - --profile=${WHISPERX_ENGINE_PROFILE:-baseline-wx3.8.6-cpu-v1}
+      - --device=cpu
+      - --compute-type=int8
+      - --batch-size=${WHISPERX_WORKER_BATCH_SIZE:-16}
+      - --max-running=${WHISPERX_WORKER_MAX_RUNNING:-1}
+      - --max-waiting=${WHISPERX_WORKER_MAX_WAITING:-4}
+      - --execution-timeout=${WHISPERX_WORKER_TIMEOUT_SECONDS:-21600}
+      - --result-limit=${WHISPERX_WORKER_RESULT_LIMIT_BYTES:-67108864}
+      - --min-free-bytes=${WHISPERX_WORKER_MIN_FREE_BYTES:-536870912}
+      - --models=${WHISPERX_WORKER_MODELS:-medium.en}
+      - --diarization-models=${WHISPERX_WORKER_DIARIZATION_MODELS:-pyannote/speaker-diarization-3.1}
+    volumes:
+      - type: bind
+        source: ${HOST_ASSETS_DIR:-./assets}
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOST_WHISPERX_STATE_DIR:-./worker-state}
+        target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOST_WHISPERX_CACHE_DIR:-./worker-cache}
+        target: /cache
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOST_WHISPERX_TOKEN_FILE:?Set HOST_WHISPERX_TOKEN_FILE}
+        target: /run/secrets/whisperx-service-token
+        read_only: true
+        bind:
+          create_host_path: false
+      # An empty file is valid when gated model access is not used.
+      - type: bind
+        source: ${HOST_WHISPERX_HF_TOKEN_FILE:?Set HOST_WHISPERX_HF_TOKEN_FILE to a private file (may be empty)}
+        target: /run/secrets/whisperx-hf-token
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/ready', timeout=5).close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

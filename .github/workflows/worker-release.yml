@@ -1,0 +1,88 @@
+name: worker-release
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and validate without publishing
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: worker-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  worker:
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cpu, cu128]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve independent worker version
+        id: worker
+        shell: pwsh
+        run: |
+          $version = (Get-Content docker/whisperx/VERSION -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid worker version' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Build candidate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/whisperx/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: briefcast-whisperx:test
+          build-args: |
+            RUNTIME=${{ matrix.variant }}
+            WORKER_VERSION=${{ steps.worker.outputs.version }}
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=worker-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=worker-${{ matrix.variant }}
+      - name: Check candidate contents
+        shell: pwsh
+        run: ./scripts/CheckImage.ps1 -Image briefcast-whisperx:test -Kind '${{ matrix.variant }}'
+      - uses: docker/login-action@v3
+        if: ${{ !inputs.dry_run }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish worker only
+        id: published
+        if: ${{ !inputs.dry_run }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/whisperx/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository }}-whisperx:worker-${{ steps.worker.outputs.version }}-wx3.8.6-${{ matrix.variant }}
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            RUNTIME=${{ matrix.variant }}
+            WORKER_VERSION=${{ steps.worker.outputs.version }}
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=worker-${{ matrix.variant }}
+      - name: Record immutable worker reference
+        if: ${{ !inputs.dry_run }}
+        shell: pwsh
+        env:
+          IMAGE_DIGEST: ${{ steps.published.outputs.digest }}
+          WORKER_VERSION: ${{ steps.worker.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          @{version=$env:WORKER_VERSION; variant=$env:VARIANT; image="ghcr.io/$($env:GITHUB_REPOSITORY)-whisperx@$($env:IMAGE_DIGEST)"; source_revision=$env:GITHUB_SHA} | ConvertTo-Json | Set-Content worker-image.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          name: worker-${{ matrix.variant }}-manifest
+          path: worker-image.json

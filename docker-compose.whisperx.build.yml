@@ -1,0 +1,9 @@
+services:
+  whisperx:
+    build:
+      context: .
+      dockerfile: docker/whisperx/Dockerfile
+      args:
+        WORKER_VERSION: ${WORKER_VERSION:-dev}
+        SOURCE_REVISION: ${SOURCE_REVISION:-unknown}
+        RUNTIME: ${WHISPERX_BUILD_RUNTIME:-cpu}

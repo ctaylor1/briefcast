@@ -1,0 +1,5 @@
+{
+  "disabled": {"files": []},
+  "cpu": {"files": ["docker-compose.whisperx.yml"]},
+  "cuda": {"files": ["docker-compose.whisperx.yml", "docker-compose.whisperx.gpu.yml"]}
+}

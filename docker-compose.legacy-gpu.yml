@@ -3,6 +3,7 @@ services:
     # Local GPU override. Docker Compose auto-loads this file when present.
     build:
       context: .
+      dockerfile: docker/legacy/Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
         TORCH_INDEX_URL: https://download.pytorch.org/whl/cu128

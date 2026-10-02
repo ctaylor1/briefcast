@@ -267,17 +267,58 @@ jobs:
             type=raw,value=${{ steps.compute_version.outputs.version }}
             type=raw,value=latest
 
-      - name: Build and publish container image
+      - name: Build lean app candidate
         uses: docker/build-push-action@v6
         with:
           context: .
-          # WhisperX is required in all published images and currently supported on amd64 builds.
+          platforms: linux/amd64
+          load: true
+          tags: briefcast:release-candidate
+          build-args: |
+            APP_VERSION=${{ steps.compute_version.outputs.version }}
+            SOURCE_REVISION=${{ github.sha }}
+          cache-to: type=gha,mode=max,scope=app-release
+          cache-from: type=gha,scope=app-release
+
+      - name: Check lean app contents
+        shell: pwsh
+        run: ./scripts/CheckImage.ps1 -Image briefcast:release-candidate -Kind app
+
+      - name: Build and publish container image
+        id: app_image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
           platforms: linux/amd64
           build-args: |
-            INSTALL_WHISPERX=true
+            APP_VERSION=${{ steps.compute_version.outputs.version }}
+            SOURCE_REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
           push: ${{ !inputs.dry_run }}
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
+          cache-from: type=gha,scope=app-release
+
+      - name: Record immutable app release reference
+        if: ${{ !inputs.dry_run }}
+        env:
+          IMAGE_DIGEST: ${{ steps.app_image.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          ref = f"ghcr.io/{os.environ['GITHUB_REPOSITORY']}@{os.environ['IMAGE_DIGEST']}"
+          Path('app-image.json').write_text(json.dumps({'version': os.environ['RELEASE_VERSION'], 'image': ref, 'source_revision': os.environ['GITHUB_SHA']}, indent=2))
+          PY
+
+      - name: Upload app image manifest
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-image-manifest
+          path: app-image.json
 
       - name: Upload built distributions
         uses: actions/upload-artifact@v4

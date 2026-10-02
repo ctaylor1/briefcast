@@ -6,7 +6,7 @@ Briefcast is a self-hosted podcast downloader and library manager with a Go API,
 - Frontend: Vue 3, Vite, TypeScript, Tailwind
 - Automation: feed refresh, downloads, artwork sync, file checks, backups, retention cleanup, transcription
 - Media layout: one mounted `/assets` tree for audio, images, transcripts, and summaries
-- Transcription: WhisperX support in Docker builds, runtime enabled by configuration
+- Transcription: independent CPU/CUDA WhisperX worker, enabled by configuration
 - Summaries: OpenAI-compatible LLM summarization from episode transcripts
 
 ## Table Of Contents
@@ -106,7 +106,7 @@ ENV_FILE=.env COMPOSE_FILE=docker-compose.yml just up
 - `uv` for Python tooling: https://docs.astral.sh/uv/
 - Docker, if running the containerized app
 
-The Docker image is the simplest runtime path because it includes the app server and Python helper environment. WhisperX remains opt-in at runtime.
+The app image includes the server and feedparser/mutagen helpers. Optional transcription runs in a separately versioned worker image. PowerShell 7 and Docker Compose 2.24 or newer are required for the command wrappers.
 
 ### Install Dependencies
 
@@ -199,34 +199,17 @@ just down
 
 ### Build Local Code Into Docker
 
-`docker-compose.yml` uses an `image:` reference. It does not contain a compose `build:` block, so `just rebuild` alone will not rebuild the image from your local source.
-
-After code or `.env` changes, use:
-
-```bash
-just docker-build image=briefcast:latest
-just down
-just up
-```
-
-If you set a different `BRIEFCAST_IMAGE` in `.env`, build that same image tag:
+Ordinary `just up` uses image references. `just rebuild` explicitly adds the source-build layers. Select the same runtime for lifecycle and release commands using `WHISPERX_RUNTIME=disabled|cpu|cuda` in the primary env file.
 
 ```bash
 just docker-build image=briefcast:local
-```
-
-Then set:
-
-```bash
-BRIEFCAST_IMAGE=briefcast:local
-```
-
-and restart with:
-
-```bash
-just down
+# Set BRIEFCAST_IMAGE=briefcast:local in the development env file.
 just up
+# Explicitly build selected services from source:
+just rebuild service=briefcast
 ```
+
+Use isolated data and container names for development. Source builds never deploy automatically.
 
 ### Pull Published Images
 
@@ -268,29 +251,19 @@ docker run -d \
   ghcr.io/ctaylor1/briefcast:1.9.4
 ```
 
-### Local WhisperX Image Tar
+### Independent WhisperX Images
 
-This is useful for NAS deployments that load images from a tar instead of pulling from GHCR.
-
-```bash
-docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true -t briefcast:with-whisperx --load .
-docker image save -o builds/briefcast_with_whisperx.tar briefcast:with-whisperx
-```
-
-Copy the tar to the NAS, load it, and set:
+The default stack disables transcription. To use a worker, set `WHISPERX_RUNTIME=cpu` or `cuda`, `WHISPERX_ENABLED=true`, and an immutable `WHISPERX_IMAGE` reference. Keep `WHISPERX_DIARIZATION=false` and `WHISPERX_MAX_CONCURRENCY=1` to preserve the production baseline at cutover. Create the state/cache directories with ownership matching `WHISPERX_UID/GID`. Provide a private service token file (at least 32 characters) and an HF token file (may be empty). Copy the preserved model caches before using the default offline mode. See [packaging details](docker/whisperx/README.md).
 
 ```bash
-BRIEFCAST_IMAGE=briefcast:with-whisperx
-WHISPERX_ENABLED=true
-WHISPERX_CHECK_FREQUENCY=30
-WHISPERX_MAX_CONCURRENCY=1
+# CPU and CUDA archives have an independent worker version.
+just release-build -Target worker -Runtime cpu -Version 1.0.0
+just release-build -Target worker -Runtime cuda -Version 1.0.0
+# Deploy uses the checksum-verified archive manifest and replaces only whisperx.
+just release-deploy -Target worker -Runtime cpu -Version 1.0.0
 ```
 
-Restart:
-
-```bash
-docker compose --env-file .env up -d --force-recreate
-```
+The new Compose files do not deploy the split to production automatically. Complete the recovery and acceptance gates in [the execution plan](docs/whisperx-separation/EXECUTION_PLAN.md) before cutover. The former monolith definitions are preserved as `docker-compose.legacy.yml` and `docker-compose.legacy-gpu.yml`; the implicit GPU override has been retired.
 
 ## Storage Layout
 
@@ -417,7 +390,7 @@ ID3 extraction:
 
 ### WhisperX
 
-WhisperX dependencies are included in Docker builds by default for `linux/amd64`. Transcription is still controlled by runtime configuration.
+The lean app uses `WHISPERX_BACKEND=http`. CPU/CUDA worker images support Linux amd64 and retain baseline WhisperX 3.8.6. Local interpreter/script settings below apply only to transitional monolith/source runs; device, compute, batch size and execution capacity in HTTP mode belong to the worker.
 
 - `WHISPERX_ENABLED`: default `false`
 - `WHISPERX_PYTHON`: interpreter path
@@ -434,11 +407,11 @@ WhisperX dependencies are included in Docker builds by default for `linux/amd64`
 - `WHISPERX_INITIAL_PROMPT`: optional prompt
 - `WHISPERX_VAD_METHOD`: default `pyannote`; falls back to `silero` if pyannote VAD fails
 - `WHISPERX_ALIGN`: default `true`
-- `WHISPERX_DIARIZATION`: default `true`
+- `WHISPERX_DIARIZATION`: Compose default `false` (source/local default `true`)
 - `WHISPERX_DIARIZATION_MODEL`: default `pyannote/speaker-diarization-3.1`
 - `WHISPERX_MIN_SPEAKERS`: default `2`
 - `WHISPERX_MAX_SPEAKERS`: default `2`
-- `WHISPERX_HF_TOKEN`: Hugging Face token for pyannote diarization
+- `HOST_WHISPERX_HF_TOKEN_FILE`: private worker token file for gated Hugging Face models
 - `WHISPERX_MAX_CONCURRENCY`: default `1`
 - `WHISPERX_MAX_ITEMS`: default `0`, no limit
 - `WHISPERX_RETRY_FAILED`: default `true`
@@ -453,7 +426,7 @@ WhisperX dependencies are included in Docker builds by default for `linux/amd64`
 
 When diarization is enabled, Briefcast forces WhisperX worker count to `1` for host stability. Progress checkpoints are persisted so interrupted transcriptions can resume from the last completed chunk.
 
-Advanced WhisperX overrides can live in `.env.whisperx`; `docker-compose.yml` loads it through `WHISPERX_ENV_FILE`.
+Advanced app overrides can live in optional `.env.whisperx`. The shared Compose selector loads it after the primary env file, so overrides participate in interpolation. Worker containers receive only explicitly mapped runtime settings and secret-file mounts.
 
 ### LLM Summaries
 
@@ -589,7 +562,7 @@ uv run pip-audit
 
 ## Release Basics
 
-The package version is defined in `pyproject.toml`. Current version: `1.9.4`.
+The app version is defined in `pyproject.toml`; the worker version is independent in `docker/whisperx/VERSION`. `-Target worker -Runtime cpu|cuda` selects a worker build/release. Artifact manifests record immutable image IDs, source revision, archive checksum and variant. Deploy/verify/rollback all use the same explicit Compose selection and target only the chosen service. Worker replacement drains acceptance and requires an empty queue; retain a quiescent state backup and verify compatibility before resuming.
 
 Release helpers:
 
@@ -622,7 +595,7 @@ gh workflow run release.yml --ref <default-branch> -f bump=patch -f dry_run=true
 Manual image publish:
 
 ```bash
-docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
+docker buildx build --platform linux/amd64 --build-arg APP_VERSION=1.9.4 \
   -t ghcr.io/ctaylor1/briefcast:1.9.4 \
   -t ghcr.io/ctaylor1/briefcast:latest \
   --push .
@@ -630,31 +603,7 @@ docker buildx build --platform linux/amd64 --build-arg INSTALL_WHISPERX=true \
 
 ## Reset Runtime Data
 
-Use `scripts/reset_app_data.sh` to wipe transactional runtime data while preserving repository files and local configuration.
-
-```bash
-./scripts/reset_app_data.sh --env-file /volume1/docker/podcasts-briefcast/.env --yes
-```
-
-It clears:
-
-- Database records or the SQLite database file
-- Downloaded assets
-- Logs
-- Generated backups
-
-It keeps:
-
-- `.env`
-- compose files
-- repository code
-- other configuration files
-
-Options:
-
-- `--no-start`: do not restart services after reset
-- `--yes`: skip confirmation prompt
-- `--env-file <path>`: select a runtime env file
+Destructive reset (`RELEASE.ps1 reset`, `just clean`, and the former shell reset helper) is disabled for the split stack. The old commands can erase media referenced by durable worker jobs. Use the reviewed recovery/restore procedures in [the execution plan](docs/whisperx-separation/EXECUTION_PLAN.md); Stage G supplies and rehearses those tools.
 
 ## Migration Notes
 

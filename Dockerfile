@@ -1,24 +1,12 @@
-ARG GO_VERSION=1.26.0
-ARG NODE_VERSION=24.12.0
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-ARG APP_VERSION=dev
-
-FROM node:${NODE_VERSION}-alpine AS frontend-builder
+FROM node:24.12.0-alpine@sha256:c921b97d4b74f51744057454b306b418cf693865e73b8100559189605f6955b8 AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend ./
 RUN npm run build
 
-FROM golang:${GO_VERSION} AS builder
-ARG APP_VERSION=dev
+FROM golang:1.26.0@sha256:fb612b7831d53a89cbc0aaa7855b69ad7b0caf603715860cf538df854d047b84 AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /api
 WORKDIR /api
 
 COPY go.mod .
@@ -26,45 +14,23 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-RUN go build -ldflags "-X main.appVersion=${APP_VERSION}" -o ./app ./main.go
-
-FROM python:3.12-slim
-ARG TARGETARCH
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-ARG TORCH_VERSION=2.8.0
-ARG TORCH_BUILD=+cpu
-ARG INSTALL_WHISPERX=true
 ARG APP_VERSION=dev
+RUN CGO_ENABLED=1 go build -trimpath -ldflags "-X main.appVersion=${APP_VERSION}" -o ./app ./main.go
 
-LABEL org.opencontainers.image.source="https://github.com/ctaylor1/briefcast"
+FROM python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
 
 ENV CONFIG=/config
 ENV DATA=/assets
-ENV BRIEFCAST_VERSION=${APP_VERSION}
-ENV UID=998
-ENV PID=100
 ENV GIN_MODE=release
 VOLUME ["/config", "/assets"]
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1
+COPY docker/app/requirements.lock /opt/briefcast/requirements.lock
+COPY docker/build-requirements.lock /opt/briefcast/build-requirements.lock
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir feedparser mutagen && \
-    if [ "${INSTALL_WHISPERX}" != "true" ]; then \
-        echo "INSTALL_WHISPERX must be true; WhisperX is required for all builds." >&2; \
-        exit 1; \
-    fi && \
-    if [ "${TARGETARCH}" != "amd64" ]; then \
-        echo "WhisperX-enabled image build is currently supported only for linux/amd64 (got ${TARGETARCH})" >&2; \
-        exit 1; \
-    fi && \
-    echo "torch==${TORCH_VERSION}${TORCH_BUILD}" > /tmp/torch-constraints.txt && \
-    echo "torchaudio==${TORCH_VERSION}${TORCH_BUILD}" >> /tmp/torch-constraints.txt && \
-    /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} -c /tmp/torch-constraints.txt torch torchaudio && \
-    /opt/venv/bin/pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} --extra-index-url https://pypi.org/simple -c /tmp/torch-constraints.txt whisperx && \
-    rm -f /tmp/torch-constraints.txt
+    /opt/venv/bin/pip install --no-cache-dir --require-hashes --no-deps -r /opt/briefcast/build-requirements.lock && \
+    /opt/venv/bin/pip install --no-cache-dir --no-build-isolation --require-hashes --no-deps -r /opt/briefcast/requirements.lock && \
+    /opt/venv/bin/pip uninstall -y setuptools wheel && \
+    /opt/venv/bin/pip check
 RUN mkdir -p /config; \
     mkdir -p /assets; \
     mkdir -p /api
@@ -76,9 +42,17 @@ WORKDIR /api
 ENV PATH="/opt/venv/bin:${PATH}"
 COPY --from=builder /api/app .
 COPY webassets ./webassets
-COPY scripts ./scripts
-COPY src ./src
+COPY scripts/feedparser_parse.py scripts/mutagen_id3_extract.py ./scripts/
+COPY src/briefcast_tools ./src/briefcast_tools
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
+COPY docker/runtime_manifest.py /opt/briefcast/runtime_manifest.py
+ARG APP_VERSION=dev
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/ctaylor1/briefcast" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.version="${APP_VERSION}"
+ENV BRIEFCAST_VERSION=${APP_VERSION}
+RUN python /opt/briefcast/runtime_manifest.py app "${APP_VERSION}" "${SOURCE_REVISION}" > /opt/briefcast/runtime.json
 
 EXPOSE 8080
 

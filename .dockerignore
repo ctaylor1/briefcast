@@ -26,6 +26,9 @@ briefcast
 *.trace
 
 docker-compose.override.yml
+worker-state
+worker-cache
+secrets
 
 # Runtime/state directories should never be part of image build context.
 config/

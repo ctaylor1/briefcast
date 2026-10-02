@@ -3,9 +3,10 @@ services:
     image: ${BRIEFCAST_IMAGE:-ghcr.io/ctaylor1/briefcast:latest}
     container_name: ${BRIEFCAST_CONTAINER_NAME:-briefcast}
     env_file:
-      # Keep short syntax for compatibility with older Docker Compose parsers (for example Synology).
-      - .env
-      - ${WHISPERX_ENV_FILE:-.env.whisperx}
+      - path: ${BRIEFCAST_ENV_FILE:-.env}
+        required: true
+      - path: ${WHISPERX_ENV_FILE:-.env.whisperx}
+        required: false
     environment:
       - CONFIG=/config
       - DATA=/assets
@@ -16,7 +17,7 @@ services:
       - DATABASE_DRIVER=${DATABASE_DRIVER:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FORMAT=${LOG_FORMAT:-json}
-      - LOG_OUTPUT=${LOG_OUTPUT}
+      - LOG_OUTPUT=${LOG_OUTPUT:-both}
       - LOG_FILE_MAX_SIZE_MB=${LOG_FILE_MAX_SIZE_MB:-50}
       - LOG_FILE_MAX_BACKUPS=${LOG_FILE_MAX_BACKUPS:-7}
       - LOG_FILE_MAX_AGE_DAYS=${LOG_FILE_MAX_AGE_DAYS:-14}
@@ -25,10 +26,11 @@ services:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - WHISPERX_ENABLED=${WHISPERX_ENABLED:-false}
-      - WHISPERX_DIARIZATION=false
+      - WHISPERX_BACKEND=http
+      - WHISPERX_DIARIZATION=${WHISPERX_DIARIZATION:-false}
       - WHISPERX_CHECK_FREQUENCY=${WHISPERX_CHECK_FREQUENCY:-30}
-      - WHISPERX_MAX_CONCURRENCY=4
-      - WHISPERX_MAX_ITEMS=25
+      - WHISPERX_MAX_CONCURRENCY=${WHISPERX_MAX_CONCURRENCY:-1}
+      - WHISPERX_MAX_ITEMS=${WHISPERX_MAX_ITEMS:-25}
       - LLM_ENABLED=${LLM_ENABLED:-false}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_API_KEY=${LLM_API_KEY:-}

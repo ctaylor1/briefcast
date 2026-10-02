@@ -1,0 +1,8 @@
+services:
+  briefcast:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        SOURCE_REVISION: ${SOURCE_REVISION:-unknown}

@@ -16,7 +16,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass",
 env_file := env_var_or_default("ENV_FILE", ".env")
 compose_file := env_var_or_default("COMPOSE_FILE", "docker-compose.yml")
 build_dir := env_var_or_default("BUILD_DIR", "builds")
-compose := "docker compose --env-file " + env_file + " -f " + compose_file
+compose := "pwsh -NoLogo -File scripts/Compose.ps1 -EnvFile \"" + env_file + "\" -ComposeFile \"" + compose_file + "\""
 
 default:
     @just --list
@@ -78,7 +78,7 @@ restart service="":
     {{compose}} restart {{service}}
 
 rebuild service="":
-    {{compose}} up -d --build {{service}}
+    {{compose}} -SourceBuild up -d --build {{service}}
 
 ps:
     {{compose}} ps
@@ -92,15 +92,15 @@ pull:
 docker-build image="briefcast:local":
     docker build -t {{image}} .
 
-docker-build-whisperx image="briefcast:with-whisperx":
-    docker build --build-arg INSTALL_WHISPERX=true -t {{image}} .
+docker-build-whisperx image="briefcast-whisperx:local" runtime="cpu":
+    docker build -f docker/whisperx/Dockerfile --build-arg RUNTIME={{runtime}} -t {{image}} .
 
 shell service="briefcast":
     {{compose}} exec {{service}} sh
 
-# DANGEROUS: stop stack and remove volumes.
+# Destructive reset is blocked until the split recovery procedure is ready.
 clean:
-    {{compose}} down -v --remove-orphans
+    pwsh -NoLogo -File RELEASE.ps1 reset
 
 # ---------------------------------------------------------------------------
 # Testing and quality
@@ -169,7 +169,7 @@ ci-full:
 
 [windows]
 release-help:
-    powershell.exe -NoLogo -ExecutionPolicy Bypass -File .\RELEASE.ps1
+    pwsh -NoLogo -File .\RELEASE.ps1
 
 [unix]
 release-help:
@@ -177,7 +177,7 @@ release-help:
 
 [windows]
 release stage *args="":
-    powershell.exe -NoLogo -ExecutionPolicy Bypass -File .\RELEASE.ps1 {{stage}} {{args}}
+    pwsh -NoLogo -File .\RELEASE.ps1 {{stage}} {{args}}
 
 [unix]
 release stage *args="":

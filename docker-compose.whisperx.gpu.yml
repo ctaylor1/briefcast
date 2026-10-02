@@ -1,0 +1,28 @@
+services:
+  briefcast:
+    environment:
+      WHISPERX_ENGINE_PROFILE: ${WHISPERX_ENGINE_PROFILE:-baseline-wx3.8.6-cu128-v1}
+  whisperx:
+    image: ${WHISPERX_IMAGE:?Set WHISPERX_IMAGE to an immutable CUDA worker reference}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - serve
+      - --token-file=/run/secrets/whisperx-service-token
+      - --hf-token-file=/run/secrets/whisperx-hf-token
+      - --profile=${WHISPERX_ENGINE_PROFILE:-baseline-wx3.8.6-cu128-v1}
+      - --device=cuda
+      - --compute-type=float16
+      - --batch-size=${WHISPERX_WORKER_BATCH_SIZE:-16}
+      - --max-running=${WHISPERX_WORKER_MAX_RUNNING:-1}
+      - --max-waiting=${WHISPERX_WORKER_MAX_WAITING:-4}
+      - --execution-timeout=${WHISPERX_WORKER_TIMEOUT_SECONDS:-21600}
+      - --result-limit=${WHISPERX_WORKER_RESULT_LIMIT_BYTES:-67108864}
+      - --min-free-bytes=${WHISPERX_WORKER_MIN_FREE_BYTES:-536870912}
+      - --models=${WHISPERX_WORKER_MODELS:-medium.en}
+      - --diarization-models=${WHISPERX_WORKER_DIARIZATION_MODELS:-pyannote/speaker-diarization-3.1}
