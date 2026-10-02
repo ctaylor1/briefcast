@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 AUDIO_SAMPLE_RATE = 16000
 
 
+def worker_mode():
+    return os.getenv("WHISPERX_WORKER_MODE", "") == "1"
+
+
+class WorkerQuiesced(RuntimeError):
+    """The supervisor requested a stop after a durably completed chunk."""
+
+
 def default_config():
     return {
         "model": "medium.en",
@@ -180,8 +188,17 @@ def make_checkpoint(completed_seconds, total_seconds, language, segments_file=""
 def write_json_file(path, payload):
     tmp_path = f"{path}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False)
+        json.dump(payload, handle, ensure_ascii=False, allow_nan=not worker_mode())
+        if worker_mode():
+            handle.flush()
+            os.fsync(handle.fileno())
     os.replace(tmp_path, path)
+    if worker_mode() and os.name != "nt":
+        descriptor = os.open(str(Path(path).parent), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def read_json_file(path):
@@ -215,6 +232,8 @@ def persist_segments_checkpoint(
         "total_seconds": float(max(total_seconds, 0.0)),
         "language": language or "",
     }
+    if worker_mode():
+        payload["worker"] = json.loads(os.environ["WHISPERX_WORKER_CONTEXT"])
     try:
         write_json_file(segments_file, payload)
     except OSError as exc:
@@ -222,6 +241,8 @@ def persist_segments_checkpoint(
             "failed to persist whisperx resume segments",
             extra=log_extra({"path": segments_file, "error": compact_error(exc)}),
         )
+        if worker_mode():
+            raise
 
 
 def emit_progress(
@@ -254,6 +275,8 @@ def emit_progress(
             "failed to persist whisperx progress update",
             extra=log_extra({"stage": stage, "error": compact_error(exc)}),
         )
+        if worker_mode():
+            raise
 
 
 def shift_segment_timing(segment, offset_seconds):
@@ -681,6 +704,8 @@ def main():
 
                 if total_seconds <= 0:
                     break
+                if worker_mode() and os.path.exists(os.getenv("WHISPERX_STOP_FILE", "")):
+                    raise WorkerQuiesced("supervisor requested chunk-boundary stop")
 
         pre_align_segments = [strip_word_payload(segment) for segment in merged_segments]
         result = {
@@ -782,7 +807,7 @@ def main():
                 checkpoint_file,
             ),
         )
-        if checkpoint_file:
+        if checkpoint_file and not worker_mode():
             try:
                 os.remove(checkpoint_file)
             except FileNotFoundError:

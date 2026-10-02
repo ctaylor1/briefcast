@@ -139,6 +139,7 @@ func (b localTranscriptionBackend) Transcribe(ctx context.Context, audioPath, re
 	cmd.Env = append(
 		os.Environ(),
 		"WHISPERX_CONFIG_JSON="+string(payload),
+		"WHISPERX_WORKER_MODE=0",
 		whisperxProgressFileEnv+"="+progressPath,
 	)
 	if segmentsPath != "" {
