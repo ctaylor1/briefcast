@@ -70,7 +70,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/JobStatus'
         '200':
-          description: Exact-byte replay of an accepted request.
+          description: Replay of the same canonical JSON request.
           content:
             application/json:
               schema:

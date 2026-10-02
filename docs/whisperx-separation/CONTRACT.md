@@ -4,7 +4,7 @@
 
 ## Identity, acceptance and state
 
-- The app creates UUIDs for deployment, episode, generation and job. It persists the exact UTF-8 PUT request bytes, job UUID, options snapshot and source fingerprint in its versioned checkpoint envelope before making the first request. `request_digest` is lower-case SHA-256 of those exact bytes. A lost response is retried with that UUID and those bytes, including the same options and profile. Reformatting an otherwise equivalent JSON request under an existing UUID is a conflict. The server rejects duplicate object keys, nonfinite numbers, trailing JSON, unknown fields and unsupported options before acceptance.
+- The app creates UUIDs for deployment, episode, generation and job. It persists canonical UTF-8 PUT request JSON, job UUID, options snapshot and source fingerprint in its versioned checkpoint envelope before making the first request. `request_digest` is lower-case SHA-256 of the request body serialized as canonical JSON per RFC 8785. A lost response is retried with that UUID and the same canonical request. JSON whitespace or object key order does not change identity; a different parsed request under an existing UUID is a conflict. The server rejects duplicate object keys, nonfinite numbers, trailing JSON, unknown fields and unsupported options before acceptance.
 - `options_sha256` is lower-case SHA-256 of the request's `options` object serialized as canonical JSON per RFC 8785. This fingerprint identifies option compatibility independently of whitespace and request identity. `input.sha256` is a streaming hash of the audio bytes, not of the relative path.
 - The worker validates authentication, contract major, option/profile support, input path and declared size/hash, resume compatibility, execution prerequisites and capacity before committing a submission. It atomically commits the UUID, request digest, validated request and initial `queued` status. Only then may it return 201. A matching replay returns 200 and the current persisted status. A different digest returns 409. A full queue or drain returns 429/503 without acceptance. On uncertain transport failure, the app asks for the same UUID before creating any new attempt.
 - State transitions are `queued -> running -> succeeded | failed | cancelled`, with `running -> cancelling -> cancelled` after the process group is reaped. A recovered `running` attempt may return to `queued` after verified checkpoints. Terminal states are immutable. Cancellation and success race through one durable transaction. `revision` starts at 1 and increases for every persisted state/progress change. Percent and completed seconds cannot decrease within one attempt; a new attempt has a new UUID. Status `percent: 100` alone is not application success.
@@ -47,15 +47,15 @@ The app's existing `PodcastItem.TranscriptCheckpointJSON` text column holds a ve
   "engine_profile": "baseline-whisperx-3.8.6-cuda128",
   "input_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "options_sha256": "60baeabe17a6baa942c7b52f59aaf6ea87ed413aba156038ed6fdc68a8b2c83e",
-  "request_digest": "9ba6bcaa95231047d78b35aeb144c80592171ae20bf93d4ff0d82248706e61a0",
-  "request_json": "<exact persisted UTF-8 PUT body, represented as a JSON string>",
+  "request_digest": "1e2a33ce2babc8b68df214870738c2c68b1cc17f67bf411bc5ca0704c1b8ba23",
+  "request_json": "<persisted canonical UTF-8 PUT body, represented as a JSON string>",
   "last_revision": 0,
   "receipt_result_sha256": null,
   "legacy_import": null
 }
 ```
 
-The `request_json` value above is explanatory; stored bytes must round-trip exactly. A later accepted status fills `worker_instance_id` and advances `last_revision`; the receipt digest remains until ACK succeeds. An unversioned legacy checkpoint is parsed only as the current local format (`completed_seconds`, `total_seconds`, `language`, `segments_file` and optional inline `segments`). Unknown envelope versions stop automatic dispatch. A legacy absolute `segments_file` is resolved beneath the configured asset root during trusted import and never sent as a request option. The app's stable deployment ID lives under `/config` and must travel with its database on relocation.
+The `request_json` value above is explanatory; stored canonical bytes must round-trip exactly. A later accepted status fills `worker_instance_id` and advances `last_revision`; the receipt digest remains until ACK succeeds. An unversioned legacy checkpoint is parsed only as the current local format (`completed_seconds`, `total_seconds`, `language`, `segments_file` and optional inline `segments`). Unknown envelope versions stop automatic dispatch. A legacy absolute `segments_file` is resolved beneath the configured asset root during trusted import and never sent as a request option. The app's stable deployment ID lives under `/config` and must travel with its database on relocation.
 
 ## Resource, result and error rules
 
@@ -67,4 +67,4 @@ The `request_json` value above is explanatory; stored bytes must round-trip exac
 
 ## Fixture scope
 
-`fixtures/` shows one valid submission, queued and succeeded status, result, ACK and a structured error. UUIDs, transcript and versions are synthetic. Digests are calculated from the fixture request/result with the rules above. Stage B and later stages must turn these into executable contract tests and add negative fixtures for unknown fields, replay conflict, invalid paths, mismatched hashes, malformed output and terminal races.
+`fixtures/` shows one valid submission, queued and succeeded status, result, ACK and a structured error. UUIDs, transcript and versions are synthetic. Digests are calculated from the parsed fixture request/result as RFC 8785 canonical JSON, regardless of file line endings. Stage B and later stages must turn these into executable contract tests and add negative fixtures for unknown fields, replay conflict, invalid paths, mismatched hashes, malformed output and terminal races.
