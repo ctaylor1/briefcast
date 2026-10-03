@@ -25,6 +25,8 @@ jobs:
 
       - name: Go test
         run: go test ./...
+      - name: Split transcription contracts and recovery with race detector
+        run: go test -race ./internal/transcription/... ./internal/whisperxworker/... ./service/...
 
   frontend-quality:
     runs-on: ubuntu-latest

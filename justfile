@@ -121,6 +121,31 @@ test-go:
 test-python:
     uv run pytest
 
+# Split-worker acceptance uses only fresh isolated state; see STAGE_G.md for inputs.
+test-whisperx-unit:
+    go test ./internal/transcription/... ./internal/whisperxworker/... ./service/... -count=1
+
+test-whisperx-contract:
+    go test ./internal/transcription/... ./internal/whisperxworker/... -count=1
+
+test-whisperx-python *args:
+    pwsh -NoLogo -File scripts/TestWorkerPython.ps1 {{args}}
+
+test-whisperx-container-cpu *args:
+    uv run python scripts/whisperx_acceptance.py --runtime cpu {{args}}
+
+test-whisperx-container-cuda *args:
+    uv run python scripts/whisperx_acceptance.py --runtime cuda {{args}}
+
+test-whisperx-upgrade *args:
+    uv run python scripts/whisperx_acceptance.py {{args}}
+
+worker-drain *args:
+    just release drain -Target worker {{args}}
+
+worker-resume *args:
+    just release resume -Target worker {{args}}
+
 test-frontend:
     npm --prefix frontend run test
 

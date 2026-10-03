@@ -18,7 +18,7 @@ on:
       - '.dockerignore'
       - '.env.example'
       - 'whisperx.env.example'
-      - 'tests/test_packaging.py'
+      - 'tests/**'
       - '.github/workflows/**'
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.14'
       - run: uv sync --locked --group dev
-      - run: uv run pytest tests/test_packaging.py
+      - run: uv run pytest tests/test_packaging.py tests/test_whisperx_recovery.py tests/test_whisperx_acceptance.py tests/test_briefcast_recovery.py
   image:
     runs-on: ubuntu-latest
     strategy:
@@ -41,6 +41,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - uses: astral-sh/setup-uv@v5
+        if: matrix.variant == 'cpu'
+        with:
+          python-version: '3.14'
+      - run: uv sync --locked --group dev
+        if: matrix.variant == 'cpu'
       - name: Build and check independent runtime
         shell: pwsh
         env:
@@ -54,3 +60,7 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw 'Image build failed' }
           ./scripts/CheckImage.ps1 -Image briefcast:test -Kind $env:VARIANT
+      - name: Pipeline and recovery tests in the shipped Python 3.12 runtime
+        if: matrix.variant == 'cpu'
+        shell: pwsh
+        run: ./scripts/TestWorkerPython.ps1 -Image briefcast:test

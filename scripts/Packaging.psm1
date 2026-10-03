@@ -35,6 +35,21 @@ function Get-ComposeArguments {
     return $arguments
 }
 
+function Get-EffectiveDeploymentValue {
+    param([string]$Root, [string]$EnvFile, [string]$Name, [string]$Default = '')
+    # Match Compose's process > last env file > primary env file precedence.
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ($null -ne $value) { return $value }
+    $advanced = Get-DeploymentValue $EnvFile WHISPERX_ENV_FILE '.env.whisperx'
+    $path = [IO.Path]::GetFullPath($advanced, $Root)
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $missing = [guid]::NewGuid().ToString()
+        $value = Get-DeploymentValue $path $Name $missing
+        if ($value -ne $missing) { return $value }
+    }
+    return Get-DeploymentValue $EnvFile $Name $Default
+}
+
 function Assert-ComposeVersion {
     $raw = & docker compose version --short
     if ($LASTEXITCODE -ne 0 -or $raw -notmatch 'v?(\d+)\.(\d+)\.(\d+)') { throw 'Docker Compose is unavailable.' }
@@ -48,4 +63,4 @@ function Invoke-Docker {
     if ($Capture) { return $output }
 }
 
-Export-ModuleMember -Function Get-DeploymentValue, Get-ComposeArguments, Assert-ComposeVersion, Invoke-Docker
+Export-ModuleMember -Function Get-DeploymentValue, Get-EffectiveDeploymentValue, Get-ComposeArguments, Assert-ComposeVersion, Invoke-Docker

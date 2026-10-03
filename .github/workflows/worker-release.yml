@@ -6,6 +6,10 @@ on:
         description: Build and validate without publishing
         type: boolean
         default: true
+      cuda_acceptance:
+        description: Trusted operator JSON attesting CUDA corpus/recovery for this exact source (required to publish CUDA)
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -15,6 +19,7 @@ jobs:
   worker:
     if: ${{ github.ref_name == github.event.repository.default_branch }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -25,6 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - uses: astral-sh/setup-uv@v5
+        if: matrix.variant == 'cpu'
+        with:
+          python-version: '3.14'
+      - run: uv sync --locked --group dev
+        if: matrix.variant == 'cpu'
       - name: Resolve independent worker version
         id: worker
         shell: pwsh
@@ -49,6 +60,38 @@ jobs:
       - name: Check candidate contents
         shell: pwsh
         run: ./scripts/CheckImage.ps1 -Image briefcast-whisperx:test -Kind '${{ matrix.variant }}'
+      - name: Bounded real CPU engine and isolated recovery acceptance
+        if: matrix.variant == 'cpu'
+        shell: pwsh
+        run: |
+          ./scripts/TestWorkerPython.ps1 -Image briefcast-whisperx:test
+          docker buildx build --load --platform linux/amd64 --build-arg SOURCE_REVISION=$env:GITHUB_SHA -t briefcast:acceptance .
+          if ($LASTEXITCODE -ne 0) { throw 'Acceptance app build failed' }
+          $privateRoot = Join-Path ([IO.Path]::GetTempPath()) ('briefcast-release-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory $privateRoot | Out-Null
+          ./scripts/PrepareAcceptanceCache.ps1 -Image briefcast-whisperx:test -CacheDir (Join-Path $privateRoot 'cache')
+          Set-Content (Join-Path $privateRoot 'Dockerfile') "FROM briefcast-whisperx:test`nLABEL org.briefcast.acceptance=compatible-replacement"
+          docker build -t briefcast-whisperx:replacement $privateRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Compatible replacement build failed' }
+          uv run python scripts/whisperx_acceptance.py --runtime cpu --app-image briefcast:acceptance --worker-image briefcast-whisperx:test --replacement-image briefcast-whisperx:replacement --cache (Join-Path $privateRoot 'cache') --audio tests/fixtures/whisperx/speech.flac --run-dir (Join-Path $privateRoot 'run') --timeout 600 --app-restarts
+          if ($LASTEXITCODE -ne 0) { throw 'Real CPU acceptance failed' }
+          Copy-Item (Join-Path $privateRoot 'run/evidence.json') cpu-acceptance.json
+      - uses: actions/upload-artifact@v4
+        if: matrix.variant == 'cpu'
+        with:
+          name: cpu-acceptance
+          path: cpu-acceptance.json
+      - name: Require trusted GPU acceptance before CUDA publication
+        if: ${{ matrix.variant == 'cu128' && !inputs.dry_run }}
+        shell: pwsh
+        env:
+          CUDA_ACCEPTANCE: ${{ inputs.cuda_acceptance }}
+        run: |
+          if (-not $env:CUDA_ACCEPTANCE) { throw 'CUDA publication requires the trusted operator acceptance record; content checks are insufficient.' }
+          $record = $env:CUDA_ACCEPTANCE | ConvertFrom-Json
+          if ($record.source_revision -ne $env:GITHUB_SHA -or $record.device -ne 'cuda' -or -not $record.hardware -or $record.model_revision -ne 'a29b04bd15381511a9af671baec01072039215e3' -or $record.quality_passed -ne $true -or $record.recovery_passed -ne $true -or $record.app_unchanged -ne $true) {
+            throw 'CUDA acceptance does not satisfy this release. Repeat trusted hardware/corpus/recovery validation.'
+          }
       - uses: docker/login-action@v3
         if: ${{ !inputs.dry_run }}
         with:

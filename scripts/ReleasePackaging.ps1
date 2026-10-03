@@ -1,12 +1,13 @@
 #Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Position = 0)][ValidateSet('test','build','publish','deploy','verify','rollback','reset','ship','')][string]$Stage = '',
+    [Parameter(Position = 0)][ValidateSet('test','build','publish','deploy','verify','rollback','drain','resume','status','reset','ship','')][string]$Stage = '',
     [ValidateSet('app','worker')][string]$Target = 'app',
     [ValidateSet('disabled','cpu','cuda','')][string]$Runtime = '',
     [ValidateSet('major','minor','patch','')][string]$Bump = '',
     [string]$Version = '', [string]$EnvFile = $env:ENV_FILE, [string]$ComposeFile = $env:COMPOSE_FILE,
     [string]$BuildDir = $env:BUILD_DIR, [string]$Remote = 'origin',
+    [string]$RecoveryDir = '', [string]$ProjectName = '',
     [switch]$SkipTests, [switch]$SkipSmoke, [switch]$SkipVerify,
     [switch]$NoCache, [switch]$NoPush, [switch]$Force
 )
@@ -18,10 +19,12 @@ if (-not $BuildDir) { $BuildDir = 'builds' }
 Import-Module (Join-Path $PSScriptRoot 'Packaging.psm1') -Force -DisableNameChecking
 $root = Split-Path $PSScriptRoot -Parent
 $config = Get-Content -LiteralPath (Join-Path $root 'release.config.json') -Raw | ConvertFrom-Json
+if (-not $ProjectName) { $ProjectName = $config.project }
+if ($ProjectName -notmatch '^[a-z0-9][a-z0-9_-]*$') { throw 'Invalid Compose project name.' }
 $BuildDir = [IO.Path]::GetFullPath($BuildDir, $root)
 $EnvFile = [IO.Path]::GetFullPath($EnvFile, $root)
 if (-not $Stage) {
-    Write-Host 'RELEASE.ps1 <test|build|publish|deploy|verify|rollback|ship> -Target app|worker -Runtime disabled|cpu|cuda [-Version X.Y.Z|-Bump patch]'
+    Write-Host 'RELEASE.ps1 <test|build|publish|deploy|verify|rollback|drain|resume|status|ship> -Target app|worker -Runtime disabled|cpu|cuda [-Version X.Y.Z|-Bump patch]'
     Write-Host 'Build emits archives, checksums and immutable image manifests. Deploy never builds or stops the whole stack. PowerShell 7 and Compose >= 2.24 required.'
     exit 0
 }
@@ -51,7 +54,7 @@ if (-not $Version) {
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be X.Y.Z.' }
 $artifactPath = Join-Path $BuildDir "$($image.name)_v$Version.json"
-$rollbackPath = Join-Path $BuildDir "rollback-$Target-$Runtime.json"
+$rollbackPath = Join-Path $BuildDir "rollback-$ProjectName-$Target-$Runtime.json"
 
 function Invoke-Git {
     param([string[]]$Arguments)
@@ -62,7 +65,7 @@ function Invoke-Git {
 function Get-ReleaseCompose {
     Assert-ComposeVersion
     $env:BRIEFCAST_ENV_FILE = $EnvFile
-    return Get-ComposeArguments -Root $root -EnvFile $EnvFile -ComposeFile $ComposeFile -Runtime $Runtime -ProjectName $config.project
+    return Get-ComposeArguments -Root $root -EnvFile $EnvFile -ComposeFile $ComposeFile -Runtime $Runtime -ProjectName $ProjectName
 }
 function Read-Artifact {
     if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) { throw "Missing release artifact: $artifactPath" }
@@ -144,10 +147,41 @@ function Invoke-Publish {
 function Assert-WorkerQuiescent {
     param([string[]]$Compose)
     if ($Target -ne 'worker') { return }
-    # Require an operator drain before replacement. Snapshot/restore tooling is Stage G.
     $raw = Invoke-Docker ($Compose + @('exec','-T','whisperx','whisperx-worker','drain','--url','http://127.0.0.1:8090','--token-file','/run/secrets/whisperx-service-token')) -Capture
     $state = ($raw -join "`n") | ConvertFrom-Json
     if ($state.running -ne 0 -or $state.queued -ne 0) { throw 'Worker still has active/queued work. Settle and snapshot worker state before replacing it.' }
+}
+function Invoke-Maintenance {
+    param([string]$Operation)
+    if ($Target -ne 'worker') { throw 'Maintenance commands require -Target worker.' }
+    $compose = @(Get-ReleaseCompose)
+    if ($Operation -eq 'resume') { Assert-WorkerCapabilities $compose }
+    Invoke-Docker ($compose + @('exec','-T','whisperx','whisperx-worker',$Operation,'--url','http://127.0.0.1:8090','--token-file','/run/secrets/whisperx-service-token'))
+}
+function Assert-WorkerCapabilities {
+    param([string[]]$Compose)
+    $raw = Invoke-Docker ($Compose + @('exec','-T','whisperx','whisperx-worker','status','--url','http://127.0.0.1:8090','--token-file','/run/secrets/whisperx-service-token')) -Capture
+    $capabilities = ($raw -join "`n") | ConvertFrom-Json
+    $profile = Get-EffectiveDeploymentValue $root $EnvFile WHISPERX_ENGINE_PROFILE $(if ($Runtime -eq 'cuda') { 'baseline-wx3.8.6-cu128-v1' } else { 'baseline-wx3.8.6-cpu-v1' })
+    if (1 -notin $capabilities.contract_versions -or 'briefcast-whisperx-chunks-v1' -notin $capabilities.checkpoint_formats -or $capabilities.engine_profile -ne $profile -or -not $capabilities.model_ready) { throw 'Worker capabilities/readiness do not match the selected deployment.' }
+}
+function Save-WorkerState {
+    param([string[]]$Compose, [string]$Container, [string]$ImageId)
+    if (-not $RecoveryDir) { throw 'Existing worker replacement requires -RecoveryDir in private storage outside the repository.' }
+    $recoveryRoot = [IO.Path]::GetFullPath($RecoveryDir)
+    if (-not (Test-Path -LiteralPath $recoveryRoot -PathType Container) -or $recoveryRoot -eq $root -or $recoveryRoot.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Provision a private recovery directory outside the repository first.' }
+    $raw = Invoke-Docker @('inspect','--format','{{json .Mounts}}',$Container) -Capture
+    $mounts = ($raw -join "`n") | ConvertFrom-Json
+    $state = @($mounts | Where-Object { $_.Destination -eq '/state' -and $_.Type -eq 'bind' })
+    if ($state.Count -ne 1) { throw 'Expected one explicit worker state bind mount.' }
+    $snapshot = Join-Path $recoveryRoot ("worker-$ProjectName-" + [guid]::NewGuid().ToString('N'))
+    Invoke-Docker ($Compose + @('stop','whisperx'))
+    $statePath = $state[0].Source
+    if ($IsWindows -and $statePath -match '^/run/desktop/mnt/host/([a-z])/(.*)$') {
+        $statePath = $Matches[1] + ':\' + $Matches[2].Replace('/', '\')
+    }
+    & (Join-Path $PSScriptRoot 'WorkerRecovery.ps1') -Operation snapshot -SnapshotDir $snapshot -StateDir $statePath -Image $ImageId
+    return $snapshot
 }
 function Invoke-Deploy {
     $artifact = Read-Artifact
@@ -159,19 +193,23 @@ function Invoke-Deploy {
     # Capture the actual running container image before loading any candidate tags.
     $container = Invoke-Docker ($compose + @('ps','-q',$image.service)) -Capture
     $oldId = $null
+    $snapshot = $null
     if ($container) {
         if (@($container).Count -ne 1) { throw 'Expected one target container.' }
         $oldId = (Invoke-Docker @('inspect','--format','{{.Image}}',$container) -Capture).Trim()
         Assert-WorkerQuiescent $compose
+        if ($Target -eq 'worker') { $snapshot = Save-WorkerState $compose $container $oldId }
     }
+    [ordered]@{target=$Target; runtime=$Runtime; compose=$compose; image_id=$oldId; service=$image.service; version=$Version; snapshot=$snapshot} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rollbackPath
     Invoke-Docker @('image','load','--input',$archive)
     Invoke-Docker @('image','inspect','--format','{{.Id}}',$artifact.image_id) | Out-Host
-    [ordered]@{target=$Target; runtime=$Runtime; compose=$compose; image_id=$oldId; service=$image.service; version=$Version} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rollbackPath
     Set-ImageOverride $artifact.image_id
     Invoke-Docker ($compose + @('up','-d','--no-build','--no-deps','--force-recreate',$image.service))
-    if (-not $SkipVerify) { Invoke-Verify }
+    if (-not $SkipVerify) { Invoke-Verify -Drained:($Target -eq 'worker' -and [bool]$oldId) }
+    if ($Target -eq 'worker' -and $oldId) { Write-Host 'Worker replaced with acceptance still drained. Run a canary, then RELEASE.ps1 resume -Target worker using the same deployment selection.' }
 }
 function Invoke-Verify {
+    param([switch]$Drained)
     $artifact = Read-Artifact
     Set-ImageOverride $artifact.image_id
     $compose = @(Get-ReleaseCompose)
@@ -183,7 +221,11 @@ function Invoke-Verify {
     while ($true) {
         try {
             if ($Target -eq 'worker') {
-                Invoke-Docker ($compose + @('exec','-T','whisperx','python','-c',"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/ready',timeout=5).close()"))
+                # Drained workers intentionally return 503 readiness. Check
+                # liveness and authenticated capabilities before explicit resume.
+                $health = if ($Drained) { 'live' } else { 'ready' }
+                Invoke-Docker ($compose + @('exec','-T','whisperx','python','-c',"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/$health',timeout=5).close()"))
+                Assert-WorkerCapabilities $compose
             } else {
                 # Use the running container's auth settings without exposing credentials
                 # in arguments, logs, or an operator environment dump.
@@ -203,7 +245,18 @@ function Invoke-Rollback {
     $compose = @(Get-ReleaseCompose)
     if ($state.target -ne $Target -or $state.runtime -ne $Runtime -or $state.service -ne $image.service -or ($state.compose -join "`n") -ne ($compose -join "`n")) { throw 'Rollback deployment selection differs from saved state.' }
     if (-not $state.image_id) { throw 'No previous image was recorded.' }
-    Assert-WorkerQuiescent $compose
+    if ($Target -eq 'worker') {
+        if (-not $state.snapshot) { throw 'Rollback requires the verified pre-replacement state snapshot.' }
+        & (Join-Path $PSScriptRoot 'WorkerRecovery.ps1') -Operation verify -SnapshotDir $state.snapshot -Image $state.image_id
+        # Preserve candidate-era jobs. Restore to a NEW directory only if the
+        # previous image rejects current state, after reconciling app envelopes.
+        $container = Invoke-Docker ($compose + @('ps','--all','-q','whisperx')) -Capture
+        if (-not $container -or @($container).Count -ne 1) { throw 'Candidate state must be inventoried before rollback.' }
+        $running = (Invoke-Docker @('inspect','--format','{{.State.Running}}',$container) -Capture).Trim()
+        if ($running -eq 'true') { Assert-WorkerQuiescent $compose }
+        $candidateId = (Invoke-Docker @('inspect','--format','{{.Image}}',$container) -Capture).Trim()
+        $null = Save-WorkerState $compose $container $candidateId
+    }
     Invoke-Docker @('image','inspect','--format','{{.Id}}',$state.image_id) | Out-Host
     Set-ImageOverride $state.image_id
     Invoke-Docker ($compose + @('up','-d','--no-build','--no-deps','--force-recreate',$image.service))
@@ -219,6 +272,9 @@ try {
         deploy { Invoke-Deploy }
         verify { Invoke-Verify }
         rollback { Invoke-Rollback }
+        drain { Invoke-Maintenance 'drain' }
+        resume { Invoke-Maintenance 'resume' }
+        status { Invoke-Maintenance 'status' }
         ship {
             if (-not $SkipTests) { Invoke-Test }
             Invoke-Build

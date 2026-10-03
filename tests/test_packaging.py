@@ -140,6 +140,21 @@ def test_worker_deploy_is_targeted_and_checks_archive(tmp_path, bad_checksum):
     env_file.write_text("WHISPERX_RUNTIME=cpu\n")
     log = tmp_path / "calls.jsonl"
     harness = tmp_path / "harness.ps1"
+    fixture_root = tmp_path / "repository"
+    for file in [
+        "scripts/ReleasePackaging.ps1",
+        "scripts/Packaging.psm1",
+        "release.config.json",
+        "docker/compose-modes.json",
+        "docker/whisperx/VERSION",
+    ]:
+        destination = fixture_root / file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / file, destination)
+    (fixture_root / "scripts/WorkerRecovery.ps1").write_text(
+        "param($Operation,$SnapshotDir,$StateDir,$Image)\n"
+        "if ($Operation -eq 'snapshot') { New-Item -ItemType Directory $SnapshotDir | Out-Null }\n"
+    )
     # Mock the CLI inside PowerShell, so no deployment command can reach Docker.
     harness.write_text(
         "param($Root,$EnvFile,$BuildDir,$Log,$OldId,$NewId)\n"
@@ -150,14 +165,16 @@ def test_worker_deploy_is_targeted_and_checks_archive(tmp_path, bad_checksum):
         "  $global:LASTEXITCODE=0\n"
         "  if (($a -join ' ') -eq 'compose version --short') { '2.24.0'; return }\n"
         "  if ($a -contains 'ps') { 'worker-container'; return }\n"
+        "  if ($a -contains '{{json .Mounts}}') { "
+        '\'[ {"Destination":"/state","Type":"bind","Source":"mock-state"} ]\'; return }\n'
         "  if ($a[0] -eq 'inspect') { $global:MockOld; return }\n"
         "  if ($a -contains 'drain') { '{\"running\":0,\"queued\":0}'; return }\n"
         "  if ($a -contains 'inspect') { $global:MockNew; return }\n"
         "}\n"
         "& (Join-Path $Root 'scripts/ReleasePackaging.ps1') deploy -Target worker -Runtime cpu "
-        "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir -SkipVerify\n"
+        "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir -RecoveryDir $BuildDir -SkipVerify\n"
         "& (Join-Path $Root 'scripts/ReleasePackaging.ps1') rollback -Target worker -Runtime cpu "
-        "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir\n"
+        "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir -RecoveryDir $BuildDir\n"
     )
     result = subprocess.run(
         [
@@ -166,7 +183,7 @@ def test_worker_deploy_is_targeted_and_checks_archive(tmp_path, bad_checksum):
             "-NoProfile",
             "-File",
             str(harness),
-            str(ROOT),
+            str(fixture_root),
             str(env_file),
             str(tmp_path),
             str(log),
@@ -193,8 +210,12 @@ def test_worker_deploy_is_targeted_and_checks_archive(tmp_path, bad_checksum):
     )
     assert not any("down" in c or "build" in c for c in calls)
     assert not any(c[-1] == "briefcast" for c in calls)
-    rollback = json.loads((tmp_path / "rollback-worker-cpu.json").read_text(encoding="utf-8-sig"))
+    rollback = json.loads(
+        (tmp_path / "rollback-briefcast-worker-cpu.json").read_text(encoding="utf-8-sig")
+    )
     assert rollback["image_id"] == old_id
+    assert rollback["snapshot"]
+    assert len([c for c in calls if "stop" in c]) == 2
 
 
 def test_no_implicit_gpu_override_and_all_locks_are_hashed():
@@ -207,6 +228,24 @@ def test_no_implicit_gpu_override_and_all_locks_are_hashed():
         for record in records:
             if "==" in record:
                 assert "--hash=sha256:" in record
+
+
+def test_compose_detached_flag_is_not_consumed_as_powershell_debug(tmp_path):
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("WHISPERX_RUNTIME=disabled\n")
+    harness = tmp_path / "compose.ps1"
+    harness.write_text(
+        "param($Root,$EnvFile)\n"
+        "function global:docker {\n"
+        " $global:LASTEXITCODE=0\n"
+        " if (($args -join ' ') -eq 'compose version --short') { '2.24.0'; return }\n"
+        " ConvertTo-Json -Compress -InputObject @($args)\n}\n"
+        "& (Join-Path $Root 'scripts/Compose.ps1') -EnvFile $EnvFile up -d\n"
+    )
+    result = run_ps("-File", harness, ROOT, env_file)
+    # Invoke-Docker writes through Out-Host, preserving the mocked JSON array.
+    calls = json.loads(result.stdout.strip())
+    assert calls[-2:] == ["up", "-d"]
 
 
 def test_worker_publish_updates_only_worker_version(tmp_path):
@@ -238,3 +277,85 @@ def test_worker_publish_updates_only_worker_version(tmp_path):
     assert add[2:] == ["add", "--", "docker/whisperx/VERSION"]
     assert any("worker-v1.0.1" in c for c in calls)
     assert not any("push" in c for c in calls)
+
+
+def test_cutover_record_requires_archived_app_boot_and_candidate_source_bundle(tmp_path):
+    manifests = [
+        ("briefcast_v1.9.4", "1.9.4", "briefcast", "app"),
+        ("briefcast-whisperx-cpu_v1.0.0", "1.0.0", "whisperx", "cpu"),
+    ]
+    worker_id = "sha256:" + "a" * 64
+    for name, version, service, variant in manifests:
+        archive = tmp_path / (name + ".tar")
+        archive.write_bytes(b"fixture archive")
+        (tmp_path / (name + ".json")).write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "version": version,
+                    "service": service,
+                    "variant": variant,
+                    "image_id": worker_id,
+                    "archive": archive.name,
+                    "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                }
+            )
+        )
+    digest = hashlib.sha256(b"fixture recovery").hexdigest()
+    for name in ["monolith.tar", "config.tar", "database.dump"]:
+        (tmp_path / name).write_bytes(b"fixture recovery")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "image_id": worker_id,
+                "image_archive_sha256": digest,
+                "config_archive_sha256": digest,
+                "database_sha256": digest,
+            }
+        )
+    )
+    (tmp_path / "database-restore.json").write_text(
+        json.dumps({"complete": True, "dump_sha256": digest})
+    )
+    (tmp_path / "assets-protection.json").write_text(
+        json.dumps({"verified": True, "coherent_with_database_sha256": digest})
+    )
+    evidence = tmp_path / "corpus.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "quality_passed": True,
+                "recovery_passed": True,
+                "device": "cpu",
+                "worker_image": worker_id,
+                "representative_corpus": True,
+            }
+        )
+    )
+    env_file = tmp_path / "candidate.env"
+    env_file.write_text("WHISPERX_ENV_FILE=absent.env\n")
+    output = tmp_path / "cutover.json"
+    run_ps(
+        "-File",
+        ROOT / "scripts/PrepareCutover.ps1",
+        "-EnvFile",
+        env_file,
+        "-ArtifactsDir",
+        tmp_path,
+        "-RecoveryDir",
+        tmp_path,
+        "-OutputFile",
+        output,
+        "-Runtime",
+        "cpu",
+        "-CorpusEvidence",
+        evidence,
+    )
+    record = json.loads(output.read_text(encoding="utf-8-sig"))
+    assert not record["ready_for_maintenance_review"]
+    assert not record["gates"]["database_restore"]
+    assert not record["gates"]["candidate_source_bundle"]
+    assert record["gates"]["consistent_assets"]
+    assert record["gates"]["representative_quality"]
+    assert record["image_overrides"]["WHISPERX_IMAGE"] == worker_id
+    assert any("sidecars" in action for action in record["rollback_actions"])
