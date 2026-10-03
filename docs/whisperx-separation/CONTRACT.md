@@ -1,6 +1,6 @@
 # Private worker contract v1 rules
 
-`openapi.yaml` defines the wire shapes. This file fixes cross-request behavior that JSON Schema cannot express. Both are Stage A design artifacts; no worker implementation exists yet.
+`openapi.yaml` defines the wire shapes. This file fixes cross-request behavior that JSON Schema cannot express. API v1 is implemented by `cmd/whisperx-worker`, `internal/transcription`, `internal/whisperxworker` and the app HTTP adapter. [Operations](OPERATIONS.md) documents runtime settings, storage and recovery commands; [Stage G](STAGE_G.md) distinguishes tested behavior from outstanding production acceptance. The protocol/fixtures were frozen in Stage A and remain version 1.
 
 ## Identity, acceptance and state
 
@@ -28,7 +28,7 @@ The app maps `WhisperXConfig` fields in `service/whisperx.go` exactly as follows
 | `WHISPERX_MAX_CONCURRENCY`, `WHISPERX_MAX_ITEMS`, retry delay/backoff, lock and polling settings | No request field | App scheduling or worker capacity; not inference options |
 | Python/script paths, HF token/home, logging and telemetry settings | No request field | Deployment-owned; tokens and executable paths are forbidden in requests |
 
-The worker returns supported models, diarization models, VAD methods and checkpoint formats in capabilities. Client preflight checks wire major 1, profile, options, device/compute/batch expectations, and model availability before submission. `engine_profile` is immutable for an accepted job. Baseline CUDA profile is intended to represent WhisperX 3.8.6, Torch 2.8.0+cu128, current script behavior and fixed model revisions after those revisions are inventoried. Profile names in fixtures are illustrative until the image manifest is built.
+The worker returns supported models, diarization models, VAD methods and checkpoint formats in capabilities. Client preflight checks wire major 1, profile, options and device/compute/batch expectations before submission. Supported model lists and `model_ready` do not prove every model weight is cached or gated access will succeed: current readiness checks runtime/storage prerequisites without loading models. A real canary verifies those dependencies. `engine_profile` is immutable for an accepted job. Shipped profiles are `baseline-wx3.8.6-cpu-v1` and `baseline-wx3.8.6-cu128-v1`, with pinned combinations in `docker/whisperx/compatibility.json`. Fixture profile strings remain synthetic examples and are not deployment defaults.
 
 Checkpoint format `briefcast-whisperx-chunks-v1` records input SHA-256, options SHA-256, pipeline version and completed chunk/segment metadata. `resume_from_job_id` must name a terminal failed/cancelled job in the same deployment, episode and generation, with matching input and compatible options/profile/checkpoint format. The worker rejects an incompatible reference with `CHECKPOINT_INCOMPATIBLE`; it never skips audio solely because a seconds counter exists. Legacy sidecars can be imported only by the trusted rollout path after validating their rooted location and provenance; an API request cannot name an absolute sidecar path.
 
@@ -55,7 +55,7 @@ The app's existing `PodcastItem.TranscriptCheckpointJSON` text column holds a ve
 }
 ```
 
-The `request_json` value above is explanatory; stored canonical bytes must round-trip exactly. A later accepted status fills `worker_instance_id` and advances `last_revision`; the receipt digest remains until ACK succeeds. An unversioned legacy checkpoint is parsed only as the current local format (`completed_seconds`, `total_seconds`, `language`, `segments_file` and optional inline `segments`). Unknown envelope versions stop automatic dispatch. A legacy absolute `segments_file` is resolved beneath the configured asset root during trusted import and never sent as a request option. The app's stable deployment ID lives under `/config` and must travel with its database on relocation.
+The `request_json` value above is explanatory; this minimum-shape example is not a complete writable checkpoint. The implementation also stores `expected_effective_config`, a checkpoint summary and, when applicable, prepared worker identity, terminal/retry/reconnect metadata and a restart reason (`service/transcription_remote_state.go`). Operators must use the shared decoder/rollback helper rather than hand-edit envelopes. A later accepted status fills `worker_instance_id` and advances `last_revision`; the receipt digest remains until ACK succeeds. An unversioned legacy checkpoint is parsed only as the current local format (`completed_seconds`, `total_seconds`, `language`, `segments_file` and optional inline `segments`). Unknown envelope versions stop automatic dispatch. A legacy absolute `segments_file` is resolved beneath the configured asset root during trusted import and never sent as a request option. The app's stable deployment ID is `/config/whisperx-deployment-id` and must travel with its database on relocation.
 
 ## Resource, result and error rules
 
@@ -67,4 +67,4 @@ The `request_json` value above is explanatory; stored canonical bytes must round
 
 ## Fixture scope
 
-`fixtures/` shows one valid submission, queued and succeeded status, result, ACK and a structured error. UUIDs, transcript and versions are synthetic. Digests are calculated from the parsed fixture request/result as RFC 8785 canonical JSON, regardless of file line endings. Stage B and later stages must turn these into executable contract tests and add negative fixtures for unknown fields, replay conflict, invalid paths, mismatched hashes, malformed output and terminal races.
+`fixtures/` shows one valid submission, queued and succeeded status, result, ACK and a structured error. UUIDs, transcript and versions are synthetic. Digests are calculated from the parsed fixture request/result as RFC 8785 canonical JSON, regardless of file line endings. Executable fixture/hash tests are in `internal/transcription/protocol_test.go`; worker and service suites cover negative requests, replay conflict, paths/hashes, malformed output and terminal races. See [Stage G evidence](STAGE_G.md) for real CPU/CUDA recovery and the remaining matrix gaps.

@@ -2,6 +2,8 @@
 
 Prepared on 2026-10-02 for coding agents implementing the separation on the current Docker host. Read this specification together with [the execution plan](EXECUTION_PLAN.md). These documents describe future implementation work; their creation does not mean the images, backups, branches, or implementation already exist.
 
+Implementation status is now recorded in the stage reports. For the implemented API and operational commands, read [CONTRACT.md](CONTRACT.md) and [OPERATIONS.md](OPERATIONS.md). [Stage G](STAGE_G.md) records outstanding acceptance gates; this design document does not certify production readiness.
+
 The recommended design is a separately versioned Briefcast transcription worker, maintained in this repository, with a stable private HTTP contract. Initially reuse Briefcast's existing Python transcription pipeline and the installed WhisperX dependency versions. Keep the application responsible for podcast data and workflow decisions. Upgrade WhisperX independently only after compatibility tests pass. Host migration is a later project.
 
 ## 1 Goals and boundaries

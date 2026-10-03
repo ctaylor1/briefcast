@@ -24,6 +24,7 @@ Briefcast is a self-hosted podcast downloader and library manager with a Go API,
 - [Frontend Development](#frontend-development)
 - [Testing](#testing)
 - [Release Basics](#release-basics)
+- [Backups And Recovery](#backups-and-recovery)
 - [Reset Runtime Data](#reset-runtime-data)
 - [Migration Notes](#migration-notes)
 
@@ -173,7 +174,7 @@ cp .env.example .env
 Edit `.env`, especially these values:
 
 ```bash
-BRIEFCAST_IMAGE=ghcr.io/ctaylor1/briefcast:latest
+BRIEFCAST_IMAGE=briefcast:local
 HOST_CONFIG_DIR=./config
 HOST_ASSETS_DIR=./assets
 HOST_LOGS_DIR=./logs
@@ -254,17 +255,22 @@ docker run -d \
 
 ### Independent WhisperX Images
 
+The split images are validated local artifacts; this branch has not published or deployed them. Older published app tags may still contain the monolith. Use the image identity from the reviewed release manifest. [Stage G evidence](docs/whisperx-separation/STAGE_G.md) records the pending GPU comparison and consistent-media recovery gates.
+
 The default stack disables transcription. To use a worker, set `WHISPERX_RUNTIME=cpu` or `cuda`, `WHISPERX_ENABLED=true`, and an immutable `WHISPERX_IMAGE` reference. Keep `WHISPERX_DIARIZATION=false` and `WHISPERX_MAX_CONCURRENCY=1` to preserve the production baseline at cutover. Create the state/cache directories with ownership matching `WHISPERX_UID/GID`. Provide a private service token file (at least 32 characters) and an HF token file (may be empty). Copy the preserved model caches before using the default offline mode. See [packaging details](docker/whisperx/README.md).
 
-```bash
+```powershell
 # CPU and CUDA archives have an independent worker version.
 just release-build -Target worker -Runtime cpu -Version 1.0.0
 just release-build -Target worker -Runtime cuda -Version 1.0.0
 # Deploy uses the checksum-verified archive manifest and replaces only whisperx.
-just release-deploy -Target worker -Runtime cpu -Version 1.0.0
+# Assign $RecoveryRoot to an existing private directory outside the repository.
+just release-deploy -Target worker -Runtime cpu -Version 1.0.0 -RecoveryDir $RecoveryRoot
 ```
 
 The new Compose files do not deploy the split to production automatically. Complete the recovery and acceptance gates in [the execution plan](docs/whisperx-separation/EXECUTION_PLAN.md) before cutover. The former monolith definitions are preserved as `docker-compose.legacy.yml` and `docker-compose.legacy-gpu.yml`; the implicit GPU override has been retired.
+
+See [independent worker operations](docs/whisperx-separation/OPERATIONS.md) for CPU/CUDA setup, health checks, drain/resume, targeted replacement, state recovery and monolith rollback. The [migration inventory](docs/whisperx-separation/migration-inventory.md) records persistent paths and permissions. Host migration is deferred.
 
 ## Storage Layout
 
@@ -272,7 +278,7 @@ Briefcast now uses `/assets` for all generated library output. There is no separ
 
 | Container Path | Required | Purpose |
 | --- | --- | --- |
-| `/config` | yes | SQLite database, app config, backups, caches |
+| `/config` | yes | SQLite database when selected, app config and stable HTTP-worker deployment identity; does not contain the external PostgreSQL database |
 | `/assets` | yes | audio, images, transcript exports, summary exports |
 | `/logs` | yes | application logs |
 
@@ -294,10 +300,10 @@ The `/assets` directory is storage, not a public static route. Use the applicati
 
 To move assets to another drive or host path:
 
-1. Stop the container.
-2. Move the existing asset folder contents to the new host path, preserving the subfolder layout.
-3. Update `HOST_ASSETS_DIR` in `.env`.
-4. Start the container again.
+1. Follow [backup and restore verification](docs/backup-and-restore.md) before changing mounts.
+2. Drain accepted worker jobs, stop the app and worker, and copy assets to the new location while preserving the subfolder layout and legacy sidecars. Retain the original copy.
+3. Update `HOST_ASSETS_DIR` so the app `/assets` and worker read-only `/media` refer to the same tree.
+4. Verify the copy and permissions in isolation, then restart the reviewed deployment using the same explicit runtime selection.
 
 No database update is normally required when only the host mount path changes and the files keep the same relative layout inside `/assets`.
 
@@ -392,6 +398,8 @@ ID3 extraction:
 ### WhisperX
 
 The lean app uses `WHISPERX_BACKEND=http`. CPU/CUDA worker images support Linux amd64 and retain baseline WhisperX 3.8.6. Local interpreter/script settings below apply only to transitional monolith/source runs; device, compute, batch size and execution capacity in HTTP mode belong to the worker.
+
+HTTP mode also requires `WHISPERX_SERVICE_URL`, `WHISPERX_SERVICE_TOKEN_FILE` and `WHISPERX_ENGINE_PROFILE`. Compose supplies these; the default profiles are `baseline-wx3.8.6-cpu-v1` and `baseline-wx3.8.6-cu128-v1`. The app result limit is `WHISPERX_SERVICE_RESULT_LIMIT_BYTES` (default 64 MiB). Keep it consistent with the worker limit. HTTP mode needs no app-side WhisperX interpreter, script or GPU; the worker owns `/cache` and its HF token file. See the [configuration ownership table](docs/whisperx-separation/OPERATIONS.md#configuration-and-storage).
 
 - `WHISPERX_ENABLED`: default `false`
 - `WHISPERX_PYTHON`: interpreter path
@@ -510,6 +518,8 @@ Based on `CHECK_FREQUENCY=N` minutes:
 - `RetentionCleanup`: every `24h`
 - `CreateBackup`: every `48h`
 
+`CreateBackup` archives only the fixed `$CONFIG/briefcast.db` file. It does not back up PostgreSQL, media, worker state or model caches, and its live SQLite copy is not a verified consistency checkpoint. Use the [backup procedures](docs/backup-and-restore.md).
+
 ## Frontend Development
 
 Run the Vite dev server:
@@ -539,7 +549,9 @@ just test-go
 just test-python
 just test-frontend
 just test-integration
-just test-whisperx-real
+just test-whisperx-contract
+# Shipped Python runtime and isolated real CPU/CUDA acceptance:
+# see docs/whisperx-separation/OPERATIONS.md for image/cache/audio arguments.
 ```
 
 Formatting and linting:
@@ -563,7 +575,7 @@ uv run pip-audit
 
 ## Release Basics
 
-The app version is defined in `pyproject.toml`; the worker version is independent in `docker/whisperx/VERSION`. `-Target worker -Runtime cpu|cuda` selects a worker build/release. Artifact manifests record immutable image IDs, source revision, archive checksum and variant. Deploy/verify/rollback all use the same explicit Compose selection and target only the chosen service. Worker replacement drains acceptance and requires an empty queue; retain a quiescent state backup and verify compatibility before resuming.
+The app version is defined in `pyproject.toml`; the worker version is independent in `docker/whisperx/VERSION`. `-Target worker -Runtime cpu|cuda` selects a worker build/release. Artifact manifests record immutable image IDs, source revision, archive checksum and variant. Deploy/verify/rollback all use the same explicit Compose selection and target only the chosen service. Existing worker replacement requires `-RecoveryDir`, drains acceptance, refuses queued/running work and snapshots the stopped state. Acceptance remains drained until explicit resume. Follow the [operations runbook](docs/whisperx-separation/OPERATIONS.md#independent-replacement) for verification and rollback.
 
 Release helpers:
 
@@ -604,7 +616,13 @@ docker buildx build --platform linux/amd64 --build-arg APP_VERSION=1.9.4 \
 
 ## Reset Runtime Data
 
-Destructive reset (`RELEASE.ps1 reset`, `just clean`, and the former shell reset helper) is disabled for the split stack. The old commands can erase media referenced by durable worker jobs. Use the reviewed recovery/restore procedures in [the execution plan](docs/whisperx-separation/EXECUTION_PLAN.md); Stage G supplies and rehearses those tools.
+Destructive reset (`RELEASE.ps1 reset`, `just clean`, and the former shell reset helper) is disabled for the split stack. The old commands can erase media referenced by durable worker jobs. Use [backup and restore verification](docs/backup-and-restore.md) and the [worker/monolith rollback runbook](docs/whisperx-separation/OPERATIONS.md#rollback).
+
+## Backups And Recovery
+
+Choose the backup method for the active database. SQLite requires a consistent snapshot of the actual configured database and any live journal files; PostgreSQL requires a verified dump and separate role/ownership recovery. Protect `/config`, `/assets`, the complete worker `/state`, baseline caches and private settings/tokens separately. Scheduled SQLite archives and image archives do not cover all of these.
+
+See [Backups and restore verification](docs/backup-and-restore.md) for the implemented capture helpers, isolated restore checks and remaining consistency limits. Keep operational recovery artifacts outside the repository/build context and outside the scheduled backup folder, which prunes old files.
 
 ## Migration Notes
 
@@ -621,18 +639,6 @@ Older deployments may have audio, artwork, transcripts, or summaries directly un
 /assets/markdown/summaries/<podcast>/
 ```
 
-After moving files into the current layout, run `export-all` once to regenerate transcript and summary text and markdown files from the database.
+Back up the actual database, config and media before reorganizing files; rehearse on copies and retain the original layout until verified. `export-all` can regenerate text/markdown outputs from saved database transcripts and summaries, but does not restore audio, artwork, worker results or resume sidecars.
 
-For a clean publish state:
-
-```bash
-git status --short
-git clean -fdX
-uv sync --locked --group dev
-just test-full
-git add .
-git commit -m "release: ship-ready"
-git tag -a v1.9.4 -m "Briefcast v1.9.4"
-git push origin HEAD
-git push origin v1.9.4
-```
+Use [the migration inventory](docs/whisperx-separation/migration-inventory.md) and [backup runbook](docs/backup-and-restore.md). Ignored files include private env files, databases, media and worker state; repository cleanup is not a migration step. Review `git status --short` and stage only the intended source/documentation paths. Complete the recorded acceptance gates before any production cutover or host relocation.
