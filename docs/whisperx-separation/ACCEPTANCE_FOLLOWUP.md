@@ -67,6 +67,8 @@ Two subsequent starts hit Docker's exhausted default subnet pool. Three empty, l
 
 ## Remaining gates and rollback
 
+2026-10-04 update: a subsequent [bounded resource follow-up](RESOURCE_ACCEPTANCE.md) verifies actual container child OOM, scratch ENOSPC and state-space refusal before acceptance. The list below records the gates at the end of this app-crash follow-up; real ML allocator failures and in-flight persistent storage exhaustion remain unverified.
+
 Stage G's strict CUDA confidence-score comparison remains failed with its original assertions and evidence. Coherent production database/config/media recovery, positive gated diarization, real-container OOM/disk exhaustion, an upstream/state-schema upgrade, production summary/playback canaries and the production observation window remain outstanding as recorded in [Stage G](STAGE_G.md). Completing these crash rehearsals does not make the cutover ready.
 
 Production remains on the archived monolith. Revert this cohesive source change if needed and retain its private evidence; there is no schema/state migration to undo. Keep existing recovery bundles and archives. Do not reuse the prior cutover package as proof for this changed app source.

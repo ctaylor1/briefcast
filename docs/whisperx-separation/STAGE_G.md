@@ -156,6 +156,8 @@ Initial Windows directory-copy/symlink and Docker `none`-network attach failures
 
 ## Cutover package and remaining gates
 
+Subsequent implementation records: [app crash recovery](ACCEPTANCE_FOLLOWUP.md) (2026-10-03) and [bounded container resource failures](RESOURCE_ACCEPTANCE.md) (2026-10-04). Those reports qualify the historical gaps below with actual outcomes and remaining limits; neither clears the CUDA quality or production recovery/cutover gates.
+
 `baseline-recovery/cutover` contains private baseline queue counts, effective candidate settings, a quality/recovery record, verified final source bundle and `cutover-review.json` produced by `PrepareCutover.ps1`. Source, archive hashes and explicit ordered Compose commands are concrete; the record remains **not ready for maintenance review** while asset/quality gates are false. Worker paths in that file are proposals, not created production mounts. Baseline database address and app `/assets`/`/config` paths are preserved. Source/image provenance are recorded separately.
 
 Before cutover:

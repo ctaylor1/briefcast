@@ -60,6 +60,19 @@ jobs:
       - name: Check candidate contents
         shell: pwsh
         run: ./scripts/CheckImage.ps1 -Image briefcast-whisperx:test -Kind '${{ matrix.variant }}'
+      - name: Bounded container OOM and storage failure acceptance
+        if: matrix.variant == 'cpu'
+        shell: pwsh
+        run: |
+          $resourceRun = Join-Path ([IO.Path]::GetTempPath()) ('briefcast-resources-' + [guid]::NewGuid().ToString('N'))
+          uv run python scripts/whisperx_resource_acceptance.py --worker-image briefcast-whisperx:test --run-dir $resourceRun --timeout 90
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded resource acceptance failed' }
+          Copy-Item (Join-Path $resourceRun 'evidence.json') resource-acceptance.json
+      - uses: actions/upload-artifact@v4
+        if: matrix.variant == 'cpu'
+        with:
+          name: resource-acceptance
+          path: resource-acceptance.json
       - name: Bounded real CPU engine and isolated recovery acceptance
         if: matrix.variant == 'cpu'
         shell: pwsh

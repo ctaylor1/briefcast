@@ -140,6 +140,10 @@ test-whisperx-container-cuda *args:
 test-whisperx-upgrade *args:
     uv run python scripts/whisperx_acceptance.py {{args}}
 
+# Bounded kernel OOM and tmpfs ENOSPC with a controlled child; no ML quality claim.
+test-whisperx-resources *args:
+    uv run python scripts/whisperx_resource_acceptance.py {{args}}
+
 worker-drain *args:
     just release drain -Target worker {{args}}
 
