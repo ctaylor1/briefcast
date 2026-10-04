@@ -45,9 +45,12 @@ def normalized(transcript):
     return {key: value for key, value in transcript.items() if key != "metadata"}
 
 
-def assert_isolated(config, run_dir, project, allow_dispatch=False):
+def assert_isolated(config, run_dir, project, allow_dispatch=False, allow_proxy=False):
     services = config["services"]
-    if set(services) - {"briefcast", "whisperx", "postgres"}:
+    allowed = {"briefcast", "whisperx", "postgres"}
+    if allow_proxy:
+        allowed.add("acceptance-proxy")
+    if set(services) - allowed:
         raise ValueError("unexpected acceptance services")
     app = services["briefcast"]
     env = app["environment"]
@@ -57,7 +60,12 @@ def assert_isolated(config, run_dir, project, allow_dispatch=False):
         or str(env["WHISPERX_ENABLED"]).lower() != ("true" if allow_dispatch else "false")
         or env.get("PASSWORD", "")
         or app["container_name"] != project + "-app"
-        or (allow_dispatch and env.get("WHISPERX_SERVICE_URL") != "http://whisperx:8090")
+        or (allow_proxy and not allow_dispatch)
+        or (
+            allow_dispatch
+            and env.get("WHISPERX_SERVICE_URL")
+            != ("http://acceptance-proxy:8091" if allow_proxy else "http://whisperx:8090")
+        )
     ):
         raise ValueError("acceptance must use synthetic state and disabled scheduling/LLM")
     for name in ("briefcast", "whisperx"):
@@ -67,6 +75,22 @@ def assert_isolated(config, run_dir, project, allow_dispatch=False):
                 raise ValueError("acceptance mount escapes its new private run directory")
     if services["whisperx"].get("ports") or services["whisperx"].get("env_file"):
         raise ValueError("worker must have no host API port or app configuration")
+    if allow_proxy:
+        proxy = services["acceptance-proxy"]
+        mounts = proxy.get("volumes", [])
+        if (
+            proxy.get("ports")
+            or proxy.get("environment")
+            or proxy.get("env_file")
+            or proxy.get("privileged")
+            or proxy.get("network_mode")
+            or not proxy.get("read_only")
+            or len(mounts) != 1
+            or mounts[0]["type"] != "bind"
+            or Path(mounts[0]["source"]).resolve() != run_dir / "gate"
+            or mounts[0]["target"] != "/gate"
+        ):
+            raise ValueError("proxy must have only its isolated gate mount and private network")
     for port in app["ports"]:
         if port.get("host_ip") != "127.0.0.1" or str(port["published"]) != "0":
             raise ValueError("app acceptance port must be random and localhost only")
@@ -89,7 +113,35 @@ class Harness:
         if args.cold_cache_only:
             (self.run_dir / "cache").mkdir(mode=0o700)
         else:
-            shutil.copytree(args.cache, self.run_dir / "cache", symlinks=False)
+            # HF snapshots contain Linux symlinks. Windows file traversal can
+            # silently omit Docker Desktop's reparse entries; resolve them in
+            # the same Linux filesystem view used for inference. The source
+            # is read-only and the destination belongs to this NEW run only.
+            (self.run_dir / "cache").mkdir(mode=0o700)
+            self.command(
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--read-only",
+                "--user",
+                "0:0",
+                "--entrypoint",
+                "python",
+                "--mount",
+                f"type=bind,source={args.cache.resolve()},target=/source,readonly",
+                "--mount",
+                f"type=bind,source={self.run_dir / 'cache'},target=/cache",
+                "--mount",
+                f"type=bind,source={ROOT / 'scripts/whisperx_acceptance_cache.py'},"
+                "target=/copy-cache.py,readonly",
+                self.image_id(args.worker_image),
+                "/copy-cache.py",
+                "/source",
+                "/cache",
+                timeout=max(300, args.timeout),
+            )
         (self.run_dir / "token").write_text(secrets.token_hex(32))
         (self.run_dir / "hf-token").write_text("")
         for path in (self.run_dir / "token", self.run_dir / "hf-token"):
@@ -120,6 +172,9 @@ class Harness:
             "WHISPERX_DEVICE": args.runtime,
             "WHISPERX_COMPUTE_TYPE": "float16" if args.runtime == "cuda" else "int8",
             "WHISPERX_BATCH_SIZE": "16",
+            # Committed receipts are reconciled by the normal scheduler even
+            # when manual repair finds no unfinished transcript rows.
+            "WHISPERX_CHECK_FREQUENCY": "1",
         }
         for key, suffix in {
             "HOST_CONFIG_DIR": "config",
@@ -132,6 +187,42 @@ class Harness:
         }.items():
             values[key] = (self.run_dir / suffix).as_posix()
         self.env_file.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+        self.proxy_file = None
+        if args.app_crash_boundaries:
+            gate_dir = self.run_dir / "gate"
+            gate_dir.mkdir(mode=0o700)
+            (gate_dir / "mode").write_text("off")
+            shutil.copyfile(ROOT / "scripts/whisperx_acceptance_proxy.py", gate_dir / "proxy.py")
+            self.proxy_file = self.run_dir / "proxy-compose.json"
+            self.proxy_file.write_text(
+                json.dumps(
+                    {
+                        "services": {
+                            "briefcast": {
+                                "environment": {
+                                    "WHISPERX_SERVICE_URL": "http://acceptance-proxy:8091"
+                                }
+                            },
+                            "acceptance-proxy": {
+                                "image": values["BRIEFCAST_IMAGE"],
+                                "entrypoint": ["python"],
+                                "command": ["/gate/proxy.py", "--control-dir", "/gate"],
+                                "init": True,
+                                "read_only": True,
+                                "cap_drop": ["ALL"],
+                                "security_opt": ["no-new-privileges:true"],
+                                "volumes": [
+                                    {
+                                        "type": "bind",
+                                        "source": gate_dir.as_posix(),
+                                        "target": "/gate",
+                                    }
+                                ],
+                            },
+                        }
+                    }
+                )
+            )
         self.evidence["images"] = {
             key: values[key] for key in ("BRIEFCAST_IMAGE", "WHISPERX_IMAGE")
         }
@@ -149,6 +240,8 @@ class Harness:
                 "--rm",
                 "--network",
                 "none",
+                "--user",
+                "0:0",
                 "--entrypoint",
                 "python",
                 "--mount",
@@ -187,6 +280,7 @@ class Harness:
             self.args.runtime,
             "-ProjectName",
             self.project,
+            *(["--file", self.proxy_file] if self.proxy_file else []),
             *args,
         )
 
@@ -306,7 +400,9 @@ class Harness:
             )
         )
 
-    def app_restarts(self):
+    def app_restarts(self, boundary="running"):
+        if boundary != "running":
+            self.set_gate(boundary)
         podcast, episode = str(uuid.uuid4()), str(uuid.uuid4())
         audio = self.media[0]
         source_hash = sha256(audio)
@@ -325,7 +421,7 @@ class Harness:
             (
                 episode,
                 podcast,
-                "Isolated speech",
+                "Isolated speech " + episode,
                 episode,
                 "http://invalid.test/speech",
                 "/assets/" + audio.relative_to(self.run_dir / "media").as_posix(),
@@ -356,20 +452,47 @@ class Harness:
                 envelope = json.loads(raw)
                 try:
                     status = self.api("GET", "/v1/jobs/" + envelope["job_id"])
-                    if status["state"] == "running":
+                    marker = self.run_dir / "gate/reached.json"
+                    reached = (boundary == "running" and status["state"] == "running") or (
+                        boundary != "running"
+                        and marker.exists()
+                        and json.loads(marker.read_text())
+                        == {
+                            "boundary": boundary,
+                            "path": "/v1/jobs/" + envelope["job_id"] + "/" + boundary,
+                        }
+                    )
+                    if reached:
                         job = envelope["job_id"]
                         break
                 except ValueError:
                     pass  # Durable envelope may precede worker acceptance.
             time.sleep(1)
         if job is None:
-            raise TimeoutError("app did not submit durable remote job")
+            raise TimeoutError("app did not reach the requested crash boundary")
+        before = self.app_sql(
+            "SELECT transcript_status,transcript_json,transcript_checkpoint_json,llm_summary "
+            "FROM podcast_items WHERE id=?",
+            (episode,),
+        )[0]
+        receipt = json.loads(before[2]).get("receipt_result_sha256")
+        if boundary == "ack":
+            if before[0] != "available" or not before[1] or not receipt or before[3]:
+                raise ValueError("ACK gate did not follow a durable transcript commit")
+        elif before[1] or receipt or before[3]:
+            raise ValueError("result gate must precede transcript commit and summary")
         bookmark = "2026-10-02 12:34:56+00:00"
         self.app_sql(
             "UPDATE podcast_items SET is_played=1,bookmark_date=? WHERE id=?", (bookmark, episode)
         )
         app = self.container("briefcast")
         self.command("docker", "kill", "--signal", "KILL", app)
+        if boundary != "running":
+            # Stop blocked proxy threads before opening the gate. A pending
+            # ACK must never be forwarded on behalf of the killed app.
+            self.compose("stop", "acceptance-proxy")
+            self.set_gate("off")
+            self.compose("up", "-d", "--no-build", "--no-deps", "acceptance-proxy")
         if self.wait(job)["state"] != "succeeded":
             raise ValueError("worker did not finish after app crash")
         result = self.api("GET", "/v1/jobs/" + job + "/result")
@@ -409,12 +532,32 @@ class Harness:
             raise TimeoutError("app did not commit/reconcile durable result")
         if self.api("GET", "/v1/jobs/" + job + "/result") != result or sha256(audio) != source_hash:
             raise ValueError("result or audio changed during app recovery")
-        if not list((self.run_dir / "media/transcripts").rglob("*.txt")):
-            raise ValueError("app did not export the committed transcript")
+        exports = list((self.run_dir / "media/transcripts").rglob("*" + episode + ".txt"))
+        if len(exports) != 1 or exports[0].read_text(encoding="utf-8") != row[2]:
+            raise ValueError("app did not export this episode's committed transcript")
         self.check(
-            "app restart reconnects same job, commits canonical/export, "
+            "app restart at " + boundary + " reconnects same job, commits canonical/export, "
             "preserves bookmark/play and ACKs"
         )
+        self.evidence.setdefault("app_crashes", []).append(
+            {
+                "boundary": boundary,
+                "job_id": job,
+                "episode_id": episode,
+                "receipt_before_kill": receipt,
+                "result_sha256": result["result_sha256"],
+            }
+        )
+        self.save()
+
+    def set_gate(self, mode):
+        control = self.run_dir / "gate"
+        marker = control / "reached.json"
+        if marker.exists():
+            marker.unlink()
+        temporary = control / "mode.tmp"
+        temporary.write_text(mode)
+        temporary.replace(control / "mode")
 
     def baseline(self, audio, request):
         config = {
@@ -467,10 +610,19 @@ class Harness:
 
     def run(self):
         config = json.loads(self.compose("config", "--format", "json"))
-        assert_isolated(config, self.run_dir, self.project, allow_dispatch=self.args.app_restarts)
+        assert_isolated(
+            config,
+            self.run_dir,
+            self.project,
+            allow_dispatch=self.args.app_restarts,
+            allow_proxy=self.args.app_crash_boundaries,
+        )
         self.check("rendered Compose isolation guards")
         self.started = True  # Cleanup even if startup partially fails.
-        self.compose("up", "-d", "--no-build", "--no-deps", "briefcast", "whisperx")
+        services = ["briefcast", "whisperx"]
+        if self.args.app_crash_boundaries:
+            services.append("acceptance-proxy")
+        self.compose("up", "-d", "--no-build", "--no-deps", *services)
         self.ready()
         self.app_ready()
         app_before = self.app_identity()
@@ -625,6 +777,11 @@ class Harness:
         self.check("explicit resume and idempotent receipt")
         if self.args.app_restarts:
             self.app_restarts()
+        if self.args.app_crash_boundaries:
+            for boundary in ("result", "ack"):
+                self.app_restarts(boundary)
+        if self.app_identity() != app_before:
+            raise ValueError("app image/container changed during crash recovery")
         self.evidence["app_identity"] = app_before
         self.evidence["replacement_image"] = replacement
         self.evidence["complete"] = True
@@ -645,14 +802,27 @@ def main():
     parser.add_argument("--kill-at-checkpoint", action="store_true")
     parser.add_argument("--cold-cache-only", action="store_true")
     parser.add_argument("--app-restarts", action="store_true")
+    parser.add_argument(
+        "--app-crash-boundaries",
+        action="store_true",
+        help="also SIGKILL the app after success and after commit, before ACK",
+    )
     parser.add_argument("--timeout", type=int, default=1800)
-    harness = Harness(parser.parse_args())
+    args = parser.parse_args()
+    if args.app_crash_boundaries:
+        if args.cold_cache_only:
+            parser.error("app crash boundaries require a warm cache")
+        args.app_restarts = True
+    harness = Harness(args)
     try:
         harness.run()
     finally:
         if harness.started:
             # No down, volume removal, live data cleanup or image pruning.
-            harness.compose("stop", "briefcast", "whisperx")
+            services = ["briefcast", "whisperx"]
+            if args.app_crash_boundaries:
+                services.append("acceptance-proxy")
+            harness.compose("stop", *services)
 
 
 if __name__ == "__main__":

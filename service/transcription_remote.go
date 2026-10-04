@@ -292,7 +292,7 @@ func failRemoteItem(b *httpTranscriptionBackend, l *remoteLease, item *db.Podcas
 	return err
 }
 
-func acknowledgeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *remoteLease, item *db.PodcastItem, e *remoteEnvelope) error {
+func validateRemoteReceipt(l *remoteLease, item *db.PodcastItem, e *remoteEnvelope) error {
 	if err := l.check(); err != nil {
 		return err
 	}
@@ -300,7 +300,7 @@ func acknowledgeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *
 	if err != nil || e.ReceiptResultSHA256 == nil || transcription.Digest(canonical) != *e.ReceiptResultSHA256 || transcription.ValidateTranscript(canonical) != nil {
 		return remoteProblem("INVALID_CONFIG", "Committed transcript differs from receipt", false)
 	}
-	// Check generation/committed payload immediately before the external ACK.
+	// Fence each use of the receipt against generation or committed-data changes.
 	var count int64
 	if err = db.DB.Model(&db.PodcastItem{}).Where("id = ? AND deleted_at IS NULL AND transcript_status = 'available' AND transcript_json = ? AND transcript_checkpoint_json = ?", item.ID, item.TranscriptJSON, item.TranscriptCheckpointJSON).Count(&count).Error; err != nil {
 		return err
@@ -308,14 +308,21 @@ func acknowledgeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *
 	if count != 1 {
 		return errRemoteOwnership
 	}
-	if err = b.acknowledge(ctx, e); err != nil {
+	return nil
+}
+
+func acknowledgeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *remoteLease, item *db.PodcastItem, e *remoteEnvelope) error {
+	if err := validateRemoteReceipt(l, item, e); err != nil {
+		return err
+	}
+	if err := b.acknowledge(ctx, e); err != nil {
 		next := time.Now().UTC().Add(whisperxRetryDelay(1, b.cfg.RetryDelaySeconds, b.cfg.RetryMaxDelay))
 		if saveErr := l.update(item, map[string]any{"transcript_next_attempt": &next}, true); saveErr != nil {
 			return errors.Join(err, saveErr)
 		}
 		return err
 	}
-	if err = l.update(item, map[string]any{"transcript_checkpoint_json": "", "transcript_next_attempt": nil}, true); err != nil {
+	if err := l.update(item, map[string]any{"transcript_checkpoint_json": "", "transcript_next_attempt": nil}, true); err != nil {
 		return err
 	}
 	item.TranscriptCheckpointJSON = ""
@@ -343,7 +350,20 @@ func reconcileRemoteReceipts(ctx context.Context, b *httpTranscriptionBackend, l
 		} else if e.DeploymentID != b.deployment || e.EpisodeID != item.ID {
 			err = remoteProblem("INVALID_CONFIG", "Receipt identity mismatch", false)
 		} else if e.ReceiptResultSHA256 != nil {
-			err = acknowledgeRemoteItem(ctx, b, l, &item, e)
+			// A crash after the transcript commit may precede all downstream
+			// work. Validate the durable receipt before exporting or summarizing,
+			// and retain it until that work has been attempted on recovery.
+			err = validateRemoteReceipt(l, &item, e)
+			if err == nil {
+				ExportTranscript(&item)
+				// Preserve a completed or manually edited summary across receipts.
+				if strings.TrimSpace(item.LLMSummary) == "" {
+					if summaryErr := summarizeRemoteCommittedItem(l, &item); summaryErr != nil {
+						logging.Sugar().Warnw("remote_transcription_summary_failed", "podcast_item_id", item.ID, "error", summaryErr)
+					}
+				}
+				err = acknowledgeRemoteItem(ctx, b, l, &item, e)
+			}
 		} else {
 			continue
 		}

@@ -87,3 +87,34 @@ def test_normalization_preserves_errors_words_speakers_and_timestamps():
     assert acceptance.normalized(transcript) == {
         key: value for key, value in transcript.items() if key != "metadata"
     }
+
+
+@pytest.mark.parametrize("fault", ["mode", "endpoint", "mount", "ports", "environment", "writable"])
+def test_crash_proxy_cannot_escape_fixture(tmp_path, fault):
+    config = fixture_config(tmp_path)
+    env = config["services"]["briefcast"]["environment"]
+    env.update(WHISPERX_ENABLED="true", WHISPERX_SERVICE_URL="http://acceptance-proxy:8091")
+    proxy = {
+        "read_only": True,
+        "volumes": [{"type": "bind", "source": str(tmp_path / "gate"), "target": "/gate"}],
+    }
+    config["services"]["acceptance-proxy"] = proxy
+    acceptance.assert_isolated(config, tmp_path, "fixture", allow_dispatch=True, allow_proxy=True)
+    if fault == "mode":
+        with pytest.raises(ValueError):
+            acceptance.assert_isolated(config, tmp_path, "fixture", allow_dispatch=True)
+        return
+    if fault == "endpoint":
+        env["WHISPERX_SERVICE_URL"] = "http://production:8090"
+    elif fault == "mount":
+        proxy["volumes"][0]["source"] = str(tmp_path / "config")
+    elif fault == "ports":
+        proxy["ports"] = [{"published": "8091"}]
+    elif fault == "environment":
+        proxy["environment"] = {"DATABASE_URL": "private"}
+    else:
+        proxy["read_only"] = False
+    with pytest.raises(ValueError):
+        acceptance.assert_isolated(
+            config, tmp_path, "fixture", allow_dispatch=True, allow_proxy=True
+        )

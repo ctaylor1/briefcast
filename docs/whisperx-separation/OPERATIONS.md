@@ -170,7 +170,9 @@ just test-whisperx-contract
 just test-whisperx-unit
 just test-whisperx-python -Image $WorkerImage
 just test-whisperx-container-cpu --app-image $AppImage --worker-image $CPUImage --replacement-image $CPUReplacement --baseline-image $BaselineImage --cache $IsolatedWarmCache --audio $LongAudio --run-dir $NewCPURunDir --restart-at-checkpoint
-just test-whisperx-container-cuda --app-image $AppImage --worker-image $CUDAImage --replacement-image $CUDAReplacement --cache $IsolatedWarmCache --audio $LongAudio --run-dir $NewCUDARunDir --kill-at-checkpoint --app-restarts
+just test-whisperx-container-cuda --app-image $AppImage --worker-image $CUDAImage --replacement-image $CUDAReplacement --cache $IsolatedWarmCache --audio $LongAudio --run-dir $NewCUDARunDir --kill-at-checkpoint --app-crash-boundaries
 ```
 
 All harness run dirs must be new, private and outside the repository; it copies media/cache and rejects production configuration. CPU/CUDA replacement IDs must be distinct compatible images. `--baseline-image` enables strict comparison (including word scores); include it in a new CUDA quality run with predeclared/reviewed tolerance policy if a later change adds one. Without it, a successful recovery run does not prove output equality. Repeat `--audio` for FLAC/silence/representative episodes. Use `--cold-cache-only` for the isolated offline failure scenario. See [Stage G](STAGE_G.md) for exact prior commands, fixture hashes, runtime evidence and limitations; its historical results are not tests rerun by Stage H documentation work.
+
+`--app-crash-boundaries` includes the running-job restart test and adds SIGKILL after worker success before result delivery, and after the app commit before ACK forwarding. A private fixture proxy blocks those boundaries without production fault hooks. The fixture uses a one-minute transcription scheduler so committed receipts can reconcile even when manual repair has no unfinished transcript rows. Cache copies run in Linux, retain internal model links and reject links outside the source tree. See the [acceptance follow-up](ACCEPTANCE_FOLLOWUP.md) for implementation, actual runs and remaining gates.

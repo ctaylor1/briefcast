@@ -277,6 +277,23 @@ func TestRemoteReceiptReconcilesAfterLostAckResponse(t *testing.T) {
 	if err != nil || e.ReceiptResultSHA256 == nil || got.TranscriptStatus != "available" {
 		t.Fatalf("receipt lost: %v", err)
 	}
+	var summaryCalls atomic.Int32
+	summaryServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		summaryCalls.Add(1)
+		_, _ = rw.Write([]byte(`{"choices":[{"message":{"content":"Unexpected replacement."}}]}`))
+	}))
+	defer summaryServer.Close()
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "synthetic-key")
+	t.Setenv("LLM_BASE_URL", summaryServer.URL)
+	setting := db.GetOrCreateSetting()
+	setting.SummarizationEnabled = true
+	if err := db.UpdateSettings(setting); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Model(&db.PodcastItem{}).Where("id = ?", f.item.ID).Updates(map[string]any{"llm_summary": "Manually edited summary.", "llm_summary_status": "available"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	f.due(t)
 	if err := f.run(t); err != nil {
 		t.Fatal(err)
@@ -284,6 +301,89 @@ func TestRemoteReceiptReconcilesAfterLostAckResponse(t *testing.T) {
 	got = loadCharacterizationPodcastItem(t, f.item.ID)
 	if got.TranscriptCheckpointJSON != "" || f.acks.Load() != 2 || f.runner.calls.Load() != 1 {
 		t.Fatal("receipt reconciliation reran inference or lost ACK")
+	}
+	if got.LLMSummary != "Manually edited summary." || summaryCalls.Load() != 0 {
+		t.Fatal("receipt reconciliation replaced an existing summary")
+	}
+}
+
+// Cancel at the HTTP boundary before forwarding, like an app process dying.
+// The worker journal and committed app columns survive the next invocation.
+func TestRemoteRestartAtResultAndReceiptBoundariesFinishesExports(t *testing.T) {
+	for _, boundary := range []string{"result", "ack"} {
+		t.Run(boundary, func(t *testing.T) {
+			f := newRemoteTestFixture(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var stopped atomic.Bool
+			f.intercept = func(rw http.ResponseWriter, r *http.Request) bool {
+				if strings.HasSuffix(r.URL.Path, "/"+boundary) && stopped.CompareAndSwap(false, true) {
+					cancel()
+					dropTestConnection(t, rw)
+					return true
+				}
+				return false
+			}
+			b, err := newHTTPTranscriptionBackend(f.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = transcribePendingEpisodes(ctx, f.cfg, b); err == nil || !stopped.Load() {
+				t.Fatal("boundary interruption was not surfaced")
+			}
+			before := loadCharacterizationPodcastItem(t, f.item.ID)
+			e, err := decodeRemoteEnvelope(before.TranscriptCheckpointJSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (boundary == "ack") != (e.ReceiptResultSHA256 != nil) {
+				t.Fatal("interruption occurred at the wrong commit boundary")
+			}
+			if _, err := f.worker.Result(e.JobID); err != nil {
+				t.Fatal("interruption lost the worker result")
+			}
+			var summaryCalls atomic.Int32
+			summaryServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				summaryCalls.Add(1)
+				got := loadCharacterizationPodcastItem(t, f.item.ID)
+				if got.TranscriptStatus != "available" || got.CanonicalTranscript == "" {
+					t.Error("recovery summary preceded transcript commit")
+				}
+				_, _ = rw.Write([]byte(`{"choices":[{"message":{"content":"Recovered summary."}}]}`))
+			}))
+			defer summaryServer.Close()
+			t.Setenv("LLM_ENABLED", "true")
+			t.Setenv("LLM_API_KEY", "synthetic-key")
+			t.Setenv("LLM_BASE_URL", summaryServer.URL)
+			setting := db.GetOrCreateSetting()
+			setting.SummarizationEnabled = true
+			if err := db.UpdateSettings(setting); err != nil {
+				t.Fatal(err)
+			}
+			f.due(t)
+			if err = f.run(t); err != nil {
+				t.Fatal(err)
+			}
+			got := loadCharacterizationPodcastItem(t, f.item.ID)
+			if got.TranscriptStatus != "available" || got.TranscriptCheckpointJSON != "" || f.runner.calls.Load() != 1 || f.puts.Load() != 1 {
+				t.Fatal("restart lost the receipt or repeated inference")
+			}
+			if got.LLMSummary != "Recovered summary." || summaryCalls.Load() != 1 {
+				t.Fatal("restart did not finish the summary")
+			}
+			for _, variant := range transcriptExportVariants {
+				path := filepath.Join(resolveExportDir(), variant.dir, sanitizeAssetName(podcastTitle(&got)), pubDateSubdir(got.PubDate), exportEpisodeFileName(&got)+variant.extension)
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("restart did not finish %s export: %v", boundary, err)
+				}
+			}
+			if err = f.run(t); err != nil {
+				t.Fatal(err)
+			}
+			if summaryCalls.Load() != 1 {
+				t.Fatal("completed recovery summarized again")
+			}
+		})
 	}
 }
 

@@ -45,3 +45,5 @@ The observed production image remained `sha256:a7542b94500a5ac7e00271451ef2a51db
 **Production acceptance remains incomplete:** strict GPU word-score comparison failed; final coherent production database/config/media protection and representative media restore, remaining matrix cases, canary/summary-provider validation and 24-hour observation remain outstanding. Optional gated diarization is unverified and the known baseline CUDA TorchCodec decoder limitation is preserved. Single-app/single-worker operation and same-host read-only worker media remain the supported scope; host migration and general scheduled-backup redesign are deferred.
 
 Next operational work is resolving those documented gates and reviewing the private concrete cutover package. Stage H documentation completion is not authorization or evidence for production rollout.
+
+Subsequent implementation and verification are recorded in the [Stage G acceptance follow-up](ACCEPTANCE_FOLLOWUP.md); this historical Stage H report remains documentation-only evidence.

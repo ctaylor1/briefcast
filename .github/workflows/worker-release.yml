@@ -73,7 +73,7 @@ jobs:
           Set-Content (Join-Path $privateRoot 'Dockerfile') "FROM briefcast-whisperx:test`nLABEL org.briefcast.acceptance=compatible-replacement"
           docker build -t briefcast-whisperx:replacement $privateRoot
           if ($LASTEXITCODE -ne 0) { throw 'Compatible replacement build failed' }
-          uv run python scripts/whisperx_acceptance.py --runtime cpu --app-image briefcast:acceptance --worker-image briefcast-whisperx:test --replacement-image briefcast-whisperx:replacement --cache (Join-Path $privateRoot 'cache') --audio tests/fixtures/whisperx/speech.flac --run-dir (Join-Path $privateRoot 'run') --timeout 600 --app-restarts
+          uv run python scripts/whisperx_acceptance.py --runtime cpu --app-image briefcast:acceptance --worker-image briefcast-whisperx:test --replacement-image briefcast-whisperx:replacement --cache (Join-Path $privateRoot 'cache') --audio tests/fixtures/whisperx/speech.flac --run-dir (Join-Path $privateRoot 'run') --timeout 600 --app-crash-boundaries
           if ($LASTEXITCODE -ne 0) { throw 'Real CPU acceptance failed' }
           Copy-Item (Join-Path $privateRoot 'run/evidence.json') cpu-acceptance.json
       - uses: actions/upload-artifact@v4
