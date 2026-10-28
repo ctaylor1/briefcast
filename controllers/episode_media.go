@@ -2,10 +2,13 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/ctaylor1/briefcast/db"
+	"github.com/ctaylor1/briefcast/internal/logging"
+	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
@@ -44,6 +47,10 @@ func GetPodcastItemTranscript(c *gin.Context) {
 	}
 
 	status := strings.TrimSpace(item.TranscriptStatus)
+	if c.Query("format") == "markdown-package" {
+		writeEpisodeMarkdownBundle(c, &item, "transcript")
+		return
+	}
 	if status == "" {
 		status = "missing"
 	}
@@ -55,6 +62,9 @@ func GetPodcastItemTranscript(c *gin.Context) {
 
 	if strings.TrimSpace(item.CanonicalTranscript) != "" {
 		payload["canonicalTranscript"] = item.CanonicalTranscript
+	}
+	if strings.TrimSpace(item.CanonicalTranscript) != "" || strings.TrimSpace(item.TranscriptJSON) != "" {
+		addEpisodeMarkdownPayload(payload, &item, "transcript")
 	}
 
 	if strings.TrimSpace(item.TranscriptJSON) == "" {
@@ -114,6 +124,10 @@ func GetPodcastItemSummary(c *gin.Context) {
 	}
 
 	status := strings.TrimSpace(item.LLMSummaryStatus)
+	if c.Query("format") == "markdown-package" {
+		writeEpisodeMarkdownBundle(c, &item, "summary")
+		return
+	}
 	if status == "" {
 		status = "not_attempted"
 	}
@@ -125,6 +139,7 @@ func GetPodcastItemSummary(c *gin.Context) {
 
 	if strings.TrimSpace(item.LLMSummary) != "" {
 		payload["summary"] = item.LLMSummary
+		addEpisodeMarkdownPayload(payload, &item, "summary")
 	}
 	if item.LLMSummaryDate != nil {
 		payload["generatedAt"] = item.LLMSummaryDate
@@ -134,4 +149,33 @@ func GetPodcastItemSummary(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, payload)
+}
+
+func writeEpisodeMarkdownBundle(c *gin.Context, item *db.PodcastItem, kind string) {
+	data, filename, err := service.EpisodeMarkdownBundle(item, kind)
+	if err != nil {
+		logging.Sugar().Warnw("failed to prepare Markdown package", "podcast_item_id", item.ID, "content_type", kind, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Markdown package is unavailable. Check the server logs."})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "application/zip", data)
+}
+
+func addEpisodeMarkdownPayload(payload gin.H, item *db.PodcastItem, kind string) {
+	content, err := service.EpisodeMarkdown(item, kind)
+	if err != nil {
+		logging.Sugar().Warnw("failed to prepare UI Markdown export", "podcast_item_id", item.ID, "content_type", kind, "error", err)
+		payload["markdownError"] = "Markdown export is unavailable. Check the server logs."
+		return
+	}
+	if content == "" {
+		return
+	}
+	meta, _, err := pm.Parse(content)
+	if err != nil {
+		return
+	}
+	payload["markdown"] = content
+	payload["markdownFileName"] = fmt.Sprintf("Briefcast-%s-%s-r%v.md", strings.TrimPrefix(fmt.Sprint(meta["document_id"]), "urn:uuid:"), kind, meta["document_revision"])
 }

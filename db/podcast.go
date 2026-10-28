@@ -114,12 +114,28 @@ type PodcastItem struct {
 	// Lineage: which LLM model and prompt produced the summary.
 	LLMSummaryModel  string `gorm:"type:text"`
 	LLMSummaryPrompt string `gorm:"type:text" json:"-"`
+	// Captured at successful generation; never reconstructed from today's settings.
+	SummaryProvenanceJSON string `gorm:"type:text" json:"-"`
 
 	HasSummary bool `gorm:"-"`
 
 	AlternateFileURLs string `gorm:"type:text" json:"-"`
 
 	IsSummaryFavorited bool `gorm:"default:false"`
+}
+
+// MarkdownRevision retains immutable export bytes and identity independently of
+// paths. The unique index also protects revision allocation across app processes.
+type MarkdownRevision struct {
+	Base
+	DocumentID  string      `gorm:"uniqueIndex:idx_markdown_document_revision;not null"`
+	Revision    int         `gorm:"uniqueIndex:idx_markdown_document_revision;not null"`
+	EpisodeID   string      `gorm:"index;not null"`
+	Episode     PodcastItem `gorm:"foreignKey:EpisodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	ContentType string      `gorm:"not null"`
+	Fingerprint string      `gorm:"not null"`
+	Content     string      `gorm:"type:text;not null" json:"-"`
+	ExportPath  string      `gorm:"type:text" json:"-"`
 }
 
 // ShowNoteLink represents a link extracted from episode show notes.

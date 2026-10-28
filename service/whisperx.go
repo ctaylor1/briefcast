@@ -469,6 +469,20 @@ func TranscribePendingEpisodes() error {
 		item.TranscriptCheckpointJSON = ""
 		// Lineage: record which WhisperX model produced this transcript.
 		item.TranscriptModel = cfg.Model
+		var resultModel struct {
+			Model    string `json:"model"`
+			Metadata struct {
+				ASRPerformed *bool `json:"asr_performed"`
+			} `json:"metadata"`
+		}
+		if json.Unmarshal(output, &resultModel) == nil {
+			if resultModel.Model != "" {
+				item.TranscriptModel = resultModel.Model
+			}
+			if resultModel.Metadata.ASRPerformed != nil && !*resultModel.Metadata.ASRPerformed {
+				item.TranscriptModel = ""
+			}
+		}
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
 			setError(err)

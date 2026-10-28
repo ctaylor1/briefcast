@@ -5,6 +5,36 @@ import (
 	"time"
 )
 
+func TestMarkdownProvenanceStorageExistsAfterMigrate(t *testing.T) {
+	setupDBForTest(t)
+	if !DB.Migrator().HasColumn(&PodcastItem{}, "summary_provenance_json") {
+		t.Fatal("missing summary provenance storage")
+	}
+	if !DB.Migrator().HasTable(&MarkdownRevision{}) {
+		t.Fatal("missing Markdown revision storage")
+	}
+}
+
+func TestDeletingEpisodeDeletesPrivateMarkdownRevisions(t *testing.T) {
+	setupDBForTest(t)
+	podcast := newPodcast(t, "Private export fixture", "https://example.com/feed.xml")
+	item := newPodcastItem(t, podcast.ID, "episode-guid", "Private episode", NotDownloaded, time.Now().UTC())
+	record := MarkdownRevision{DocumentID: "document", EpisodeID: item.ID, Revision: 1, ContentType: "transcript", Fingerprint: "fingerprint", Content: "private transcript"}
+	if err := DB.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DeletePodcastItemByID(item.ID); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := DB.Unscoped().Model(&MarkdownRevision{}).Where("episode_id = ?", item.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("deleted episode retained private export history")
+	}
+}
+
 // TestParseAddColumnIfNotExists handles the corresponding operation.
 func TestParseAddColumnIfNotExists(t *testing.T) {
 	query := "alter table settings add column if not exists retention_keep_all boolean default true"

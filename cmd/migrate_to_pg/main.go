@@ -84,6 +84,13 @@ func migrateAll(src, dst *gorm.DB, dryRun bool) error {
 	if err := migrateTable[appdb.PodcastItem](src, dst, "podcast_items", dryRun); err != nil {
 		return err
 	}
+	// Older source databases do not have export history yet. Preserve it when
+	// present without requiring an upgrade/migration of the source database.
+	if src.Migrator().HasTable(&appdb.MarkdownRevision{}) {
+		if err := migrateTable[appdb.MarkdownRevision](src, dst, "markdown_revisions", dryRun); err != nil {
+			return err
+		}
+	}
 	if err := migrateTable[appdb.JobLock](src, dst, "job_locks", dryRun); err != nil {
 		return err
 	}

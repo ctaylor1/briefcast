@@ -564,6 +564,7 @@ onMounted(() => {
             <button type="button" class="drawer-action-link" @click="sendToClaude">
               Open in Claude
             </button>
+            <a v-if="drawerItem" class="drawer-action-link" :href="`/podcastitems/${drawerItem.ID}/transcript?format=markdown-package`">Download Markdown package</a>
             <button type="button" class="drawer-action-link" @click="sendTranscriptToObsidian">
               Send to Obsidian
             </button>
@@ -610,7 +611,8 @@ onMounted(() => {
           <p v-else-if="drawerSummaryStatus !== 'available'" class="meta-text">{{ drawerSummarySummary() }}</p>
           <div v-else class="stack-3">
             <div class="drawer-transcript-actions">
-              <button type="button" class="drawer-action-link" @click="sendSummaryToObsidian">
+              <a v-if="drawerItem" class="drawer-action-link" :href="`/podcastitems/${drawerItem.ID}/summary?format=markdown-package`">Download Markdown package</a>
+            <button type="button" class="drawer-action-link" @click="sendSummaryToObsidian">
                 Send to Obsidian
               </button>
             </div>
