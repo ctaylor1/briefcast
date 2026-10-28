@@ -16,8 +16,7 @@ import { formatDate } from "../lib/format";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
   DEFAULT_OBSIDIAN_VAULT,
-  buildPodcastSummaryObsidianUrl,
-  buildPodcastTranscriptObsidianUrl,
+  sendPodcastMarkdownToObsidian,
 } from "../lib/obsidian";
 import type { Podcast, SummaryListItem, SummarySorting } from "../types/api";
 
@@ -55,6 +54,10 @@ const readerOpen = ref(false);
 const readerItem = ref<SummaryListItem | null>(null);
 const readerSummaryHtml = ref("");
 const readerSummaryRaw = ref("");
+const summaryMarkdown = ref("");
+const summaryMarkdownFile = ref("");
+const transcriptMarkdown = ref("");
+const transcriptMarkdownFile = ref("");
 const readerLoadingSummary = ref(false);
 const readerTocItems = ref<Array<{ id: string; text: string; level: number }>>([]);
 
@@ -180,6 +183,8 @@ async function openReader(item: SummaryListItem): Promise<void> {
   readerLoadingSummary.value = true;
   readerSummaryHtml.value = "";
   readerSummaryRaw.value = "";
+  summaryMarkdown.value = "";
+  transcriptMarkdown.value = "";
   readerTocItems.value = [];
   readerTranscriptText.value = "";
   readerCanonicalTranscript.value = "";
@@ -188,6 +193,8 @@ async function openReader(item: SummaryListItem): Promise<void> {
 
   try {
     const response = await episodesApi.getSummary(item.id);
+    summaryMarkdown.value = response.markdown || "";
+    summaryMarkdownFile.value = response.markdownFileName || "summary.md";
     if (typeof response.isFavorited === "boolean") {
       item.isFavorited = response.isFavorited;
     }
@@ -212,6 +219,8 @@ async function fetchTranscript(): Promise<void> {
   readerLoadingTranscript.value = true;
   try {
     const response = await episodesApi.getTranscript(readerItem.value.id);
+    transcriptMarkdown.value = response.markdown || "";
+    transcriptMarkdownFile.value = response.markdownFileName || "transcript.md";
     if (typeof response.isFavorited === "boolean") {
       readerItem.value.isFavorited = response.isFavorited;
     }
@@ -395,14 +404,11 @@ function podcastFilterLabel(): string {
 function sendSummaryToObsidian(): void {
   if (!readerItem.value || !readerSummaryRaw.value) return;
 
-  window.location.href = buildPodcastSummaryObsidianUrl({
+  sendPodcastMarkdownToObsidian({
     vault: obsidianVault.value,
     folder: obsidianFolder.value,
-    episodeTitle: readerItem.value.episodeTitle,
-    podcastTitle: readerItem.value.podcastTitle,
-    pubDate: readerItem.value.pubDate,
-    model: readerItem.value.model,
-    summary: readerSummaryRaw.value,
+    fileName: summaryMarkdownFile.value,
+    markdown: summaryMarkdown.value,
   });
 }
 
@@ -411,13 +417,11 @@ function sendTranscriptToObsidian(): void {
   const transcript = readerCanonicalTranscript.value || readerTranscriptText.value;
   if (!transcript) return;
 
-  window.location.href = buildPodcastTranscriptObsidianUrl({
+  sendPodcastMarkdownToObsidian({
     vault: obsidianVault.value,
     folder: obsidianFolder.value,
-    episodeTitle: readerItem.value.episodeTitle,
-    podcastTitle: readerItem.value.podcastTitle,
-    pubDate: readerItem.value.pubDate,
-    transcript,
+    fileName: transcriptMarkdownFile.value,
+    markdown: transcriptMarkdown.value,
   });
 }
 
@@ -614,6 +618,7 @@ onBeforeUnmount(() => {
             <p v-if="readerLoadingSummary" class="meta-text">Loading summary...</p>
             <template v-else-if="readerSummaryHtml">
               <div class="reader__body-actions">
+                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="`/podcastitems/${readerItem.id}/summary?format=markdown-package`">Download Markdown package</a>
                 <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendSummaryToObsidian">
                   Send summary to Obsidian
                 </button>
@@ -631,6 +636,7 @@ onBeforeUnmount(() => {
             <p v-if="readerLoadingTranscript" class="meta-text">Loading transcript...</p>
             <template v-else-if="readerTranscriptText">
               <div class="reader__body-actions">
+                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="`/podcastitems/${readerItem.id}/transcript?format=markdown-package`">Download Markdown package</a>
                 <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendTranscriptToObsidian">
                   Send transcript to Obsidian
                 </button>

@@ -4,11 +4,78 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
+	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 )
+
+func TestSummaryMarkdownCapturesActualRequestAndRetainsHistory(t *testing.T) {
+	item := markdownTestItem(t)
+	var request openAIChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		_, _ = w.Write([]byte(`{"model":"resolved-fixture","choices":[{"message":{"content":"## Takeaway\n\n- A **qualified** claim."}}]}`))
+	}))
+	defer server.Close()
+	start := time.Now().UTC()
+	if err := SummarizeEpisode(&item, LLMConfig{APIKey: "test-key", BaseURL: server.URL, Provider: "fixture-runtime", Model: "requested-fixture", MaxTokens: 512, Temperature: 0.2, TimeoutSecs: 5}, "System bytes\n", "User bytes\n"); err != nil {
+		t.Fatal(err)
+	}
+	document, err := EpisodeMarkdown(&item, "summary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, body, err := pm.Parse(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.Validate(meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["provenance_status"] != "partial" || meta["model_requested"] != "requested-fixture" || meta["model_resolved"] != "resolved-fixture" {
+		t.Fatalf("incorrect model provenance: %#v", meta)
+	}
+	inputs := meta["inputs"].([]any)
+	input := inputs[0].(map[string]any)
+	exact := strings.TrimPrefix(request.Messages[1].Content, "User bytes\n")
+	if exact != item.CanonicalTranscript || body != "## Takeaway\n\n- A **qualified** claim." {
+		t.Fatal("transcript acquired formatting or summary Markdown was changed")
+	}
+	snapshot, err := os.ReadFile(filepath.Join(markdownDirectory(&item, "summary"), filepath.FromSlash(input["uri"].(string))))
+	if err != nil || string(snapshot) != exact || input["sha256"] != pm.Hash([]byte(exact)) || input["coverage"] != "full" {
+		t.Fatal("input did not match actual request")
+	}
+	full := markdownTestProvenance(t, &item, "summary", meta)
+	prompt := full["prompt"].(map[string]any)
+	promptBytes, _ := json.Marshal(prompt)
+	if prompt["system"] != request.Messages[0].Content || meta["prompt_sha256"] != pm.Hash(promptBytes) {
+		t.Fatal("prompt hash does not match retained exact bytes")
+	}
+	completed, err := time.Parse(time.RFC3339Nano, meta["summarized_at"].(string))
+	if err != nil || completed.Before(start) {
+		t.Fatal("incorrect completion time", err)
+	}
+	if meta["document_revision"] != float64(2) || meta["previous_revision"] == nil {
+		t.Fatal("previous summary was not preserved")
+	}
+	if strings.Contains(document, "test-key") || strings.Contains(document, server.URL) {
+		t.Fatal("export leaked runtime credentials or private endpoint")
+	}
+	// The exact input remains frozen if the transcript is subsequently changed.
+	item.CanonicalTranscript = "Changed after generation"
+	item.TranscriptJSON = ""
+	again, err := EpisodeMarkdown(&item, "summary")
+	if err != nil || again != document {
+		t.Fatal("summary retroactively changed its input", err)
+	}
+}
 
 func TestSummarizeTranscriptUsesBoundedLLMClient(t *testing.T) {
 	var sawRequest bool

@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# These examples reference exact file-byte hashes, including line endings.
+/docs/podcast-markdown/** text eol=lf

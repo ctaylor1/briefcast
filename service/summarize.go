@@ -9,14 +9,17 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
+	"github.com/google/uuid"
 )
 
 const defaultSummarizationPrompt = `You are an expert podcast content analyst. Your job is to read podcast transcripts and extract the most important information with precision, discipline, and clear prioritization.
 
-Produce structured summaries that focus on substance over filler. Do not describe the source as a podcast, episode, interview, or discussion. Do not use meta-conversational phrasing such as “this podcast covers,” “the hosts discuss,” “the speaker says,” or “in this episode.” Write as if presenting the distilled ideas directly.
+Produce structured summaries that focus on substance over filler. Use direct language while preserving source attribution, material qualifications, and supporting segment identifiers or timestamps when available.
 
 Your summaries must:
 1. Identify the central topic or thesis.
@@ -36,6 +39,8 @@ Additional rules:
 - Do not mention transcript quality unless it prevents interpretation.
 - If the transcript does not contain enough information for a requested section, omit that section rather than padding.
 - Ignore advertisements, sponsor reads, affiliate promotions, and paid endorsements unless they are directly relevant to the substance of the discussion.`
+
+const summaryEvidenceInstructions = "\n\nPreserve material qualifications and attribution. Support quotes and material claims with the supplied segment identifiers or timestamps when available. Never invent timestamps, speaker identities, or evidence locators."
 
 const defaultUserPrompt = `Read the following podcast transcript and produce a structured summary using the rules from your system instructions.
 
@@ -188,6 +193,22 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 }
 
 func summarizeTranscriptWithModel(transcript string, prompt string, userPrompt string, cfg LLMConfig) (string, string, error) {
+	return summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, nil)
+}
+
+func preparedSummaryTranscript(transcript string) (string, int) {
+	length := len(transcript)
+	if length > maxTranscriptChars {
+		length = maxTranscriptChars
+		for length > 0 && !utf8.RuneStart(transcript[length]) {
+			length--
+		}
+		return transcript[:length] + "\n\n[Transcript truncated due to length]", length
+	}
+	return transcript, length
+}
+
+func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt string, cfg LLMConfig, report map[string]any) (string, string, error) {
 	if strings.TrimSpace(transcript) == "" {
 		return "", "", fmt.Errorf("transcript is empty")
 	}
@@ -195,9 +216,7 @@ func summarizeTranscriptWithModel(transcript string, prompt string, userPrompt s
 		return "", "", fmt.Errorf("LLM API key is not configured")
 	}
 
-	if len(transcript) > maxTranscriptChars {
-		transcript = transcript[:maxTranscriptChars] + "\n\n[Transcript truncated due to length]"
-	}
+	transcript, _ = preparedSummaryTranscript(transcript)
 
 	reqBody := openAIChatRequest{
 		Model: cfg.Model,
@@ -286,6 +305,25 @@ func summarizeTranscriptWithModel(transcript string, prompt string, userPrompt s
 	}
 
 	model := strings.TrimSpace(chatResp.Model)
+	if report != nil {
+		report["summarized_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+		report["model_requested"] = cfg.Model
+		report["model_provider"] = "openai-compatible"
+		if cfg.Provider != "" {
+			report["model_provider"] = cfg.Provider
+		}
+		if model != "" {
+			report["model_resolved"] = model
+		}
+		settings := map[string]any{"protocol": "openai-chat-completions"}
+		if cfg.MaxTokens != 0 {
+			settings["max_tokens"] = cfg.MaxTokens
+		}
+		if cfg.Temperature != 0 {
+			settings["temperature"] = cfg.Temperature
+		}
+		report["generation_settings"] = settings
+	}
 	if model == "" {
 		model = cfg.Model
 	}
@@ -335,20 +373,72 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return missingTranscriptErr
 	}
 
-	// Keep an existing summary visible while its replacement is generated.
-	if hasExistingSummary && item.LLMSummaryStatus != "available" {
-		item.LLMSummaryStatus = "available"
-		if err := db.UpdatePodcastItem(item); err != nil {
-			return err
-		}
-	} else if !hasExistingSummary {
-		item.LLMSummaryStatus = "processing"
-		if err := db.UpdatePodcastItem(item); err != nil {
-			jobLogger.Warnw("failed to mark summary processing", "podcast_item_id", item.ID, "error", err)
+	// Capture the input BEFORE calling the provider. A subsequent transcript edit
+	// cannot silently change what the summary claims to have read.
+	transcriptDocument, err := EpisodeMarkdown(item, "transcript")
+	if err != nil {
+		return fmt.Errorf("capture summary source: %w", err)
+	}
+	sourceMetadata, sourceBody, err := pm.Parse(transcriptDocument)
+	if err != nil {
+		return err
+	}
+	transcript = sourceBody
+	prepared, coveredBytes := preparedSummaryTranscript(transcript)
+	inputHash := pm.Hash([]byte(prepared))
+	coverage := "full"
+	if coveredBytes < len(transcript) {
+		coverage = "partial"
+	}
+	input := map[string]any{
+		"kind": "transcript", "id": pm.ResourceID("summary-input", inputHash), "revision": 1,
+		"uri": "inputs/" + inputHash + ".txt", "sha256": inputHash, "coverage": coverage, "text": prepared,
+		"source_document": map[string]any{"id": sourceMetadata["document_id"], "revision": sourceMetadata["document_revision"], "sha256": pm.Hash([]byte(transcriptDocument))},
+	}
+	if coverage == "partial" {
+		input["locators"] = []any{map[string]any{"unit": "utf8_byte", "start": 0, "end_exclusive": coveredBytes}}
+	}
+	// Reading the entire available transcript is not proof of full episode coverage.
+	input["episode_coverage"] = "unknown"
+	ancestry := map[string]any{}
+	for _, key := range []string{"transcription_method", "transcribed_at", "transcription_engine", "transcription_engine_version", "transcription_model", "asr_backend", "asr_backend_version", "provenance_status", "provenance_missing"} {
+		if value, ok := sourceMetadata[key]; ok {
+			ancestry[key] = value
 		}
 	}
-
-	summary, model, err := summarizeTranscriptWithModel(transcript, prompt, userPrompt, cfg)
+	input["source_provenance"] = ancestry
+	prompt += summaryEvidenceInstructions
+	promptRecord := map[string]any{"system": prompt, "user_template": userPrompt}
+	promptBytes, err := json.Marshal(promptRecord)
+	if err != nil {
+		return err
+	}
+	promptHash := pm.Hash(promptBytes)
+	report := map[string]any{
+		"production_origin": "captured", "inputs": []any{input}, "prompt": promptRecord,
+		"prompt_id": pm.ResourceID("summary-prompt", promptHash), "prompt_version": promptHash, "prompt_sha256": promptHash,
+	}
+	sourceHash := pm.Hash([]byte(transcriptDocument))
+	report["processing_events"] = []any{map[string]any{
+		"event_id": uuid.New().URN(), "operation": "prepare_summary_input", "completed_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"tool": pm.Generator, "tool_version": pm.GeneratorVersion,
+		"inputs":   []any{map[string]any{"kind": "transcript", "id": sourceMetadata["document_id"], "revision": sourceMetadata["document_revision"], "uri": "inputs/" + sourceHash + ".txt", "sha256": sourceHash, "coverage": "full", "text": transcriptDocument}},
+		"output":   map[string]any{"id": input["id"], "revision": 1, "sha256": inputHash},
+		"settings": map[string]any{"extract": "Markdown body after YAML frontmatter", "source_body_bytes": len(transcript), "included_body_bytes": coveredBytes, "truncation_marker": "[Transcript truncated due to length]"},
+	}}
+	// Preserve a prior summary and its known provenance before replacing it.
+	if hasExistingSummary {
+		if _, err := EpisodeMarkdown(item, "summary"); err != nil {
+			return fmt.Errorf("preserve previous summary: %w", err)
+		}
+		item.LLMSummaryStatus = "available"
+	} else {
+		item.LLMSummaryStatus = "processing"
+	}
+	if err := db.UpdatePodcastItem(item); err != nil {
+		return err
+	}
+	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
 	if err != nil {
 		if hasExistingSummary {
 			item.LLMSummaryStatus = "available"
@@ -362,7 +452,10 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return err
 	}
 
-	now := time.Now().UTC()
+	now, err := time.Parse(time.RFC3339Nano, report["summarized_at"].(string))
+	if err != nil {
+		return err
+	}
 	item.LLMSummary = summary
 	item.LLMSummaryStatus = "available"
 	item.LLMSummaryError = ""
@@ -370,6 +463,23 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	// Lineage: record which model and prompt produced this summary.
 	item.LLMSummaryModel = model
 	item.LLMSummaryPrompt = prompt
+	priorEvents, _ := report["processing_events"].([]any)
+	summaryEvent := map[string]any{
+		"event_id": uuid.New().URN(), "operation": "summarization", "completed_at": report["summarized_at"],
+		"tool": pm.Generator, "tool_version": pm.GeneratorVersion, "model_requested": cfg.Model,
+		"model_provider": report["model_provider"],
+		"prompt_id":      report["prompt_id"], "prompt_version": report["prompt_version"], "prompt_sha256": report["prompt_sha256"],
+		"inputs": report["inputs"], "settings": report["generation_settings"],
+	}
+	if resolved, ok := report["model_resolved"]; ok {
+		summaryEvent["model_resolved"] = resolved
+	}
+	report["processing_events"] = append(priorEvents, summaryEvent)
+	provenance, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	item.SummaryProvenanceJSON = string(provenance)
 	if err := db.UpdatePodcastItem(item); err != nil {
 		return err
 	}

@@ -1,13 +1,50 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
+	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 )
+
+func TestExportAllProcessesEveryBatch(t *testing.T) {
+	setupRetentionTestDB(t)
+	podcast := createPodcast(t, "Batched exports", false)
+	items := make([]db.PodcastItem, exportAllBatchSize+1)
+	for i := range items {
+		items[i] = db.PodcastItem{PodcastID: podcast.ID, Title: fmt.Sprintf("Batch episode %d", i), CanonicalTranscript: fmt.Sprintf("Batch transcript %d", i), CanonicalTranscriptVersion: canonicalTranscriptVersionCurrent}
+	}
+	if err := db.DB.Create(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	transcripts, summaries, err := ExportAll()
+	if err != nil || transcripts != len(items) || summaries != 0 {
+		t.Fatalf("incomplete batched export: transcripts=%d summaries=%d error=%v", transcripts, summaries, err)
+	}
+	for _, item := range items {
+		var revision db.MarkdownRevision
+		if err := db.DB.Where("episode_id = ? AND content_type = ?", item.ID, "transcript").First(&revision).Error; err != nil {
+			t.Fatal(err)
+		}
+		assertMarkdownExport(t, filepath.Join(resolveExportDir(), filepath.FromSlash(revision.ExportPath)), "transcript", item.CanonicalTranscript)
+	}
+}
+
+func TestExportFileComponentBoundsLongNamesWithoutCollisions(t *testing.T) {
+	first := exportFileComponent(strings.Repeat("é", 150)+"one", ".r1.123456789abc.1.md")
+	second := exportFileComponent(strings.Repeat("é", 150)+"two", ".r1.123456789abc.1.md")
+	if len(first) > 255 || first == second || !strings.HasSuffix(first, ".r1.123456789abc.1.md") {
+		t.Fatal("invalid long filename handling")
+	}
+	if got := exportFileComponent("Normal episode", ".txt"); got != "Normal episode.txt" {
+		t.Fatal("changed a representable filename")
+	}
+}
 
 func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 	tempDir := setupRetentionTestDB(t)
@@ -32,9 +69,7 @@ func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 		t.Fatalf("expected transcript export at %q, got content=%q err=%v", transcriptPath, string(got), err)
 	}
 	transcriptMarkdownPath := filepath.Join(dataDir, "markdown", "transcripts", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.md")
-	if got, err := os.ReadFile(transcriptMarkdownPath); err != nil || string(got) != item.CanonicalTranscript {
-		t.Fatalf("expected transcript markdown export at %q, got content=%q err=%v", transcriptMarkdownPath, string(got), err)
-	}
+	assertMarkdownExport(t, transcriptMarkdownPath, "transcript", item.CanonicalTranscript)
 
 	summaryPath := filepath.Join(dataDir, "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.txt")
 	expectedSummary := item.LLMSummary + "\n\n---\n\n## Show Notes\n\n" + item.Summary
@@ -42,9 +77,7 @@ func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)
 	}
 	summaryMarkdownPath := filepath.Join(dataDir, "markdown", "summaries", "Export- Podcast-One", dateSub, "2024-03-05-1-Episode- One-Two.md")
-	if got, err := os.ReadFile(summaryMarkdownPath); err != nil || string(got) != expectedSummary {
-		t.Fatalf("expected summary markdown export at %q, got content=%q err=%v", summaryMarkdownPath, string(got), err)
-	}
+	assertMarkdownExport(t, summaryMarkdownPath, "summary", item.LLMSummary)
 }
 
 func TestExportEpisodeFileNameSkipsMissingPubDate(t *testing.T) {
@@ -139,9 +172,7 @@ func TestExportAllBackfillsCanonicalTranscriptFromTranscriptJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected transcript markdown export at %q: %v", transcriptMarkdownPath, err)
 	}
-	if string(got) != "HOST: Legacy transcript text." {
-		t.Fatalf("unexpected transcript markdown export content %q", string(got))
-	}
+	assertMarkdownExport(t, transcriptMarkdownPath, "transcript", "Legacy transcript text.")
 
 	var refreshed db.PodcastItem
 	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
@@ -152,5 +183,23 @@ func TestExportAllBackfillsCanonicalTranscriptFromTranscriptJSON(t *testing.T) {
 	}
 	if refreshed.CanonicalTranscriptVersion != canonicalTranscriptVersionCurrent {
 		t.Fatalf("expected canonical transcript version %d, got %d", canonicalTranscriptVersionCurrent, refreshed.CanonicalTranscriptVersion)
+	}
+}
+
+func assertMarkdownExport(t *testing.T, path, kind, expectedBody string) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, body, err := pm.Parse(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.Validate(meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["content_type"] != kind || !strings.Contains(body, expectedBody) {
+		t.Fatalf("incorrect Markdown export at %s", path)
 	}
 }

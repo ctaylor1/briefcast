@@ -1,0 +1,33 @@
+---
+metadata_schema: "podcast-markdown"
+schema_version: "1.2"
+document_id: "{{ stable_document_uuid_urn }}"
+document_revision: {{ positive_revision }}
+episode_id: "{{ stable_shared_episode_uuid_urn }}"
+source_type: "podcast_episode"
+content_type: "summary"
+title: "{{ escaped_document_title }}"
+created: "{{ actual_document_creation_rfc3339 }}"
+updated: "{{ actual_document_update_rfc3339 }}"
+generation_id: "{{ export_creation_event_uuid_urn }}"
+generator: "Briefcast podcast-markdown"
+generator_version: "1.2.3"
+episode_title: "{{ escaped_episode_title }}"
+podcast: "{{ escaped_podcast_title }}"
+summarized_at: "{{ actual_successful_completion_rfc3339 }}"
+model_provider: "{{ actual_provider_or_runtime }}"
+model_requested: "{{ exact_requested_model_identifier }}"
+model_resolved: "{{ actual_returned_identifier_omit_when_not_exposed }}"
+prompt_id: "{{ retained_prompt_identifier }}"
+prompt_version: "{{ retained_prompt_version_string }}"
+prompt_sha256: "{{ hash_of_exact_retained_prompt_bytes }}"
+inputs: {{ exact_documents_actually_read_as_json }}
+provenance:
+  uri: "{{ relative_path_to_separate_provenance_json }}"
+  sha256: "{{ exact_provenance_file_sha256 }}"
+provenance_status: "{{ complete_partial_or_unknown }}"
+provenance_missing: {{ unavailable_required_fields_as_json_list }}
+verification_status: "unreviewed"
+---
+
+{{ concise_summary_with_qualifications_attribution_and_evidence_locators }}
