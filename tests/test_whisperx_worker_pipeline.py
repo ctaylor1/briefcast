@@ -34,6 +34,27 @@ def test_worker_success_retains_fingerprinted_checkpoint(pipeline, worker_mode, 
     assert saved["worker"] == worker_mode
     assert saved["completed_seconds"] == 300
     assert len(saved["segments"]) == 3
+    assert result["metadata"]["transcribed_at"].endswith("Z")
+    assert result["provenance"]["inputs"][0]["sha256"] == pipeline.module.file_sha256(
+        pipeline.segments.parent / "episode.mp3"
+    )
+
+
+def test_worker_complete_checkpoint_retains_request_model_without_new_asr(
+    pipeline, worker_mode, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        pipeline.module,
+        "load_resume_checkpoint",
+        lambda: ([{"start": 0, "end": 300, "text": "Completed earlier."}], 300, "en", ""),
+    )
+    assert pipeline.module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert pipeline.model.calls == 0
+    assert result["model"] == pipeline.config["model"]
+    assert result["metadata"]["asr_performed"] is False
+    assert result["metadata"]["transcribed_at"] is None
+    assert "transcription_model" not in result["provenance"]
 
 
 def test_worker_checkpoint_failure_cannot_publish_success(

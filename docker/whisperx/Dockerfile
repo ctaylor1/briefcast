@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/cache/home/.cache/pip,sharing=locked \
     mkdir -p /state /cache /media /worker && chown 1000:1000 /state /cache
 WORKDIR /worker
 COPY --from=builder /whisperx-worker /usr/local/bin/whisperx-worker
-COPY scripts/whisperx_transcribe.py ./scripts/
+COPY scripts/whisperx_transcribe.py scripts/podcast_provenance.py ./scripts/
 COPY src/briefcast_tools ./src/briefcast_tools
 COPY docker/runtime_manifest.py /opt/briefcast/runtime_manifest.py
 COPY docker/whisperx/compatibility.json /opt/briefcast/compatibility.json

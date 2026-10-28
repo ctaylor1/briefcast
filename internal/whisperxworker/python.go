@@ -125,7 +125,14 @@ func (r *PythonRunner) PipelineSHA256() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return transcription.Digest(raw), nil
+	helper, err := readBounded(filepath.Join(filepath.Dir(r.cfg.Script), "podcast_provenance.py"), transcription.ControlLimit)
+	if errors.Is(err, os.ErrNotExist) {
+		return transcription.Digest(raw), nil // Standalone custom scripts remain supported.
+	}
+	if err != nil {
+		return "", err
+	}
+	return transcription.Digest(append(append(raw, 0), helper...)), nil
 }
 
 type limitBuffer struct {

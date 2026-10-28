@@ -92,6 +92,9 @@ export interface ChaptersResponse {
 }
 
 export interface TranscriptResponse {
+  markdown?: string;
+  markdownFileName?: string;
+  markdownError?: string;
   status: string;
   isFavorited?: boolean;
   transcript?: unknown;
@@ -99,6 +102,9 @@ export interface TranscriptResponse {
 }
 
 export interface SummaryResponse {
+  markdown?: string;
+  markdownFileName?: string;
+  markdownError?: string;
   status: string;
   isFavorited?: boolean;
   summary?: string;

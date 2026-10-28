@@ -1,0 +1,35 @@
+---
+metadata_schema: "podcast-markdown"
+schema_version: "1.2"
+document_id: "{{ stable_document_uuid_urn }}"
+document_revision: {{ positive_revision }}
+episode_id: "{{ stable_shared_episode_uuid_urn }}"
+source_type: "podcast_episode"
+content_type: "transcript"
+title: "{{ escaped_document_title }}"
+created: "{{ actual_document_creation_rfc3339 }}"
+updated: "{{ actual_document_update_rfc3339 }}"
+generation_id: "{{ export_creation_event_uuid_urn }}"
+generator: "Briefcast podcast-markdown"
+generator_version: "1.2.3"
+episode_title: "{{ escaped_episode_title }}"
+podcast: "{{ escaped_podcast_title }}"
+transcription_method: "{{ asr_human_hybrid_or_unknown }}"
+transcribed_at: "{{ actual_asr_completion_rfc3339_omit_if_historically_unknown }}"
+transcription_engine: "{{ actual_engine_for_new_asr }}"
+transcription_engine_version: "{{ actual_installed_engine_version_for_local_asr }}"
+asr_backend: "{{ actual_separate_backend_when_used }}"
+asr_backend_version: "{{ actual_backend_version_when_used }}"
+transcription_model: "{{ actual_asr_model_identifier }}"
+transcription_task: "{{ transcribe_or_translate_when_known }}"
+timestamp_granularity: "none"
+inputs: {{ exact_input_records_as_json }}
+provenance:
+  uri: "{{ relative_path_to_separate_provenance_json }}"
+  sha256: "{{ exact_provenance_file_sha256 }}"
+provenance_status: "{{ complete_partial_or_unknown }}"
+provenance_missing: {{ unavailable_required_fields_as_json_list }}
+verification_status: "unreviewed"
+---
+
+{{ plain_transcript_text_with_existing_paragraphs_and_speaker_labels }}

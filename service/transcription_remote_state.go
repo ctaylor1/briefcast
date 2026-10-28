@@ -17,6 +17,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/transcription"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type remoteEnvelope struct {
@@ -314,7 +315,8 @@ func (l *remoteLease) update(item *db.PodcastItem, updates map[string]any, recei
 	} else {
 		q = q.Where("COALESCE(transcript_json, '') = ''")
 	}
-	result := l.predicate(q).Updates(updates)
+	// Avoid logging private transcript/prompt snapshots in SQL error or slow-query output.
+	result := l.predicate(q).Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}

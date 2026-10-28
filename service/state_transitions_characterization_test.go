@@ -616,6 +616,7 @@ func TestCharacterize_SummarizeEpisodeSuccess(t *testing.T) {
 	after := snapshotPodcastItemRow(t, item.ID)
 	assertPodcastItemChangedColumns(t, before, after,
 		"llm_summary", "llm_summary_status", "llm_summary_error", "llm_summary_date", "llm_summary_model", "llm_summary_prompt",
+		"summary_provenance_json",
 	)
 
 	got := loadCharacterizationPodcastItem(t, item.ID)
@@ -626,7 +627,7 @@ func TestCharacterize_SummarizeEpisodeSuccess(t *testing.T) {
 		t.Fatal("expected summary date")
 	}
 	assertRecentTime(t, *got.LLMSummaryDate, started, "llm_summary_date")
-	if got.LLMSummaryModel != "characterization-llm-model" || got.LLMSummaryPrompt != "characterization prompt" {
+	if got.LLMSummaryModel != "characterization-llm-model" || got.LLMSummaryPrompt != "characterization prompt"+summaryEvidenceInstructions || got.SummaryProvenanceJSON == "" {
 		t.Fatalf("unexpected summary lineage: model=%q prompt=%q", got.LLMSummaryModel, got.LLMSummaryPrompt)
 	}
 }

@@ -208,7 +208,7 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 	raw, _ = json.Marshal(e)
 	now := time.Now().UTC()
 	text := string(result.Transcript)
-	updates = map[string]any{"transcript_json": text, "canonical_transcript": buildCanonicalTranscriptFromTranscriptJSON(text), "canonical_transcript_version": canonicalTranscriptVersionCurrent, "canonical_updated_at": &now, "transcript_status": "available", "transcript_retry_count": 0, "transcript_next_attempt": nil, "transcript_last_error": "", "transcript_progress_pct": 100, "transcript_progress_stage": "complete", "transcript_checkpoint_json": string(raw), "transcript_model": r.Options.Model}
+	updates = map[string]any{"transcript_json": text, "canonical_transcript": buildCanonicalTranscriptFromTranscriptJSON(text), "canonical_transcript_version": canonicalTranscriptVersionCurrent, "canonical_updated_at": &now, "transcript_status": "available", "transcript_retry_count": 0, "transcript_next_attempt": nil, "transcript_last_error": "", "transcript_progress_pct": 100, "transcript_progress_stage": "complete", "transcript_checkpoint_json": string(raw), "transcript_model": transcriptResultModel(result.Transcript, r.Options.Model)}
 	if err = l.update(&item, updates, false); err != nil {
 		return err
 	}
@@ -397,6 +397,18 @@ func summarizeRemoteCommittedItem(l *remoteLease, item *db.PodcastItem) error {
 	if strings.TrimSpace(item.CanonicalTranscript) == "" {
 		return nil
 	}
+	if err := l.check(); err != nil {
+		return err
+	}
+	transcript, prompt, report, err := prepareSummarySource(item, prompt, userPrompt)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(item.LLMSummary) != "" {
+		if _, err := EpisodeMarkdown(item, "summary"); err != nil {
+			return err
+		}
+	}
 	status := "processing"
 	if strings.TrimSpace(item.LLMSummary) != "" {
 		status = "available"
@@ -404,7 +416,7 @@ func summarizeRemoteCommittedItem(l *remoteLease, item *db.PodcastItem) error {
 	if err := l.update(item, map[string]any{"llm_summary_status": status}, true); err != nil {
 		return err
 	}
-	summary, model, err := summarizeTranscriptWithModel(item.CanonicalTranscript, prompt, userPrompt, cfg)
+	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
 	if err != nil {
 		if status == "processing" {
 			status = "failed"
@@ -412,8 +424,15 @@ func summarizeRemoteCommittedItem(l *remoteLease, item *db.PodcastItem) error {
 		saveErr := l.update(item, map[string]any{"llm_summary_status": status, "llm_summary_error": trimToLength(err.Error(), 1000)}, true)
 		return errors.Join(err, saveErr)
 	}
-	now := time.Now().UTC()
-	if err = l.update(item, map[string]any{"llm_summary": summary, "llm_summary_status": "available", "llm_summary_error": "", "llm_summary_date": &now, "llm_summary_model": model, "llm_summary_prompt": prompt}, true); err != nil {
+	now, err := time.Parse(time.RFC3339Nano, report["summarized_at"].(string))
+	if err != nil {
+		return err
+	}
+	provenance, err := finishSummaryProvenance(report, cfg)
+	if err != nil {
+		return err
+	}
+	if err = l.update(item, map[string]any{"summary_provenance_json": provenance, "llm_summary": summary, "llm_summary_status": "available", "llm_summary_error": "", "llm_summary_date": &now, "llm_summary_model": model, "llm_summary_prompt": prompt}, true); err != nil {
 		return err
 	}
 	if err = db.GetPodcastItemByID(item.ID, item); err != nil {

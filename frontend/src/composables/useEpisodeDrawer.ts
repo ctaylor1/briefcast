@@ -3,8 +3,7 @@ import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
   DEFAULT_OBSIDIAN_VAULT,
-  buildPodcastSummaryObsidianUrl,
-  buildPodcastTranscriptObsidianUrl,
+  sendPodcastMarkdownToObsidian,
 } from "../lib/obsidian";
 import type { Chapter, ChaptersResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../types/api";
 
@@ -35,6 +34,10 @@ export function useEpisodeDrawer() {
   const transcriptSearch = ref("");
 
   const drawerCanonicalTranscript = ref("");
+  const transcriptMarkdown = ref("");
+  const transcriptMarkdownFile = ref("");
+  const summaryMarkdown = ref("");
+  const summaryMarkdownFile = ref("");
 
   // Summary state
   const drawerSummaryStatus = ref("not_attempted");
@@ -114,6 +117,10 @@ export function useEpisodeDrawer() {
     drawerTranscriptText.value = "";
     drawerTranscriptAssets.value = [];
     drawerCanonicalTranscript.value = "";
+    transcriptMarkdown.value = "";
+    transcriptMarkdownFile.value = "";
+    summaryMarkdown.value = "";
+    summaryMarkdownFile.value = "";
     drawerSummaryStatus.value = "not_attempted";
     drawerSummaryText.value = "";
     drawerSummaryDate.value = "";
@@ -172,6 +179,8 @@ export function useEpisodeDrawer() {
   }
 
   function applyTranscriptResponse(response: TranscriptResponse): void {
+    transcriptMarkdown.value = response.markdown || "";
+    transcriptMarkdownFile.value = response.markdownFileName || "transcript.md";
     drawerTranscriptStatus.value = response.status || "missing";
     if (typeof response.isFavorited === "boolean" && drawerItem.value) {
       drawerItem.value.IsSummaryFavorited = response.isFavorited;
@@ -230,6 +239,8 @@ export function useEpisodeDrawer() {
         drawerItem.value.IsSummaryFavorited = response.isFavorited;
       }
       drawerSummaryText.value = response.summary ?? "";
+      summaryMarkdown.value = response.markdown || "";
+      summaryMarkdownFile.value = response.markdownFileName || "summary.md";
       drawerSummaryDate.value = response.generatedAt ?? "";
       drawerSummaryModel.value = response.model ?? "";
     } catch (error) {
@@ -352,14 +363,11 @@ export function useEpisodeDrawer() {
     if (!drawerItem.value || !drawerSummaryText.value) {
       return;
     }
-    window.location.href = buildPodcastSummaryObsidianUrl({
+    sendPodcastMarkdownToObsidian({
       vault: obsidianVault.value,
       folder: obsidianFolder.value,
-      episodeTitle: drawerItem.value.Title,
-      podcastTitle: drawerItem.value.Podcast?.Title,
-      pubDate: drawerItem.value.PubDate,
-      model: drawerSummaryModel.value,
-      summary: drawerSummaryText.value,
+      fileName: summaryMarkdownFile.value,
+      markdown: summaryMarkdown.value,
     });
   }
 
@@ -367,13 +375,11 @@ export function useEpisodeDrawer() {
     if (!drawerItem.value || !drawerCanonicalTranscript.value) {
       return;
     }
-    window.location.href = buildPodcastTranscriptObsidianUrl({
+    sendPodcastMarkdownToObsidian({
       vault: obsidianVault.value,
       folder: obsidianFolder.value,
-      episodeTitle: drawerItem.value.Title,
-      podcastTitle: drawerItem.value.Podcast?.Title,
-      pubDate: drawerItem.value.PubDate,
-      transcript: drawerCanonicalTranscript.value,
+      fileName: transcriptMarkdownFile.value,
+      markdown: transcriptMarkdown.value,
     });
   }
 

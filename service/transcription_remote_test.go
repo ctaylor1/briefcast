@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
+	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 	"github.com/ctaylor1/briefcast/internal/transcription"
 	"github.com/ctaylor1/briefcast/internal/whisperxworker"
 	"github.com/google/uuid"
@@ -22,9 +23,10 @@ import (
 )
 
 type remoteTestRunner struct {
-	t     *testing.T
-	calls atomic.Int32
-	run   func(context.Context, whisperxworker.RunSpec, func(transcription.ProgressUpdate) error) error
+	t      *testing.T
+	calls  atomic.Int32
+	run    func(context.Context, whisperxworker.RunSpec, func(transcription.ProgressUpdate) error) error
+	mutate func(map[string]any)
 }
 
 func (r *remoteTestRunner) Ready(context.Context) error { return nil }
@@ -52,6 +54,9 @@ func (r *remoteTestRunner) Run(ctx context.Context, s whisperxworker.RunSpec, p 
 	body["alignment"] = map[string]any{"requested": s.Request.Options.Align, "used": s.Request.Options.Align, "error": ""}
 	body["aligned"] = s.Request.Options.Align
 	body["diarization"] = map[string]any{"enabled": s.Request.Options.Diarization, "used": false, "model": s.Request.Options.DiarizationModel, "min_speakers": s.Request.Options.MinSpeakers, "max_speakers": s.Request.Options.MaxSpeakers, "error": ""}
+	if r.mutate != nil {
+		r.mutate(body)
+	}
 	data, _ := json.Marshal(body)
 	return os.WriteFile(filepath.Join(s.Directory, "stdout.json"), data, 0600)
 }
@@ -823,8 +828,12 @@ func TestRemoteStatusRevisionsCannotRegressProgress(t *testing.T) {
 func TestRemoteSummaryWritesPreserveConcurrentEdits(t *testing.T) {
 	f := newRemoteTestFixture(t)
 	var summaryCalls atomic.Int32
+	var request openAIChatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		summaryCalls.Add(1)
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
 		got := loadCharacterizationPodcastItem(t, f.item.ID)
 		if got.TranscriptStatus != "available" || got.TranscriptJSON == "" {
 			t.Error("summary preceded transcript commit")
@@ -849,6 +858,53 @@ func TestRemoteSummaryWritesPreserveConcurrentEdits(t *testing.T) {
 	got := loadCharacterizationPodcastItem(t, f.item.ID)
 	if !got.IsPlayed || got.Title != "Edited during summary" || got.LLMSummary != "A safe summary." || got.LLMSummaryStatus != "available" || summaryCalls.Load() != 1 {
 		t.Fatal("summary persistence overwrote library edit")
+	}
+	var provenance map[string]any
+	if err := json.Unmarshal([]byte(got.SummaryProvenanceJSON), &provenance); err != nil {
+		t.Fatal("remote summary lost provenance", err)
+	}
+	if provenance["model_requested"] != request.Model || provenance["summarized_at"] == nil || provenance["prompt_sha256"] == nil {
+		t.Fatal("remote production facts missing")
+	}
+	input := provenance["inputs"].([]any)[0].(map[string]any)
+	if input["text"] != got.CanonicalTranscript || input["sha256"] != pm.Hash([]byte(got.CanonicalTranscript)) || !strings.HasSuffix(request.Messages[1].Content, got.CanonicalTranscript) {
+		t.Fatal("remote summary input does not match request")
+	}
+	content, err := EpisodeMarkdown(&got, "summary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, _, err := pm.Parse(content)
+	if err != nil || pm.Validate(meta) != nil || meta["provenance"] == nil || meta["processing_events"] != nil {
+		t.Fatal("remote summary export lost concise portable metadata", err)
+	}
+	full := markdownTestProvenance(t, &got, "summary", meta)
+	if full["prompt_sha256"] != provenance["prompt_sha256"] || len(full["processing_events"].([]any)) < 2 {
+		t.Fatal("remote summary provenance sidecar is incomplete")
+	}
+}
+
+func TestRemoteCheckpointOnlyResultDoesNotClaimNewASRModel(t *testing.T) {
+	f := newRemoteTestFixture(t)
+	f.runner.mutate = func(body map[string]any) {
+		metadata := body["metadata"].(map[string]any)
+		metadata["asr_performed"] = false
+		metadata["transcribed_at"] = nil
+	}
+	if err := f.run(t); err != nil {
+		t.Fatal(err)
+	}
+	got := loadCharacterizationPodcastItem(t, f.item.ID)
+	if got.TranscriptModel != "" {
+		t.Fatal("request model was attributed to an earlier checkpoint")
+	}
+	content, err := EpisodeMarkdown(&got, "transcript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, _, err := pm.Parse(content)
+	if err != nil || meta["transcription_model"] != nil || meta["transcribed_at"] != nil {
+		t.Fatal("export invented checkpoint ASR provenance", err)
 	}
 }
 

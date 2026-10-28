@@ -15,11 +15,18 @@ def pipeline(monkeypatch, tmp_path):
     # installing NumPy, Torch or WhisperX into the repository tooling environment.
     monkeypatch.setitem(sys.modules, "numpy", ModuleType("numpy"))
     source = Path(__file__).resolve().parents[1] / "scripts" / "whisperx_transcribe.py"
+    monkeypatch.syspath_prepend(str(source.parent))
     spec = importlib.util.spec_from_file_location("characterized_whisperx", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "setup_logging", lambda **kwargs: None)
     monkeypatch.setattr(module, "configure_third_party_logging", lambda: None)
+    monkeypatch.setattr(module, "installed_version", lambda package, *_: f"characterized-{package}")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="ffmpeg version fixture\n"),
+    )
 
     audio = tmp_path / "episode.mp3"
     audio.write_bytes(b"synthetic audio")
@@ -72,9 +79,15 @@ def pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "probe_audio_duration_seconds", lambda path: 300)
     starts = []
 
+    class Audio(list):
+        def tobytes(self):
+            return b"exact characterized PCM"
+
+    whisperx.load_audio = lambda path: Audio([0])
+
     def load_chunk(path, start, duration):
         starts.append((start, duration))
-        return [0]
+        return Audio([0])
 
     monkeypatch.setattr(module, "load_audio_chunk", load_chunk)
     return SimpleNamespace(

@@ -335,12 +335,17 @@ with open(sys.argv[1] + ".runs", "a") as f:
     f.write("run\n")
 print(json.dumps({"segments":[{"text":"Committed transcript."}]}))
 `)
-	// A regular file at DATA makes export directory creation fail on all hosts.
+	// Block the text export while allowing the summary's required provenance
+	// snapshot to be persisted before its provider call.
 	blockedAssets := filepath.Join(dir, "blocked-assets")
-	if err := os.WriteFile(blockedAssets, []byte("not a directory"), 0o644); err != nil {
+	if err := os.MkdirAll(blockedAssets, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DATA", blockedAssets)
+	blockedTranscriptDir := filepath.Join(blockedAssets, assetTranscriptDir)
+	if err := os.WriteFile(blockedTranscriptDir, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	requests := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- struct{}{}
@@ -376,7 +381,7 @@ print(json.dumps({"segments":[{"text":"Committed transcript."}]}))
 	}
 }
 
-func TestCharacterize_TranscriptSaveFailureStillRunsDownstream(t *testing.T) {
+func TestCharacterize_TranscriptSaveFailureDoesNotSummarizeUncommittedOutput(t *testing.T) {
 	_, item := seedCharacterizationPodcastItem(t, func(item *db.PodcastItem, dir string) {
 		item.DownloadPath = filepath.Join(dir, "episode.mp3")
 		if err := os.WriteFile(item.DownloadPath, []byte(strings.Repeat("a", 2048)), 0o644); err != nil {
@@ -431,15 +436,13 @@ print(json.dumps({"segments":[{"text":"Uncommitted transcript."}]}))
 	if err := TranscribePendingEpisodes(); err == nil || !strings.Contains(err.Error(), "injected transcript write failure") {
 		t.Fatalf("expected injected DB error, got %v", err)
 	}
-	// Known defects: cleanup and exports precede a durable transcript commit,
-	// and a failed commit does not prevent an external summary request.
+	// Cleanup and text exports still precede a durable local transcript commit.
+	// Summary provenance now requires a successful source/status save, so an
+	// uncommitted transcript must not reach the external provider.
 	select {
-	case err := <-observed:
-		if err != nil {
-			t.Fatal(err)
-		}
+	case <-observed:
+		t.Fatal("uncommitted transcript reached summary provider")
 	default:
-		t.Fatal("local save-failure downstream behavior changed")
 	}
 	for _, variant := range transcriptExportVariants {
 		path := filepath.Join(resolveExportDir(), variant.dir, sanitizeAssetName(podcastTitle(&item)), pubDateSubdir(item.PubDate), exportEpisodeFileName(&item)+variant.extension)

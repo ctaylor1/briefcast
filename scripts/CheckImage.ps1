@@ -3,7 +3,7 @@ param([Parameter(Mandatory)][string]$Image, [ValidateSet('app','cpu','cu128')][s
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'Packaging.psm1') -Force -DisableNameChecking
 $check = @'
-import importlib.metadata as m, json, pathlib, re, sys
+import hashlib, importlib.metadata as m, json, pathlib, re, sys
 kind = sys.argv[1]
 manifest = json.loads(pathlib.Path('/opt/briefcast/runtime.json').read_text())
 packages = {d.metadata['Name'].lower().replace('_','-').replace('.','-'): d.version for d in m.distributions()}
@@ -24,6 +24,13 @@ if kind == 'app':
     assert feedparser.parse('<rss><channel><title>fixture</title></channel></rss>').feed.title == 'fixture'
     assert len(ID3()) == 0
 else:
+    sys.path.insert(0, '/worker/scripts')
+    import podcast_provenance
+    assert podcast_provenance.installed_version('whisperx') == packages['whisperx']
+    assert podcast_provenance.installed_version('faster-whisper') == packages['faster-whisper']
+    script = pathlib.Path('/worker/scripts/whisperx_transcribe.py')
+    helper = script.with_name('podcast_provenance.py')
+    assert manifest['pipeline_sha256'] == hashlib.sha256(script.read_bytes() + b'\0' + helper.read_bytes()).hexdigest()
     assert set(pathlib.Path('/opt/briefcast/system-packages.lock').read_text().splitlines()) == set(manifest['system_packages'])
     assert packages['whisperx'] == '3.8.6' and packages['ctranslate2'] == '4.8.1'
     assert packages['torch'] == '2.8.0+' + kind and packages['torchaudio'] == '2.8.0+' + kind

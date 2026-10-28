@@ -11,6 +11,7 @@ import (
 	"github.com/ctaylor1/briefcast/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 // GetPodcastByURL handles the corresponding operation.
@@ -165,9 +166,12 @@ func GetPodcastItemByID(id string, podcastItem *PodcastItem) error {
 
 // DeletePodcastItemByID handles the corresponding operation.
 func DeletePodcastItemByID(id string) error {
-
-	result := DB.Where("id=?", id).Delete(&PodcastItem{})
-	return result.Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("episode_id = ?", id).Delete(&MarkdownRevision{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&PodcastItem{}).Error
+	})
 }
 
 // DeletePodcastByID handles the corresponding operation.
@@ -549,7 +553,9 @@ func UpdatePodcast(podcast *Podcast) error {
 
 // UpdatePodcastItem handles the corresponding operation.
 func UpdatePodcastItem(podcastItem *PodcastItem) error {
-	tx := DB.Omit("Podcast").Save(&podcastItem)
+	// GORM's slow/error SQL logs can contain entire transcripts and retained
+	// prompts. Callers receive the error and log safe contextual identifiers.
+	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Omit("Podcast").Save(&podcastItem)
 	return tx.Error
 }
 

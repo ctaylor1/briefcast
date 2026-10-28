@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import logging
 import os
@@ -10,6 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+from podcast_provenance import (
+    completed_at,
+    file_sha256,
+    installed_version,
+    model_identity,
+    processing_event,
+    resource_id,
+    segment_snapshot,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"
@@ -545,6 +555,24 @@ def main():
 
     try:
         emit_progress("starting", 1)
+        media_hash = file_sha256(audio_file)
+        whisperx_version = installed_version("whisperx", whisperx)
+        backend_version = installed_version("faster-whisper")
+        portable_model, model_revision = model_identity(model_name)
+        media_input = {
+            "kind": "media",
+            "id": resource_id("media", media_hash),
+            "revision": 1,
+            "sha256": media_hash,
+            "coverage": "full",
+        }
+        full_media_input = dict(media_input)
+        processing_events = []
+        asr_chunks = 0
+        pcm_digest = hashlib.sha256()
+        ffmpeg_version = subprocess.run(
+            ["ffmpeg", "-version"], capture_output=True, check=True, timeout=30, text=True
+        ).stdout.splitlines()[0]
         try:
             with redirect_stdout(sys.stderr):
                 model = whisperx.load_model(
@@ -601,6 +629,9 @@ def main():
         checkpoint_language = resume_language or language
         checkpoint_file = segments_file_path() or resume_segments_file
         completed_seconds = max(resume_completed_seconds, 0.0)
+        resume_input = segment_snapshot(resume_segments) if resume_completed_seconds > 0 else None
+        if resume_input:
+            resume_input["coverage"] = "unknown"
         if total_seconds > 0 and completed_seconds > total_seconds:
             completed_seconds = total_seconds
 
@@ -670,7 +701,9 @@ def main():
                 if hasattr(chunk_audio, "__len__") and len(chunk_audio) == 0:
                     break
 
+                pcm_digest.update(chunk_audio.tobytes())
                 chunk_result = model.transcribe(chunk_audio, batch_size=batch_size)
+                asr_chunks += 1
                 chunk_segments = chunk_result.get("segments", []) or []
                 shifted_segments = [
                     shift_segment_timing(segment, start_seconds) for segment in chunk_segments
@@ -708,6 +741,89 @@ def main():
                     raise WorkerQuiesced("supervisor requested chunk-boundary stop")
 
         pre_align_segments = [strip_word_payload(segment) for segment in merged_segments]
+        transcribed_at = completed_at() if asr_chunks else None
+        asr_snapshot = segment_snapshot(pre_align_segments)
+        pcm_input = {
+            "kind": "media",
+            "id": resource_id("pcm", pcm_digest.hexdigest()),
+            "revision": 1,
+            "sha256": pcm_digest.hexdigest(),
+            "coverage": "full",
+            "format": "concatenated float32 PCM chunks in processing order",
+        }
+        if resume_input:
+            media_input["coverage"] = "partial"
+            media_input["locators"] = [
+                {"unit": "seconds", "start": resume_completed_seconds, "end": completed_seconds}
+            ]
+        if asr_chunks:
+            processing_events.append(
+                processing_event(
+                    "audio_preprocessing",
+                    transcribed_at,
+                    [media_input],
+                    pcm_input,
+                    "ffmpeg",
+                    ffmpeg_version,
+                    {
+                        "sample_rate_hz": AUDIO_SAMPLE_RATE,
+                        "channels": 1,
+                        "sample_format": "float32",
+                        "chunk_seconds": chunk_seconds,
+                        "start_seconds": resume_completed_seconds,
+                        "end_seconds": completed_seconds,
+                    },
+                )
+            )
+            processing_events.append(
+                processing_event(
+                    "transcription",
+                    transcribed_at,
+                    [pcm_input] + ([resume_input] if resume_input else []),
+                    asr_snapshot,
+                    "WhisperX",
+                    whisperx_version,
+                    {
+                        "model": portable_model,
+                        "backend": "faster-whisper",
+                        "backend_version": backend_version,
+                        "source_language": checkpoint_language or language,
+                        "output_language": checkpoint_language or language,
+                        "task": "transcribe",
+                        "asr_options": asr_options,
+                        "vad_options": vad_options,
+                        "vad_method": active_vad_method,
+                        "device": device,
+                        "compute_type": compute_type,
+                        "batch_size": batch_size,
+                        "chunk_seconds": chunk_seconds,
+                        "preprocessing": {
+                            "sample_rate_hz": AUDIO_SAMPLE_RATE,
+                            "channels": 1,
+                            "decoder": "ffmpeg",
+                            "chunked": full_audio is None,
+                        },
+                        "resumed_seconds": resume_completed_seconds,
+                    },
+                )
+            )
+        else:
+            if resume_input is None:
+                raise RuntimeError(
+                    "No audio was transcribed and no usable checkpoint was available"
+                )
+            processing_events.append(
+                processing_event(
+                    "checkpoint_import",
+                    completed_at(),
+                    [resume_input],
+                    asr_snapshot,
+                    "briefcast-whisperx",
+                    "1.2.0",
+                    {"strip_word_payload": True},
+                )
+            )
+        preceding_snapshot = asr_snapshot
         result = {
             "language": checkpoint_language or language,
             "segments": merged_segments,
@@ -746,6 +862,23 @@ def main():
                         return_char_alignments=False,
                     )
                 align_used = True
+                aligned_snapshot = segment_snapshot(result.get("segments", []))
+                processing_events.append(
+                    processing_event(
+                        "alignment",
+                        completed_at(),
+                        [preceding_snapshot, full_media_input],
+                        aligned_snapshot,
+                        "WhisperX",
+                        whisperx_version,
+                        {
+                            "language": checkpoint_language or language,
+                            "device": device,
+                            "return_char_alignments": False,
+                        },
+                    )
+                )
+                preceding_snapshot = aligned_snapshot
             except Exception as exc:
                 align_error = f"align_failed:{exc.__class__.__name__}"
                 logger.warning(
@@ -774,6 +907,8 @@ def main():
                 try:
                     from whisperx.diarize import DiarizationPipeline, assign_word_speakers
 
+                    diarization_version = installed_version("pyannote.audio")
+
                     with redirect_stdout(sys.stderr):
                         diarize_model = DiarizationPipeline(
                             model_name=diarization_model,
@@ -785,6 +920,24 @@ def main():
                         )
                         result = assign_word_speakers(diarize_df, result)
                     diarize_used = True
+                    diarized_snapshot = segment_snapshot(result.get("segments", []))
+                    processing_events.append(
+                        processing_event(
+                            "diarization",
+                            completed_at(),
+                            [preceding_snapshot, full_media_input],
+                            diarized_snapshot,
+                            "pyannote.audio",
+                            diarization_version,
+                            {
+                                "model": diarization_model,
+                                "min_speakers": min_speakers,
+                                "max_speakers": max_speakers,
+                                "device": device,
+                            },
+                        )
+                    )
+                    preceding_snapshot = diarized_snapshot
                 except Exception as exc:
                     diarize_error = f"diarization_failed:{exc.__class__.__name__}"
                     logger.warning(
@@ -818,9 +971,16 @@ def main():
                     extra=log_extra({"path": checkpoint_file, "error": compact_error(exc)}),
                 )
 
+        if file_sha256(audio_file) != media_hash:
+            raise RuntimeError("Audio changed during transcription; provenance cannot be verified")
+
         payload = {
             "provider": "whisperx",
-            "model": model_name,
+            # The worker envelope validates the accepted request configuration.
+            # Actual ASR identity/time remain in provenance and asr_performed.
+            "model": model_name if worker_mode() else (portable_model if asr_chunks else ""),
+            "model_revision": model_revision if asr_chunks else None,
+            "source_media": full_media_input,
             "language": result.get("language", language),
             "device": device,
             "compute_type": compute_type,
@@ -846,10 +1006,25 @@ def main():
             "segments": result.get("segments", []),
             "metadata": {
                 "generated_at": datetime.now(UTC).isoformat(),
-                "whisperx_version": getattr(whisperx, "__version__", "unknown"),
+                "whisperx_version": whisperx_version,
+                "faster_whisper_version": backend_version,
+                "transcribed_at": transcribed_at,
+                "asr_performed": asr_chunks > 0,
                 "torch_version": getattr(torch, "__version__", "unknown"),
                 "resumed_from_checkpoint": resume_completed_seconds > 0,
                 "checkpoint_segment_count": len(resume_segments),
+            },
+            "provenance": {
+                "production_origin": "captured" if asr_chunks else "captured_postprocessing",
+                **({"transcription_task": "transcribe"} if asr_chunks else {}),
+                "inputs": ([media_input] if asr_chunks else [])
+                + ([resume_input] if resume_input else []),
+                "processing_events": processing_events,
+                "source_language": checkpoint_language or language,
+                "output_language": checkpoint_language or language,
+                "inherited_provenance_missing": ["resumed_asr_history"]
+                if resume_completed_seconds > 0
+                else [],
             },
         }
         emit_json(payload)

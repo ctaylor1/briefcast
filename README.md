@@ -483,6 +483,13 @@ The Episodes page defaults to paginated views, so check pagination and row count
 
 Newly generated transcripts and summaries are exported automatically:
 
+Markdown exports use the portable `podcast-markdown` 1.2 metadata contract, stable
+document IDs, preserved revisions, and explicit provenance gaps. See
+[Markdown export metadata, examples, and repair options](docs/podcast-markdown/README.md).
+Detailed provenance and input snapshots are stored separately under
+`/assets/provenance/podcast-markdown/`. Use **Download Markdown package** to move
+a note with its provenance and inputs while keeping relative links intact.
+
 - transcripts: `/assets/transcripts/<podcast>/<episode>.txt`
 - summaries: `/assets/summaries/<podcast>/<episode>.txt`
 - transcript markdown: `/assets/markdown/transcripts/<podcast>/<episode>.md`

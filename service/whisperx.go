@@ -446,7 +446,7 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 		item.TranscriptProgressStage = "complete"
 		item.TranscriptCheckpointJSON = ""
 		// Lineage: record which WhisperX model produced this transcript.
-		item.TranscriptModel = cfg.Model
+		item.TranscriptModel = transcriptResultModel(output, cfg.Model)
 		if err := db.UpdatePodcastItem(&item); err != nil {
 			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
 			setError(err)
@@ -749,4 +749,24 @@ func getEnvBool(name string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+// TranscriptModel describes actual ASR, not the current model in a checkpoint-only execution.
+func transcriptResultModel(output []byte, fallback string) string {
+	model := fallback
+	var resultModel struct {
+		Model    string `json:"model"`
+		Metadata struct {
+			ASRPerformed *bool `json:"asr_performed"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(output, &resultModel) == nil {
+		if resultModel.Model != "" {
+			model = resultModel.Model
+		}
+		if resultModel.Metadata.ASRPerformed != nil && !*resultModel.Metadata.ASRPerformed {
+			model = ""
+		}
+	}
+	return model
 }
