@@ -89,7 +89,7 @@ def compact_error(exc, max_len=240):
 def parse_float(value, default):
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
@@ -404,7 +404,7 @@ def choose_compute_type(config, device):
 def choose_batch_size(config, device):
     try:
         configured = int(config.get("batch_size", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         logger.warning(
             "invalid batch size in whisperx config; using default",
             extra=log_extra({"batch_size": config.get("batch_size")}),
