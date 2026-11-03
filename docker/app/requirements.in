@@ -1,0 +1,7 @@
+# Python dependencies installed into the app image (root Dockerfile) for the
+# app-side helpers: scripts/feedparser_parse.py, scripts/mutagen_id3_extract.py
+# and src/briefcast_tools. Versions match docker/whisperx/baseline-packages.json.
+# Regenerate the lock with the command in docker/whisperx/README.md.
+feedparser==6.0.12
+mutagen==1.48.1
+sgmllib3k==1.0.0

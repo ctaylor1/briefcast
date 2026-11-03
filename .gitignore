@@ -17,6 +17,8 @@ bin/
 dist/
 /builds/
 app
+# The app image's hashed Python lock lives here and must stay tracked.
+!/docker/app/
 briefcast
 *.exe
 *.exe~
