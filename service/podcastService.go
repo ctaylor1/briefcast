@@ -250,7 +250,7 @@ func getItunesImageURL(body []byte) string {
 		return ""
 	}
 	channel, err := xmlquery.Query(doc, "//channel")
-	if err != nil {
+	if err != nil || channel == nil {
 		return ""
 	}
 
