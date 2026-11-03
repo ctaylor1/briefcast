@@ -16,10 +16,8 @@ Thumbs.db
 bin/
 dist/
 /builds/
-app
-# The app image's hashed Python lock lives here and must stay tracked.
-!/docker/app/
-briefcast
+/app
+/briefcast
 *.exe
 *.exe~
 *.dll
