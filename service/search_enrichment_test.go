@@ -28,6 +28,14 @@ func TestExtractFeedChannelDescription(t *testing.T) {
 			want: "Deep conversations & ideas.",
 		},
 		{
+			// Regression: <link> was treated as an HTML void tag and ended the channel early.
+			name: "rss link and atom link before description",
+			xml: `<rss xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Show</title>
+<link>https://show.example/</link><atom:link href="https://show.example/feed" rel="self"/>
+<description><![CDATA[Summaries<br /><br />More <a href="https://x.example">here</a>]]></description></channel></rss>`,
+			want: "Summaries More here",
+		},
+		{
 			name: "falls back to itunes summary",
 			xml: `<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Show</title>
 <itunes:summary>Summary text</itunes:summary><item><description>Episode</description></item></channel></rss>`,

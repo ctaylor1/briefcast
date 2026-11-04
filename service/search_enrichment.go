@@ -53,7 +53,9 @@ func EnrichSearchResults(results []*model.CommonSearchResultModel) {
 		applyAppleChartRanks(ctx, results)
 	}()
 
-	sem := make(chan struct{}, feedDescriptionConcurrency)
+	// Describe results in display order so the top results are filled first
+	// if the budget runs out.
+	pending := make(chan *model.CommonSearchResultModel, len(results))
 	for i, result := range results {
 		if i >= maxSearchResultsToDescribe {
 			break
@@ -61,17 +63,20 @@ func EnrichSearchResults(results []*model.CommonSearchResultModel) {
 		if result == nil || strings.TrimSpace(result.Description) != "" || strings.TrimSpace(result.URL) == "" {
 			continue
 		}
+		pending <- result
+	}
+	close(pending)
+	for w := 0; w < feedDescriptionConcurrency; w++ {
 		wg.Add(1)
-		go func(r *model.CommonSearchResultModel) {
+		go func() {
 			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
+			for r := range pending {
+				if ctx.Err() != nil {
+					return
+				}
+				r.Description = fetchFeedDescription(ctx, r.URL)
 			}
-			defer func() { <-sem }()
-			r.Description = fetchFeedDescription(ctx, r.URL)
-		}(result)
+		}()
 	}
 	wg.Wait()
 }
@@ -201,7 +206,8 @@ func fetchFeedDescription(ctx context.Context, feedURL string) string {
 func extractFeedChannelDescription(r io.Reader) string {
 	dec := xml.NewDecoder(r)
 	dec.Strict = false
-	dec.AutoClose = xml.HTMLAutoClose
+	// No HTML auto-close: RSS <link>…</link> is a content element, and treating
+	// it as a void tag would desynchronize element depth.
 	dec.Entity = xml.HTMLEntity
 	dec.CharsetReader = func(_ string, input io.Reader) (io.Reader, error) { return input, nil }
 
@@ -276,12 +282,18 @@ func extractFeedChannelDescription(r io.Reader) string {
 	}
 }
 
+var htmlBreakSpacer = strings.NewReplacer(
+	"<br", " <br", "<BR", " <BR", "<p", " <p", "<P", " <P", "</p>", "</p> ", "</P>", "</P> ",
+	"<li", " <li", "<div", " <div", "</div>", "</div> ",
+)
+
 func cleanSearchDescription(raw string) string {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return ""
 	}
 	s = html.UnescapeString(s)
+	s = htmlBreakSpacer.Replace(s) // keep words apart when tags are removed
 	s = strip.StripTags(s)
 	s = html.UnescapeString(s)
 	s = strings.Join(strings.Fields(s), " ")
