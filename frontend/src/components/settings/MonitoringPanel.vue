@@ -336,6 +336,7 @@ onBeforeUnmount(() => {
 
 .monitoring-table th[scope="row"],
 .monitoring-table thead th:first-child {
+  white-space: nowrap;
   text-align: left;
   color: var(--color-text-secondary);
   font-weight: 500;

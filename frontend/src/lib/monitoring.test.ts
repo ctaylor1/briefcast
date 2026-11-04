@@ -57,6 +57,7 @@ describe("Monitoring formatting", () => {
     assert.equal(formatBytes(1536), "1.5 KB");
     assert.equal(formatBytes(12282 * 1024 * 1024), "12.0 GB");
     assert.equal(formatBytes(null), "—");
+    assert.equal(formatDuration(0.3), "<1 s");
     assert.equal(formatDuration(45), "45 s");
     assert.equal(formatDuration(200), "3 m 20 s");
     assert.equal(formatDuration(7500), "2 h 5 m");
