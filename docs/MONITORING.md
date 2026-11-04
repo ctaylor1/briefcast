@@ -46,6 +46,12 @@ error code). Episode, podcast and job identifiers appear only in log events.
 
 Standard `go_*` and `process_*` metrics are included.
 
+The database-backed gauges (`briefcast_episodes`, `briefcast_downloaded_episode_transcripts`,
+`briefcast_transcript_backlog_oldest_seconds`) and the panel's completion windows come
+from one grouped scan of the episodes table, cached for 60 seconds. Episode rows store
+full transcripts inline, so on a large library that scan takes several seconds; a stale
+value is served immediately while one background refresh runs.
+
 ## Worker metrics (`/metrics/worker`)
 
 | Metric | Type | Labels | Meaning |

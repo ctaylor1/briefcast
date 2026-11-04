@@ -52,7 +52,7 @@ func (pipelineCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (pipelineCollector) Collect(ch chan<- prometheus.Metric) {
-	q, err := loadQueueSnapshot(time.Now().UTC())
+	q, _, err := cachedPipelineStats()
 	if err == nil {
 		for state, n := range q.EpisodesByDownloadState {
 			ch <- prometheus.MustNewConstMetric(descEpisodes, prometheus.GaugeValue, float64(n), state)
@@ -69,9 +69,14 @@ func (pipelineCollector) Collect(ch chan<- prometheus.Metric) {
 
 var registerPipelineOnce sync.Once
 
-// RegisterPipelineMetrics adds the database-backed gauges to the app registry.
+// RegisterPipelineMetrics adds the database-backed gauges to the app registry and
+// warms their cache once in the background so the first scrape or panel view
+// does not wait for the table scan.
 func RegisterPipelineMetrics() {
-	registerPipelineOnce.Do(func() { telemetry.MustRegister(pipelineCollector{}) })
+	registerPipelineOnce.Do(func() {
+		telemetry.MustRegister(pipelineCollector{})
+		go func() { _, _, _ = refreshPipelineStats() }()
+	})
 }
 
 // QueueSnapshot is the current state of the download and transcription queues.
@@ -81,61 +86,145 @@ type QueueSnapshot struct {
 	OldestPendingSeconds    float64          `json:"oldest_pending_seconds"`
 }
 
-func loadQueueSnapshot(now time.Time) (QueueSnapshot, error) {
+// Episode rows store full transcripts inline, so SQLite reads most of the table
+// for any aggregate. Gather everything in one grouped scan and cache it: scrapes
+// and the Settings panel reuse a result up to pipelineStatsTTL old, and a stale
+// result is served immediately while a single refresh runs in the background.
+var pipelineStatsTTL = 60 * time.Second
+
+var monitoringWindowSpecs = []struct {
+	label string
+	hours int
+}{{"Last 24 hours", 24}, {"Last 7 days", 24 * 7}}
+
+var pipelineStatsCache struct {
+	mu         sync.Mutex
+	load       sync.Mutex // serializes database scans
+	ok         bool
+	refreshing bool
+	at         time.Time
+	queue      QueueSnapshot
+	windows    []MonitoringWindow
+}
+
+func cachedPipelineStats() (QueueSnapshot, []MonitoringWindow, error) {
+	c := &pipelineStatsCache
+	c.mu.Lock()
+	if c.ok {
+		q, w := c.queue, c.windows
+		if time.Since(c.at) >= pipelineStatsTTL && !c.refreshing {
+			c.refreshing = true
+			go func() { _, _, _ = refreshPipelineStats() }()
+		}
+		c.mu.Unlock()
+		return q, w, nil
+	}
+	c.mu.Unlock()
+	return refreshPipelineStats()
+}
+
+func refreshPipelineStats() (QueueSnapshot, []MonitoringWindow, error) {
+	c := &pipelineStatsCache
+	c.load.Lock()
+	defer c.load.Unlock()
+	now := time.Now().UTC()
+	q, w, err := loadPipelineStats(now)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.refreshing = false
+	if err != nil {
+		logging.Sugar().Warnw("pipeline_stats_refresh_failed", "error", err)
+		return q, w, err
+	}
+	c.ok, c.at, c.queue, c.windows = true, now, q, w
+	return q, w, nil
+}
+
+func resetPipelineStatsCacheForTests() {
+	c := &pipelineStatsCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ok, c.refreshing, c.at, c.queue, c.windows = false, false, time.Time{}, QueueSnapshot{}, nil
+}
+
+// loadPipelineStats computes queue state and completion windows from the database.
+func loadPipelineStats(now time.Time) (QueueSnapshot, []MonitoringWindow, error) {
 	out := QueueSnapshot{EpisodesByDownloadState: map[string]int64{}, TranscriptsByState: map[string]int64{}}
 	if db.DB == nil {
-		return out, errors.New("database unavailable")
+		return out, nil, errors.New("database unavailable")
 	}
-	var byDownload []struct {
-		DownloadStatus db.DownloadStatus
-		N              int64
+	day, week := now.Add(-24*time.Hour), now.Add(-7*24*time.Hour)
+	var rows []struct {
+		DownloadStatus   db.DownloadStatus
+		TranscriptStatus string
+		Blocked          int
+		N                int64
+		DownloadsDay     int64
+		DownloadsWeek    int64
+		TranscriptsDay   int64
+		AudioDay         float64
+		TranscriptsWeek  int64
+		AudioWeek        float64
 	}
-	if err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Select("download_status, COUNT(*) AS n").Group("download_status").Scan(&byDownload).Error; err != nil {
-		return out, err
+	err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Select(`download_status, transcript_status,
+		CASE WHEN transcript_progress_stage = 'blocked' THEN 1 ELSE 0 END AS blocked, COUNT(*) AS n,
+		SUM(CASE WHEN download_date >= ? THEN 1 ELSE 0 END) AS downloads_day,
+		SUM(CASE WHEN download_date >= ? THEN 1 ELSE 0 END) AS downloads_week,
+		SUM(CASE WHEN canonical_updated_at >= ? THEN 1 ELSE 0 END) AS transcripts_day,
+		SUM(CASE WHEN canonical_updated_at >= ? THEN COALESCE(duration, 0) ELSE 0 END) AS audio_day,
+		SUM(CASE WHEN canonical_updated_at >= ? THEN 1 ELSE 0 END) AS transcripts_week,
+		SUM(CASE WHEN canonical_updated_at >= ? THEN COALESCE(duration, 0) ELSE 0 END) AS audio_week`,
+		day, week, day, day, week, week).
+		Group("download_status, transcript_status, CASE WHEN transcript_progress_stage = 'blocked' THEN 1 ELSE 0 END").
+		Scan(&rows).Error
+	if err != nil {
+		return out, nil, err
 	}
-	for _, row := range byDownload {
+	windows := make([]MonitoringWindow, len(monitoringWindowSpecs))
+	for i, spec := range monitoringWindowSpecs {
+		windows[i] = MonitoringWindow{Label: spec.label, Hours: spec.hours}
+	}
+	for _, state := range []string{"available", "pending_whisperx", "processing", "failed", "blocked"} {
+		out.TranscriptsByState[state] = 0
+	}
+	for _, row := range rows {
 		name, ok := downloadStateNames[row.DownloadStatus]
 		if !ok {
 			name = "other"
 		}
 		out.EpisodesByDownloadState[name] += row.N
-	}
-	var byTranscript []struct {
-		TranscriptStatus        string
-		TranscriptProgressStage string
-		N                       int64
-	}
-	if err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Where("download_status = ?", db.Downloaded).
-		Select("transcript_status, CASE WHEN transcript_progress_stage = 'blocked' THEN 'blocked' ELSE '' END AS transcript_progress_stage, COUNT(*) AS n").
-		Group("transcript_status, CASE WHEN transcript_progress_stage = 'blocked' THEN 'blocked' ELSE '' END").Scan(&byTranscript).Error; err != nil {
-		return out, err
-	}
-	for _, state := range []string{"available", "pending_whisperx", "processing", "failed", "blocked"} {
-		out.TranscriptsByState[state] = 0
-	}
-	for _, row := range byTranscript {
-		state := row.TranscriptStatus
-		switch {
-		case state == "failed" && row.TranscriptProgressStage == "blocked":
-			state = "blocked"
-		case state == "":
-			state = "none"
-		case !knownTranscriptStates[state]:
-			state = "other"
+		if row.DownloadStatus == db.Downloaded {
+			windows[0].Downloads += row.DownloadsDay
+			windows[1].Downloads += row.DownloadsWeek
+			state := row.TranscriptStatus
+			switch {
+			case state == "failed" && row.Blocked == 1:
+				state = "blocked"
+			case state == "":
+				state = "none"
+			case !knownTranscriptStates[state]:
+				state = "other"
+			}
+			out.TranscriptsByState[state] += row.N
 		}
-		out.TranscriptsByState[state] += row.N
+		if row.TranscriptStatus == "available" {
+			windows[0].Transcripts += row.TranscriptsDay
+			windows[0].TranscribedAudioSeconds += row.AudioDay
+			windows[1].Transcripts += row.TranscriptsWeek
+			windows[1].TranscribedAudioSeconds += row.AudioWeek
+		}
 	}
-	// Read the typed column of the oldest row: SQLite returns MIN(datetime) as text.
+	// Read the typed column of the oldest waiting row (SQLite returns MIN(datetime) as text).
 	var oldest []db.PodcastItem
 	if err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Select("id, download_date").
-		Where("download_status = ? AND transcript_status IN ? AND COALESCE(transcript_json, '') = ''", db.Downloaded, []string{"pending_whisperx", "processing"}).
+		Where("download_status = ? AND transcript_status IN ?", db.Downloaded, []string{"pending_whisperx", "processing"}).
 		Order("download_date ASC").Limit(1).Find(&oldest).Error; err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if len(oldest) == 1 && !oldest[0].DownloadDate.IsZero() {
 		out.OldestPendingSeconds = max(now.Sub(oldest[0].DownloadDate).Seconds(), 0)
 	}
-	return out, nil
+	return out, windows, nil
 }
 
 // ---- Structured events -------------------------------------------------------
@@ -329,45 +418,16 @@ type MonitoringSnapshot struct {
 func BuildMonitoringSnapshot(ctx context.Context) (MonitoringSnapshot, error) {
 	now := time.Now().UTC()
 	snap := MonitoringSnapshot{GeneratedAt: now, SinceStart: telemetry.Summary()}
-	queue, err := loadQueueSnapshot(now)
+	queue, windows, err := cachedPipelineStats()
 	if err != nil {
 		return snap, err
 	}
-	snap.Queue = queue
-	for _, w := range []struct {
-		label string
-		hours int
-	}{{"Last 24 hours", 24}, {"Last 7 days", 24 * 7}} {
-		window, werr := loadWindow(now, w.label, w.hours)
-		if werr != nil {
-			return snap, werr
-		}
-		snap.Windows = append(snap.Windows, window)
-	}
+	snap.Queue, snap.Windows = queue, windows
 	if free, ferr := availableBytes(getEnvString("DATA", "/assets")); ferr == nil {
 		snap.AssetsFreeBytes = &free
 	}
 	snap.Worker = summarizeWorker(ctx)
 	return snap, nil
-}
-
-func loadWindow(now time.Time, label string, hours int) (MonitoringWindow, error) {
-	since := now.Add(-time.Duration(hours) * time.Hour)
-	out := MonitoringWindow{Label: label, Hours: hours}
-	if err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Where("download_status = ? AND download_date >= ?", db.Downloaded, since).Count(&out.Downloads).Error; err != nil {
-		return out, err
-	}
-	var agg struct {
-		N     int64
-		Audio float64
-	}
-	if err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Select("COUNT(*) AS n, COALESCE(SUM(duration), 0) AS audio").
-		Where("transcript_status = ? AND canonical_updated_at >= ? AND COALESCE(transcript_json, '') <> ''", "available", since).
-		Scan(&agg).Error; err != nil {
-		return out, err
-	}
-	out.Transcripts, out.TranscribedAudioSeconds = agg.N, agg.Audio
-	return out, nil
 }
 
 func summarizeWorker(ctx context.Context) WorkerSummary {

@@ -48,11 +48,13 @@ func seedTelemetryItems(t *testing.T, now time.Time) {
 
 func TestQueueSnapshotWindowsAndPipelineGauges(t *testing.T) {
 	setupRetentionTestDB(t)
+	resetPipelineStatsCacheForTests()
+	t.Cleanup(resetPipelineStatsCacheForTests)
 	t.Setenv("WHISPERX_ENABLED", "false")
 	now := time.Now().UTC()
 	seedTelemetryItems(t, now)
 
-	q, err := loadQueueSnapshot(now)
+	q, _, err := loadPipelineStats(now)
 	if err != nil {
 		t.Fatalf("queue snapshot: %v", err)
 	}
@@ -106,6 +108,49 @@ func TestQueueSnapshotWindowsAndPipelineGauges(t *testing.T) {
 	if !found {
 		t.Fatalf("expected blocked transcript gauge from the database collector")
 	}
+}
+
+func TestPipelineStatsCacheServesStaleThenRefreshes(t *testing.T) {
+	setupRetentionTestDB(t)
+	resetPipelineStatsCacheForTests()
+	t.Cleanup(resetPipelineStatsCacheForTests)
+	origTTL := pipelineStatsTTL
+	t.Cleanup(func() { pipelineStatsTTL = origTTL })
+	now := time.Now().UTC()
+	seedTelemetryItems(t, now)
+
+	first, _, err := cachedPipelineStats()
+	if err != nil || first.TranscriptsByState["pending_whisperx"] != 1 {
+		t.Fatalf("first load: %v %v", err, first.TranscriptsByState)
+	}
+	var podcast db.Podcast
+	if err := db.DB.First(&podcast).Error; err != nil {
+		t.Fatal(err)
+	}
+	extra := db.PodcastItem{PodcastID: podcast.ID, Title: "new", GUID: "g7", FileURL: "https://media.example/7.mp3",
+		DownloadStatus: db.Downloaded, DownloadDate: now, DownloadPath: "/assets/7.mp3", TranscriptStatus: "pending_whisperx"}
+	if err := db.DB.Create(&extra).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cached, _, _ := cachedPipelineStats(); cached.TranscriptsByState["pending_whisperx"] != 1 {
+		t.Fatalf("a fresh cache entry must be reused, got %v", cached.TranscriptsByState)
+	}
+
+	pipelineStatsTTL = 0
+	if stale, _, _ := cachedPipelineStats(); stale.TranscriptsByState["pending_whisperx"] != 1 {
+		t.Fatalf("a stale entry is served immediately while refreshing, got %v", stale.TranscriptsByState)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		pipelineStatsCache.mu.Lock()
+		refreshing, n := pipelineStatsCache.refreshing, pipelineStatsCache.queue.TranscriptsByState["pending_whisperx"]
+		pipelineStatsCache.mu.Unlock()
+		if !refreshing && n == 2 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("background refresh did not pick up the new episode")
 }
 
 const sampleWorkerMetrics = `# TYPE whisperx_worker_healthy gauge
