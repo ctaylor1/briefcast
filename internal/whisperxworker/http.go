@@ -88,6 +88,8 @@ func (w *Worker) Handler() http.Handler {
 		sendJSON(rw, 200, map[string]string{"status": "ok"})
 	})
 	private := http.NewServeMux()
+	// Prometheus metrics share the bearer-token boundary of the private API.
+	private.Handle("GET /v1/metrics", w.metrics.handler())
 	private.HandleFunc("GET /v1/capabilities", func(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		counts, err := w.store.counts()

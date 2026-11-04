@@ -53,6 +53,7 @@ type Worker struct {
 	done        chan struct{}
 	wg          sync.WaitGroup
 	tokenDigest [32]byte
+	metrics     *workerMetrics
 }
 
 func Open(ctx context.Context, cfg Config, runner Runner) (_ *Worker, err error) {
@@ -64,6 +65,7 @@ func Open(ctx context.Context, cfg Config, runner Runner) (_ *Worker, err error)
 		return nil, err
 	}
 	w := &Worker{cfg: cfg, runner: runner, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), tokenDigest: token}
+	w.metrics = newWorkerMetrics(w)
 	w.store, err = openStore(cfg.StateDir)
 	if err != nil {
 		return nil, err
@@ -278,7 +280,7 @@ func (w *Worker) Submit(ctx context.Context, id string, raw []byte) (transcripti
 		return r.Status, false, err
 	}
 	w.notify()
-	slog.Info("worker_job_accepted", "job_id", id)
+	w.metrics.jobAccepted(r)
 	return r.Status, true, nil
 }
 
@@ -331,7 +333,8 @@ func (w *Worker) dispatch() {
 			}
 			now := time.Now().UTC()
 			r.RunSince = &now
-			if r.Status.StartedAt == nil {
+			firstStart := r.Status.StartedAt == nil
+			if firstStart {
 				r.Status.StartedAt = &now
 			}
 			touch(r)
@@ -341,6 +344,7 @@ func (w *Worker) dispatch() {
 				w.unavailable(err)
 				break
 			}
+			w.metrics.runStarted(r, firstStart)
 			ctx, cancel := context.WithTimeout(context.Background(), remaining)
 			w.active[r.Status.JobID] = cancel
 			w.wg.Add(1)
@@ -436,7 +440,7 @@ func (w *Worker) execute(ctx context.Context, r *record) {
 		return
 	}
 	w.cleanupArtifacts(fresh)
-	slog.Info("worker_job_finished", "job_id", id, "state", fresh.Status.State)
+	w.metrics.runEnded(fresh, fresh.Status.State == "queued")
 }
 
 func (w *Worker) progress(id string, p transcription.ProgressUpdate) error {
@@ -474,6 +478,7 @@ func (w *Worker) progress(id string, p transcription.ProgressUpdate) error {
 		return err
 	}
 	w.cleanupArtifacts(r)
+	w.metrics.stageChanged(id, r.Status.Stage, r.Status.Percent, r.Status.TotalSeconds)
 	return nil
 }
 

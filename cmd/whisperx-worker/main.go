@@ -29,6 +29,9 @@ func main() {
 		}
 		return
 	}
+	// Structured JSON logs (one object per line) so job events can be filtered
+	// and aggregated the same way as the app's logs.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("service", "whisperx-worker"))
 	if err := run(os.Args[1:]); err != nil {
 		slog.Error("worker_command_failed", "error", err)
 		os.Exit(1)
