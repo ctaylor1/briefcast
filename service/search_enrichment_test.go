@@ -160,16 +160,68 @@ func TestEnrichSearchResultsFailsSoft(t *testing.T) {
 	if results[0].Description != "" || results[0].AppleChartRank != 0 || results[0].Title != "A" {
 		t.Fatalf("failed sources must leave the result unchanged: %+v", results[0])
 	}
+	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
+		t.Fatalf("expected %d chart attempts, got %d", appleChartAttempts, got)
+	}
 	EnrichSearchResults([]*model.CommonSearchResultModel{{Description: "x", AppleID: "1"}})
-	if atomic.LoadInt32(&chartHits) != 1 {
-		t.Fatalf("a failed chart fetch should not be retried immediately, fetched %d times", chartHits)
+	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
+		t.Fatalf("a failed chart fetch should not be retried immediately, fetched %d times", got)
 	}
 
 	// Results without Apple IDs never touch the chart.
 	resetAppleChartCacheForTests()
 	EnrichSearchResults([]*model.CommonSearchResultModel{{Description: "x"}})
-	if atomic.LoadInt32(&chartHits) != 1 {
+	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
 		t.Fatalf("chart fetched for results without Apple IDs")
+	}
+}
+
+func TestAppleChartRetriesThenServesLastGoodChart(t *testing.T) {
+	t.Setenv(outboundAllowPrivateEnv, "true")
+	resetAppleChartCacheForTests()
+	t.Cleanup(resetAppleChartCacheForTests)
+
+	var hits int32
+	var down atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&hits, 1)
+		if down.Load() || n == 1 {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"feed":{"results":[{"id":"5"}]}}`))
+	}))
+	defer server.Close()
+	origChart := appleTopChartURL
+	appleTopChartURL = server.URL
+	t.Cleanup(func() { appleTopChartURL = origChart })
+
+	first := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
+	EnrichSearchResults(first)
+	if first[0].AppleChartRank != 1 || atomic.LoadInt32(&hits) != 2 {
+		t.Fatalf("expected success on the second attempt, rank=%d hits=%d", first[0].AppleChartRank, hits)
+	}
+
+	// Expire the cache and make the endpoint fail: the last good chart is still used.
+	down.Store(true)
+	appleChartCacheMu.Lock()
+	appleChartCachedAt = time.Now().Add(-appleChartCacheTTL - time.Minute)
+	appleChartCacheMu.Unlock()
+	second := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
+	EnrichSearchResults(second)
+	if second[0].AppleChartRank != 1 {
+		t.Fatalf("expected stale chart to be served after a failed refresh, got rank %d", second[0].AppleChartRank)
+	}
+
+	// Beyond the stale limit the old chart is dropped.
+	appleChartCacheMu.Lock()
+	appleChartCachedAt = time.Now().Add(-appleChartCacheTTL - time.Minute)
+	appleChartGoodAt = time.Now().Add(-appleChartStaleLimit - time.Minute)
+	appleChartCacheMu.Unlock()
+	third := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
+	EnrichSearchResults(third)
+	if third[0].AppleChartRank != 0 {
+		t.Fatalf("expected no rank once the chart is too old, got %d", third[0].AppleChartRank)
 	}
 }
 

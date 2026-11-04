@@ -25,16 +25,19 @@ var appleTopChartURL = "https://rss.marketingtools.apple.com/api/v2/us/podcasts/
 
 var (
 	searchEnrichmentBudget     = 8 * time.Second
-	appleChartFetchTimeout     = 4 * time.Second
+	appleChartAttemptTimeout   = 2500 * time.Millisecond
+	appleChartAttempts         = 3 // the endpoint intermittently returns 502 or stalls
 	appleChartCacheTTL         = 6 * time.Hour
 	appleChartFailureRetry     = 10 * time.Minute
+	appleChartStaleLimit       = 48 * time.Hour // keep serving the last good chart this long
 	feedDescriptionReadLimit   = int64(512 * 1024)
 	feedDescriptionConcurrency = 6
 	searchDescriptionMaxRunes  = 600
 	maxSearchResultsToDescribe = 50
 	appleChartCacheMu          sync.Mutex
-	appleChartCachedRanks      map[string]int
-	appleChartCachedAt         time.Time
+	appleChartCachedRanks      map[string]int // last successful chart
+	appleChartGoodAt           time.Time      // when appleChartCachedRanks was fetched
+	appleChartCachedAt         time.Time      // last fetch attempt
 	appleChartLastFetchOK      bool
 )
 
@@ -116,28 +119,44 @@ func appleTopChartRanks(ctx context.Context) map[string]int {
 		ttl = appleChartFailureRetry
 	}
 	if !appleChartCachedAt.IsZero() && time.Since(appleChartCachedAt) < ttl {
-		return appleChartCachedRanks
+		return usableAppleChart()
 	}
 
-	fetchCtx, cancel := context.WithTimeout(ctx, appleChartFetchTimeout)
-	defer cancel()
-	ranks, err := fetchAppleTopChartRanks(fetchCtx)
+	var ranks map[string]int
+	var err error
+	for attempt := 0; attempt < appleChartAttempts && ctx.Err() == nil; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, appleChartAttemptTimeout)
+		ranks, err = fetchAppleTopChartRanks(attemptCtx)
+		cancel()
+		if err == nil {
+			break
+		}
+	}
 	appleChartCachedAt = time.Now()
-	if err != nil {
-		Logger.Warnw("apple top podcasts chart unavailable", "error", err)
+	if err != nil || ranks == nil {
+		Logger.Warnw("apple top podcasts chart unavailable", "error", err, "serving_stale", usableAppleChart() != nil)
 		appleChartLastFetchOK = false
-		appleChartCachedRanks = nil
-		return nil
+		return usableAppleChart()
 	}
 	appleChartLastFetchOK = true
 	appleChartCachedRanks = ranks
+	appleChartGoodAt = appleChartCachedAt
 	return ranks
+}
+
+// usableAppleChart returns the last good chart unless it is too old. Caller holds the lock.
+func usableAppleChart() map[string]int {
+	if appleChartCachedRanks == nil || time.Since(appleChartGoodAt) > appleChartStaleLimit {
+		return nil
+	}
+	return appleChartCachedRanks
 }
 
 func resetAppleChartCacheForTests() {
 	appleChartCacheMu.Lock()
 	defer appleChartCacheMu.Unlock()
 	appleChartCachedRanks = nil
+	appleChartGoodAt = time.Time{}
 	appleChartCachedAt = time.Time{}
 	appleChartLastFetchOK = false
 }
