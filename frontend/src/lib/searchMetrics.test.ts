@@ -7,16 +7,29 @@ const base: SearchResult = { url: "u", title: "t", image: "", already_saved: fal
 const now = new Date("2026-11-04T12:00:00Z");
 
 describe("Search result metrics", () => {
-  it("lists chart rank, subscribers, episodes and recency in that order", () => {
+  it("lists chart ranks, subscribers, episodes and recency in that order", () => {
     const metrics = searchResultMetrics(
-      { ...base, apple_chart_rank: 12, subscribers: 1532, episode_count: 891, latest_episode_date: "2026-10-30T10:00:00Z" },
+      {
+        ...base,
+        apple_chart_rank: 12,
+        apple_genre_rank: 3,
+        apple_genre_name: "Business",
+        subscribers: 1532,
+        episode_count: 891,
+        latest_episode_date: "2026-10-30T10:00:00Z",
+      },
       now,
     );
     assert.deepEqual(
       metrics.map((m) => m.label),
-      ["#12 Apple Top Podcasts", "1,532 gpodder subscribers", "891 episodes", "Latest episode 5 days ago"],
+      ["#12 Apple Top Podcasts", "#3 in Business", "1,532 gpodder subscribers", "891 episodes", "Latest episode 5 days ago"],
     );
     assert.equal(metrics[0].tone, "highlight");
+    assert.equal(metrics[1].tone, "highlight");
+  });
+
+  it("needs a genre name to show a genre rank", () => {
+    assert.deepEqual(searchResultMetrics({ ...base, apple_genre_rank: 4 }, now), []);
   });
 
   it("omits missing or zero values and handles singulars and old dates", () => {

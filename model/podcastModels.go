@@ -108,7 +108,11 @@ type CommonSearchResultModel struct {
 	Subscribers         int    `json:"subscribers,omitempty"`         // gpodder.net subscribers
 	SubscribersLastWeek int    `json:"subscribers_last_week,omitempty"`
 	AppleChartRank      int    `json:"apple_chart_rank,omitempty"` // position in Apple's US Top Podcasts chart
+	AppleGenreRank      int    `json:"apple_genre_rank,omitempty"` // position in Apple's US chart for its genre
+	AppleGenreName      string `json:"apple_genre_name,omitempty"` // set only with AppleGenreRank
 
-	// AppleID links a result to Apple chart data; not serialized.
-	AppleID string `json:"-"`
+	// Apple identifiers used to look up chart data; not serialized.
+	AppleID      string `json:"-"`
+	AppleGenreID string `json:"-"`
+	AppleGenre   string `json:"-"`
 }

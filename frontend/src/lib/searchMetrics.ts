@@ -43,7 +43,15 @@ export function searchResultMetrics(result: SearchResult, now: Date = new Date()
       key: "chart",
       label: `#${result.apple_chart_rank} Apple Top Podcasts`,
       tone: "highlight",
-      title: "Position in Apple's US Top Podcasts chart (top 100)",
+      title: "Position in Apple's US Top Podcasts chart",
+    });
+  }
+  if (result.apple_genre_rank && result.apple_genre_rank > 0 && result.apple_genre_name) {
+    metrics.push({
+      key: "genre-chart",
+      label: `#${result.apple_genre_rank} in ${result.apple_genre_name}`,
+      tone: "highlight",
+      title: `Position in Apple's US ${result.apple_genre_name} chart`,
     });
   }
   if (result.subscribers && result.subscribers > 0) {

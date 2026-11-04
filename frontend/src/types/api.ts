@@ -145,6 +145,8 @@ export interface SearchResult {
   subscribers?: number;
   subscribers_last_week?: number;
   apple_chart_rank?: number;
+  apple_genre_rank?: number;
+  apple_genre_name?: string;
 }
 
 export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript" | "summary";

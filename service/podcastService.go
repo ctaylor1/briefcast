@@ -1320,6 +1320,14 @@ func GetSearchFromItunes(pod model.ItunesSingleResult) *model.CommonSearchResult
 	} else if pod.TrackID > 0 {
 		p.AppleID = strconv.Itoa(pod.TrackID)
 	}
+	// genreIds lists the primary genre first; "26" is the generic Podcasts genre.
+	for _, id := range pod.GenreIds {
+		if id != "" && id != "26" {
+			p.AppleGenreID = id
+			p.AppleGenre = pod.PrimaryGenreName
+			break
+		}
+	}
 
 	return p
 }

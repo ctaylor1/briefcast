@@ -86,17 +86,48 @@ func TestExtractFeedChannelDescription(t *testing.T) {
 	}
 }
 
-func TestEnrichSearchResultsFillsDescriptionsAndChartRanks(t *testing.T) {
+// legacyChart renders itunes.apple.com toppodcasts JSON for the given Apple IDs.
+func legacyChart(ids ...string) []byte {
+	type attrs struct {
+		ID string `json:"im:id"`
+	}
+	type entry struct {
+		ID struct {
+			Attributes attrs `json:"attributes"`
+		} `json:"id"`
+	}
+	entries := make([]entry, len(ids))
+	for i, id := range ids {
+		entries[i].ID.Attributes.ID = id
+	}
+	body, _ := json.Marshal(map[string]any{"feed": map[string]any{"entry": entries}})
+	return body
+}
+
+func useChartServer(t *testing.T, server *httptest.Server) {
+	t.Helper()
 	t.Setenv(outboundAllowPrivateEnv, "true")
 	resetAppleChartCacheForTests()
-	t.Cleanup(resetAppleChartCacheForTests)
+	origLegacy, origGenre, origMarketing := appleLegacyChartURL, appleLegacyGenreChartURL, appleTopChartURL
+	appleLegacyChartURL = server.URL + "/legacy"
+	appleLegacyGenreChartURL = server.URL + "/genre/%s"
+	appleTopChartURL = server.URL + "/marketing"
+	t.Cleanup(func() {
+		appleLegacyChartURL, appleLegacyGenreChartURL, appleTopChartURL = origLegacy, origGenre, origMarketing
+		resetAppleChartCacheForTests()
+	})
+}
 
+func TestEnrichSearchResultsFillsDescriptionsAndChartRanks(t *testing.T) {
 	var chartHits, describedFeedHits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/chart":
+		case "/legacy":
 			atomic.AddInt32(&chartHits, 1)
-			_, _ = w.Write([]byte(`{"feed":{"results":[{"id":"7"},{"id":"42"}]}}`))
+			_, _ = w.Write(legacyChart("7", "42"))
+		case "/genre/1321":
+			atomic.AddInt32(&chartHits, 1)
+			_, _ = w.Write(legacyChart("99", "42"))
 		case "/feed":
 			_, _ = w.Write([]byte(`<rss><channel><description>From the feed</description></channel></rss>`))
 		case "/described":
@@ -107,50 +138,74 @@ func TestEnrichSearchResultsFillsDescriptionsAndChartRanks(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	origChart := appleTopChartURL
-	appleTopChartURL = server.URL + "/chart"
-	t.Cleanup(func() { appleTopChartURL = origChart })
+	useChartServer(t, server)
 
 	results := []*model.CommonSearchResultModel{
-		{URL: server.URL + "/feed", Title: "Ranked", AppleID: "42"},
-		{URL: server.URL + "/described", Title: "Has text", Description: "Directory text", AppleID: "99"},
+		{URL: server.URL + "/feed", Title: "Ranked", AppleID: "42", AppleGenreID: "1321", AppleGenre: "Business"},
+		{URL: server.URL + "/described", Title: "Has text", Description: "Directory text", AppleID: "99", AppleGenreID: "1321", AppleGenre: "Business"},
 		{URL: server.URL + "/missing", Title: "Broken feed", AppleID: "7"},
 	}
 	EnrichSearchResults(results)
 
-	if results[0].Description != "From the feed" || results[0].AppleChartRank != 2 {
+	if results[0].Description != "From the feed" || results[0].AppleChartRank != 2 ||
+		results[0].AppleGenreRank != 2 || results[0].AppleGenreName != "Business" {
 		t.Fatalf("unexpected first result: %+v", results[0])
 	}
-	if results[1].Description != "Directory text" || results[1].AppleChartRank != 0 || atomic.LoadInt32(&describedFeedHits) != 0 {
+	if results[1].Description != "Directory text" || results[1].AppleChartRank != 0 || results[1].AppleGenreRank != 1 ||
+		atomic.LoadInt32(&describedFeedHits) != 0 {
 		t.Fatalf("existing description must be kept without fetching: %+v hits=%d", results[1], describedFeedHits)
 	}
-	if results[2].Description != "" || results[2].AppleChartRank != 1 {
+	if results[2].Description != "" || results[2].AppleChartRank != 1 || results[2].AppleGenreName != "" {
 		t.Fatalf("broken feed should leave description empty but keep rank: %+v", results[2])
 	}
+	if atomic.LoadInt32(&chartHits) != 2 {
+		t.Fatalf("expected one overall and one genre chart fetch, got %d", chartHits)
+	}
 
-	EnrichSearchResults([]*model.CommonSearchResultModel{{Title: "again", Description: "x", AppleID: "7"}})
-	if atomic.LoadInt32(&chartHits) != 1 {
-		t.Fatalf("expected chart to be cached, fetched %d times", chartHits)
+	EnrichSearchResults([]*model.CommonSearchResultModel{{Title: "again", Description: "x", AppleID: "7", AppleGenreID: "1321"}})
+	if atomic.LoadInt32(&chartHits) != 2 {
+		t.Fatalf("expected charts to be cached, fetched %d times", chartHits)
+	}
+}
+
+func TestAppleChartFallsBackToMarketingToolsAndIgnoresBadGenreIDs(t *testing.T) {
+	var genreHits int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/legacy":
+			http.Error(w, "gone", http.StatusNotFound)
+		case r.URL.Path == "/marketing":
+			_, _ = w.Write([]byte(`{"feed":{"results":[{"id":"3"},{"id":"8"}]}}`))
+		case strings.HasPrefix(r.URL.Path, "/genre/"):
+			atomic.AddInt32(&genreHits, 1)
+			_, _ = w.Write(legacyChart("8"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	useChartServer(t, server)
+
+	results := []*model.CommonSearchResultModel{{Description: "x", AppleID: "8", AppleGenreID: "../../x", AppleGenre: "Bad"}}
+	EnrichSearchResults(results)
+	if results[0].AppleChartRank != 2 || results[0].AppleGenreRank != 0 || atomic.LoadInt32(&genreHits) != 0 {
+		t.Fatalf("expected marketing fallback rank and no genre lookup for an invalid id: %+v hits=%d", results[0], genreHits)
 	}
 }
 
 func TestEnrichSearchResultsFailsSoft(t *testing.T) {
-	t.Setenv(outboundAllowPrivateEnv, "true")
-	resetAppleChartCacheForTests()
-	t.Cleanup(resetAppleChartCacheForTests)
-
 	var chartHits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/chart" {
+		if r.URL.Path == "/legacy" || r.URL.Path == "/marketing" {
 			atomic.AddInt32(&chartHits, 1)
 		}
 		http.Error(w, "down", http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	origChart := appleTopChartURL
-	appleTopChartURL = server.URL + "/chart"
-	t.Cleanup(func() { appleTopChartURL = origChart })
+	useChartServer(t, server)
 
+	// Each attempt tries the legacy chart, then the marketing-tools fallback.
+	perFetch := int32(appleChartAttempts * 2)
 	results := []*model.CommonSearchResultModel{{URL: server.URL + "/feed", Title: "A", AppleID: "1"}}
 	start := time.Now()
 	EnrichSearchResults(results)
@@ -160,53 +215,49 @@ func TestEnrichSearchResultsFailsSoft(t *testing.T) {
 	if results[0].Description != "" || results[0].AppleChartRank != 0 || results[0].Title != "A" {
 		t.Fatalf("failed sources must leave the result unchanged: %+v", results[0])
 	}
-	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
-		t.Fatalf("expected %d chart attempts, got %d", appleChartAttempts, got)
+	if got := atomic.LoadInt32(&chartHits); got != perFetch {
+		t.Fatalf("expected %d chart requests, got %d", perFetch, got)
 	}
 	EnrichSearchResults([]*model.CommonSearchResultModel{{Description: "x", AppleID: "1"}})
-	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
+	if got := atomic.LoadInt32(&chartHits); got != perFetch {
 		t.Fatalf("a failed chart fetch should not be retried immediately, fetched %d times", got)
 	}
 
 	// Results without Apple IDs never touch the chart.
 	resetAppleChartCacheForTests()
 	EnrichSearchResults([]*model.CommonSearchResultModel{{Description: "x"}})
-	if got := atomic.LoadInt32(&chartHits); got != int32(appleChartAttempts) {
+	if got := atomic.LoadInt32(&chartHits); got != perFetch {
 		t.Fatalf("chart fetched for results without Apple IDs")
 	}
 }
 
 func TestAppleChartRetriesThenServesLastGoodChart(t *testing.T) {
-	t.Setenv(outboundAllowPrivateEnv, "true")
-	resetAppleChartCacheForTests()
-	t.Cleanup(resetAppleChartCacheForTests)
-
-	var hits int32
+	var legacyHits int32
 	var down atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		if r.URL.Path != "/legacy" {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		n := atomic.AddInt32(&legacyHits, 1)
 		if down.Load() || n == 1 {
 			http.Error(w, "bad gateway", http.StatusBadGateway)
 			return
 		}
-		_, _ = w.Write([]byte(`{"feed":{"results":[{"id":"5"}]}}`))
+		_, _ = w.Write(legacyChart("5"))
 	}))
 	defer server.Close()
-	origChart := appleTopChartURL
-	appleTopChartURL = server.URL
-	t.Cleanup(func() { appleTopChartURL = origChart })
+	useChartServer(t, server)
 
 	first := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
 	EnrichSearchResults(first)
-	if first[0].AppleChartRank != 1 || atomic.LoadInt32(&hits) != 2 {
-		t.Fatalf("expected success on the second attempt, rank=%d hits=%d", first[0].AppleChartRank, hits)
+	if first[0].AppleChartRank != 1 || atomic.LoadInt32(&legacyHits) != 2 {
+		t.Fatalf("expected success on the second attempt, rank=%d hits=%d", first[0].AppleChartRank, legacyHits)
 	}
 
 	// Expire the cache and make the endpoint fail: the last good chart is still used.
 	down.Store(true)
-	appleChartCacheMu.Lock()
-	appleChartCachedAt = time.Now().Add(-appleChartCacheTTL - time.Minute)
-	appleChartCacheMu.Unlock()
+	expireAppleChartForTests(appleOverallChartKey, 0)
 	second := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
 	EnrichSearchResults(second)
 	if second[0].AppleChartRank != 1 {
@@ -214,10 +265,7 @@ func TestAppleChartRetriesThenServesLastGoodChart(t *testing.T) {
 	}
 
 	// Beyond the stale limit the old chart is dropped.
-	appleChartCacheMu.Lock()
-	appleChartCachedAt = time.Now().Add(-appleChartCacheTTL - time.Minute)
-	appleChartGoodAt = time.Now().Add(-appleChartStaleLimit - time.Minute)
-	appleChartCacheMu.Unlock()
+	expireAppleChartForTests(appleOverallChartKey, appleChartStaleLimit+time.Minute)
 	third := []*model.CommonSearchResultModel{{Description: "x", AppleID: "5"}}
 	EnrichSearchResults(third)
 	if third[0].AppleChartRank != 0 {
@@ -229,13 +277,15 @@ func TestSearchResultMappingIncludesPopularityMetadata(t *testing.T) {
 	var itunes model.ItunesResponse
 	payload := `{"resultCount":1,"results":[{"collectionId":863897795,"trackId":863897795,"artistName":"Tim Ferriss",
 "trackName":"The Tim Ferriss Show","feedUrl":"https://rss.example/tfs","artworkUrl600":"https://img.example/a.jpg",
-"releaseDate":"2026-10-20T22:30:00Z","trackCount":891,"genres":["Entrepreneurship","Podcasts","Business"]}]}`
+"releaseDate":"2026-10-20T22:30:00Z","trackCount":891,"genres":["Entrepreneurship","Podcasts","Business"],
+"genreIds":["1493","26","1321"],"primaryGenreName":"Entrepreneurship"}]}`
 	if err := json.Unmarshal([]byte(payload), &itunes); err != nil {
 		t.Fatalf("decode itunes payload: %v", err)
 	}
 	got := GetSearchFromItunes(itunes.Results[0])
 	if got.URL != "https://rss.example/tfs" || got.Author != "Tim Ferriss" || got.EpisodeCount != 891 ||
-		got.LatestEpisodeDate != "2026-10-20T22:30:00Z" || got.AppleID != "863897795" {
+		got.LatestEpisodeDate != "2026-10-20T22:30:00Z" || got.AppleID != "863897795" ||
+		got.AppleGenreID != "1493" || got.AppleGenre != "Entrepreneurship" || got.AppleGenreName != "" {
 		t.Fatalf("unexpected itunes mapping: %+v", got)
 	}
 	if strings.Join(got.Categories, ",") != "Entrepreneurship,Business" {
@@ -248,7 +298,7 @@ func TestSearchResultMappingIncludesPopularityMetadata(t *testing.T) {
 	}
 
 	encoded, _ := json.Marshal(got)
-	if strings.Contains(string(encoded), "863897795") {
-		t.Fatalf("internal Apple ID must not be serialized: %s", encoded)
+	if strings.Contains(string(encoded), "863897795") || strings.Contains(string(encoded), "1493") {
+		t.Fatalf("internal Apple IDs must not be serialized: %s", encoded)
 	}
 }
