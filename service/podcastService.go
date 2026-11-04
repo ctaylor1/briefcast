@@ -17,6 +17,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/feedmeta"
 	"github.com/ctaylor1/briefcast/internal/id3meta"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/telemetry"
 	"github.com/ctaylor1/briefcast/model"
 	strip "github.com/grokify/html-strip-tags-go"
 	"gorm.io/gorm"
@@ -886,7 +887,9 @@ func DownloadMissingEpisodes() error {
 		}
 
 		prefix := GetPodcastPrefix(&item, &settingSnapshot)
+		downloadStart := time.Now()
 		filePath, downloadErr := DownloadWithFallback(item.ID, &item, prefix)
+		recordEpisodeDownload(&item, downloadOutcome(downloadErr), downloadStart, filePath)
 		if downloadErr != nil {
 			if downloadErr == ErrDownloadCancelled {
 				jobLogger.Infow("download cancelled", "podcast_item_id", item.ID)
@@ -1036,7 +1039,9 @@ func DownloadSingleEpisode(podcastItemID string) error {
 	}
 
 	prefix := GetPodcastPrefix(&podcastItem, setting)
+	downloadStart := time.Now()
 	filePath, dlErr := DownloadWithFallback(podcastItem.ID, &podcastItem, prefix)
+	recordEpisodeDownload(&podcastItem, downloadOutcome(dlErr), downloadStart, filePath)
 
 	if dlErr != nil {
 		if dlErr == ErrDownloadCancelled {
@@ -1124,7 +1129,9 @@ func RefreshEpisodes() error {
 			jobLogger.Infow("forcing last episode date for new podcast", "podcast_id", item.ID, "title", item.Title)
 			db.ForceSetLastEpisodeDate(item.ID)
 		}
-		if addErr := AddPodcastItems(&item, isNewPodcast); addErr != nil {
+		addErr := AddPodcastItems(&item, isNewPodcast)
+		telemetry.ObserveFeedRefresh(addErr)
+		if addErr != nil {
 			jobLogger.Errorw("failed to refresh podcast feed", "podcast_id", item.ID, "title", item.Title, "error", addErr)
 			setError(addErr)
 		}

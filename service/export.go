@@ -15,6 +15,7 @@ import (
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/telemetry"
 	"gorm.io/gorm"
 )
 
@@ -124,12 +125,18 @@ func ExportTranscript(item *db.PodcastItem) {
 	podcast := sanitizeAssetName(podcastTitle(item))
 	episode := exportEpisodeFileName(item)
 
-	if err := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, pubDateSubdir(item.PubDate), episode, transcript); err != nil {
-		logger := logging.Sugar()
-		logger.Warnw("failed to export transcript", "podcast_item_id", item.ID, "error", err)
+	variantErr := writeExportVariantFiles(exportDir, transcriptExportVariants, podcast, pubDateSubdir(item.PubDate), episode, transcript)
+	telemetry.ObserveExport(variantErr)
+	if variantErr != nil {
+		logging.Sugar().Warnw("failed to export transcript", "podcast_item_id", item.ID, "error", variantErr)
 	}
-	if err := writeEpisodeMarkdown(item, "transcript"); err != nil {
-		logging.Sugar().Warnw("failed to export transcript Markdown", "podcast_item_id", item.ID, "error", err)
+	markdownErr := writeEpisodeMarkdown(item, "transcript")
+	telemetry.ObserveExport(markdownErr)
+	if markdownErr != nil {
+		logging.Sugar().Warnw("failed to export transcript Markdown", "podcast_item_id", item.ID, "error", markdownErr)
+	}
+	if variantErr == nil && markdownErr == nil {
+		logging.Sugar().Infow("transcript_exported", "podcast_item_id", item.ID)
 	}
 }
 

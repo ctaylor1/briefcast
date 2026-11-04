@@ -2,6 +2,7 @@ import type {
   AppLogsResponse,
   AppSettings,
   AppSettingsUpdate,
+  MonitoringSnapshot,
   OpenRouterModelsResponse,
   PromptVersion,
   RepairWorkResponse,
@@ -51,5 +52,8 @@ export const settingsApi = {
   },
   startRepairWork(limit = 50): Promise<RepairWorkResponse> {
     return httpClient.post<RepairWorkResponse>(`/settings/repair-work?limit=${encodeURIComponent(String(limit))}`);
+  },
+  getMonitoring(): Promise<MonitoringSnapshot> {
+    return httpClient.get<MonitoringSnapshot>("/settings/monitoring");
   },
 };

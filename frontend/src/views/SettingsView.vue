@@ -6,6 +6,7 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
+import MonitoringPanel from "../components/settings/MonitoringPanel.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
@@ -13,7 +14,7 @@ import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian
 import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
 import type { AppLogEntry, AppLogsResponse, AppSettings, OpenRouterModelsResponse, PromptVersion, RepairWorkResponse, SummaryJobStatus, WorkQueueItem } from "../types/api";
 
-type SettingsTab = "configuration" | "work" | "logs";
+type SettingsTab = "configuration" | "work" | "monitoring" | "logs";
 
 type RetentionForm = {
   keepAllEpisodes: boolean;
@@ -723,6 +724,16 @@ onUnmounted(() => {
         @click="selectSettingsTab('work')"
       >
         Work Queue
+      </button>
+      <button
+        type="button"
+        class="settings-tab"
+        :class="{ 'settings-tab--active': activeTab === 'monitoring' }"
+        role="tab"
+        :aria-selected="activeTab === 'monitoring'"
+        @click="selectSettingsTab('monitoring')"
+      >
+        Monitoring
       </button>
       <button
         type="button"
@@ -1484,6 +1495,10 @@ onUnmounted(() => {
           </section>
         </template>
       </UiCard>
+    </template>
+
+    <template v-else-if="activeTab === 'monitoring'">
+      <MonitoringPanel />
     </template>
 
     <template v-else>
