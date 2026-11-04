@@ -194,8 +194,11 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 			},
 		},
 	}
+	restoreEnrich := enrichSearchResults
+	enrichSearchResults = func([]*model.CommonSearchResultModel) {}
 	t.Cleanup(func() {
 		searchProvider = restoreSearchProvider
+		enrichSearchResults = restoreEnrich
 	})
 
 	// pages.go handlers

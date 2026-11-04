@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SEARCH_SOURCE_LABELS, searchResultMetrics } from "../../lib/searchMetrics";
 import type { SearchResult, SearchSource } from "../../types/api";
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
@@ -41,15 +42,16 @@ const emit = defineEmits<{
         label="Source"
         @update:model-value="emit('update:source', $event as SearchSource)"
       >
-        <option value="itunes">iTunes</option>
-        <option value="podcastindex">PodcastIndex</option>
+        <option value="itunes">{{ SEARCH_SOURCE_LABELS.itunes }}</option>
+        <option value="podcastindex">{{ SEARCH_SOURCE_LABELS.podcastindex }}</option>
+        <option value="gpodder">{{ SEARCH_SOURCE_LABELS.gpodder }} (subscriber counts)</option>
       </UiSelect>
       <UiButton type="submit" :disabled="working" class="search-card__submit">
         {{ working ? "Searching..." : "Search" }}
       </UiButton>
     </form>
 
-    <p v-if="working" class="meta-text" role="status">Searching directory...</p>
+    <p v-if="working" class="meta-text" role="status">Searching directory and loading podcast details...</p>
 
     <UiCard
       v-else-if="query && results.length === 0"
@@ -71,7 +73,21 @@ const emit = defineEmits<{
             loading="lazy"
           />
           <div class="stack-2">
-            <h4 class="search-card__result-title">{{ item.title }}</h4>
+            <div class="stack-1">
+              <h4 class="search-card__result-title">{{ item.title }}</h4>
+              <p v-if="item.author" class="meta-text search-card__result-author">{{ item.author }}</p>
+            </div>
+            <ul v-if="searchResultMetrics(item).length" class="search-card__metrics" aria-label="Popularity and activity">
+              <li
+                v-for="metric in searchResultMetrics(item)"
+                :key="metric.key"
+                class="search-card__metric"
+                :class="{ 'search-card__metric--highlight': metric.tone === 'highlight' }"
+                :title="metric.title"
+              >
+                {{ metric.label }}
+              </li>
+            </ul>
             <p class="search-card__result-description">
               {{ item.description || "No description provided." }}
             </p>
@@ -80,7 +96,7 @@ const emit = defineEmits<{
             </p>
           </div>
           <div class="search-card__result-action">
-            <p class="meta-text search-card__source">{{ source === "itunes" ? "iTunes" : "PodcastIndex" }}</p>
+            <p class="meta-text search-card__source">{{ SEARCH_SOURCE_LABELS[source] }}</p>
             <UiButton
               size="sm"
               variant="outline"
@@ -145,6 +161,35 @@ const emit = defineEmits<{
   color: var(--color-text-primary);
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-line-height);
+  font-weight: 600;
+}
+
+.search-card__result-author {
+  margin: 0;
+}
+
+.search-card__metrics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.search-card__metric {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+}
+
+.search-card__metric--highlight {
+  border-color: var(--color-accent-subtle);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
   font-weight: 600;
 }
 

@@ -1293,6 +1293,9 @@ func GetSearchFromGpodder(pod model.GPodcast) *model.CommonSearchResultModel {
 	p.Image = pod.LogoURL
 	p.Title = pod.Title
 	p.Description = pod.Description
+	p.Author = pod.Author
+	p.Subscribers = pod.Subscribers
+	p.SubscribersLastWeek = pod.SubscribersLastWeek
 	return p
 }
 
@@ -1302,6 +1305,21 @@ func GetSearchFromItunes(pod model.ItunesSingleResult) *model.CommonSearchResult
 	p.URL = pod.FeedURL
 	p.Image = pod.ArtworkURL600
 	p.Title = pod.TrackName
+	p.Author = pod.ArtistName
+	p.EpisodeCount = pod.TrackCount
+	if !pod.ReleaseDate.IsZero() {
+		p.LatestEpisodeDate = pod.ReleaseDate.UTC().Format(time.RFC3339)
+	}
+	for _, genre := range pod.Genres {
+		if genre != "" && genre != "Podcasts" {
+			p.Categories = append(p.Categories, genre)
+		}
+	}
+	if pod.CollectionID > 0 {
+		p.AppleID = strconv.Itoa(pod.CollectionID)
+	} else if pod.TrackID > 0 {
+		p.AppleID = strconv.Itoa(pod.TrackID)
+	}
 
 	return p
 }
@@ -1313,6 +1331,10 @@ func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchRes
 	p.Image = pod.Image
 	p.Title = pod.Title
 	p.Description = pod.Description
+	p.Author = pod.Author
+	if pod.ItunesID > 0 {
+		p.AppleID = strconv.Itoa(pod.ItunesID)
+	}
 
 	if pod.Categories != nil {
 		values := make([]string, 0, len(pod.Categories))

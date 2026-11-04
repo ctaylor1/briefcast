@@ -3,7 +3,7 @@ export interface PodcastTagRef {
   Label: string;
 }
 
-export type SearchSource = "itunes" | "podcastindex";
+export type SearchSource = "itunes" | "podcastindex" | "gpodder";
 export type EpisodeTriState = "nil" | "true" | "false";
 export type EpisodeSorting =
   | "release_desc"
@@ -139,6 +139,12 @@ export interface SearchResult {
   already_saved: boolean;
   description: string;
   categories?: string[];
+  author?: string;
+  episode_count?: number;
+  latest_episode_date?: string;
+  subscribers?: number;
+  subscribers_last_week?: number;
+  apple_chart_rank?: number;
 }
 
 export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript" | "summary";
