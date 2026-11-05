@@ -170,15 +170,23 @@ func DeletePodcastItemByID(id string) error {
 		if err := tx.Where("episode_id = ?", id).Delete(&MarkdownRevision{}).Error; err != nil {
 			return err
 		}
+		// Show note links are per-episode occurrences; leaving them behind would
+		// inflate any link reference counts after the episode is gone.
+		if err := tx.Where("podcast_item_id = ?", id).Delete(&ShowNoteLink{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id = ?", id).Delete(&PodcastItem{}).Error
 	})
 }
 
 // DeletePodcastByID handles the corresponding operation.
 func DeletePodcastByID(id string) error {
-
-	result := DB.Where("id=?", id).Delete(&Podcast{})
-	return result.Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("podcast_id = ?", id).Delete(&ShowNoteLink{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id=?", id).Delete(&Podcast{}).Error
+	})
 }
 
 // DeleteTagByID handles the corresponding operation.

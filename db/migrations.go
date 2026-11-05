@@ -268,6 +268,11 @@ where id in (
 		Name:  "2026_06_03_01_01_BackfillSettingsObsidianVault",
 		Query: "update settings set obsidian_vault = 'Vault' where obsidian_vault is null or trim(obsidian_vault) = ''",
 	},
+	{
+		// Episode deletes previously left show note links behind.
+		Name:  "2026_11_05_01_00_DeleteOrphanedShowNoteLinks",
+		Query: "delete from show_note_links where podcast_item_id not in (select id from podcast_items)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

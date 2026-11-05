@@ -35,6 +35,96 @@ func TestDeletingEpisodeDeletesPrivateMarkdownRevisions(t *testing.T) {
 	}
 }
 
+func newShowNoteLink(t *testing.T, podcastID, podcastItemID, rawURL string) ShowNoteLink {
+	t.Helper()
+	link := ShowNoteLink{PodcastID: podcastID, PodcastItemID: podcastItemID, URL: rawURL, Domain: "example.com"}
+	if err := DB.Create(&link).Error; err != nil {
+		t.Fatalf("create show note link: %v", err)
+	}
+	return link
+}
+
+func countShowNoteLinks(t *testing.T, column, value string) int64 {
+	t.Helper()
+	var count int64
+	if err := DB.Unscoped().Model(&ShowNoteLink{}).Where(column+" = ?", value).Count(&count).Error; err != nil {
+		t.Fatalf("count show note links: %v", err)
+	}
+	return count
+}
+
+func TestDeletingEpisodeDeletesOnlyItsShowNoteLinks(t *testing.T) {
+	setupDBForTest(t)
+	podcast := newPodcast(t, "Links fixture", "https://example.com/links.xml")
+	deleted := newPodcastItem(t, podcast.ID, "deleted-guid", "Deleted episode", NotDownloaded, time.Now().UTC())
+	kept := newPodcastItem(t, podcast.ID, "kept-guid", "Kept episode", NotDownloaded, time.Now().UTC())
+	newShowNoteLink(t, podcast.ID, deleted.ID, "https://x.com/chamath")
+	newShowNoteLink(t, podcast.ID, deleted.ID, "https://www.reuters.com/article")
+	newShowNoteLink(t, podcast.ID, kept.ID, "https://x.com/chamath")
+
+	if err := DeletePodcastItemByID(deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countShowNoteLinks(t, "podcast_item_id", deleted.ID); got != 0 {
+		t.Fatalf("deleted episode retained %d show note links", got)
+	}
+	if got := countShowNoteLinks(t, "podcast_item_id", kept.ID); got != 1 {
+		t.Fatalf("sibling episode show note links = %d, want 1", got)
+	}
+}
+
+func TestDeletingPodcastDeletesOnlyItsShowNoteLinks(t *testing.T) {
+	setupDBForTest(t)
+	deletedPodcast := newPodcast(t, "Deleted podcast", "https://example.com/deleted.xml")
+	keptPodcast := newPodcast(t, "Kept podcast", "https://example.com/kept.xml")
+	deletedItem := newPodcastItem(t, deletedPodcast.ID, "deleted-guid", "Deleted episode", NotDownloaded, time.Now().UTC())
+	keptItem := newPodcastItem(t, keptPodcast.ID, "kept-guid", "Kept episode", NotDownloaded, time.Now().UTC())
+	newShowNoteLink(t, deletedPodcast.ID, deletedItem.ID, "https://x.com/friedberg")
+	newShowNoteLink(t, keptPodcast.ID, keptItem.ID, "https://x.com/friedberg")
+
+	if err := DeletePodcastByID(deletedPodcast.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countShowNoteLinks(t, "podcast_id", deletedPodcast.ID); got != 0 {
+		t.Fatalf("deleted podcast retained %d show note links", got)
+	}
+	if got := countShowNoteLinks(t, "podcast_id", keptPodcast.ID); got != 1 {
+		t.Fatalf("other podcast show note links = %d, want 1", got)
+	}
+}
+
+func TestDeleteOrphanedShowNoteLinksMigrationRemovesOnlyOrphans(t *testing.T) {
+	setupDBForTest(t)
+	podcast := newPodcast(t, "Orphan fixture", "https://example.com/orphan.xml")
+	item := newPodcastItem(t, podcast.ID, "live-guid", "Live episode", NotDownloaded, time.Now().UTC())
+	newShowNoteLink(t, podcast.ID, item.ID, "https://x.com/DavidSacks")
+	newShowNoteLink(t, podcast.ID, "episode-deleted-before-fix", "https://x.com/DavidSacks")
+
+	var query string
+	for _, mig := range migrations {
+		if mig.Name == "2026_11_05_01_00_DeleteOrphanedShowNoteLinks" {
+			query = mig.Query
+		}
+	}
+	if query == "" {
+		t.Fatal("orphaned show note link migration is not registered")
+	}
+	// Migrate() already recorded this migration on the empty test DB, so run
+	// the query directly against the seeded orphan.
+	if err := executeMigrationQuery("orphan-cleanup-test", query); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countShowNoteLinks(t, "podcast_item_id", "episode-deleted-before-fix"); got != 0 {
+		t.Fatalf("orphaned show note links remaining = %d, want 0", got)
+	}
+	if got := countShowNoteLinks(t, "podcast_item_id", item.ID); got != 1 {
+		t.Fatalf("live episode show note links = %d, want 1", got)
+	}
+}
+
 // TestParseAddColumnIfNotExists handles the corresponding operation.
 func TestParseAddColumnIfNotExists(t *testing.T) {
 	query := "alter table settings add column if not exists retention_keep_all boolean default true"
