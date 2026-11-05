@@ -147,6 +147,34 @@ type ShowNoteLink struct {
 	Title         string `gorm:"type:text"`
 	Domain        string `gorm:"index"`
 	Position      int
+	// LinkTargetID is the canonical target this URL normalizes to. It is nil
+	// for links captured before normalization or URLs that cannot be
+	// normalized; the link backfill fills it in.
+	LinkTargetID *string `gorm:"index"`
+	// ExtractionVersion is the feedmeta.LinkExtractionVersion that produced
+	// this row (0 for rows captured before versioning). The link backfill
+	// re-processes episodes with rows older than the current version.
+	ExtractionVersion int `gorm:"not null;default:0;index"`
+}
+
+// LinkTarget is the canonical thing show note links point at: a social
+// profile, a single post, a shortener, or a web page. Several raw URLs (and
+// many episodes) can reference one target.
+type LinkTarget struct {
+	Base
+	// NormalizedKey is feedmeta.NormalizedLink.Key, e.g. "x:jason".
+	NormalizedKey string `gorm:"type:text;not null;uniqueIndex"`
+	CanonicalURL  string `gorm:"type:text;not null"`
+	Kind          string `gorm:"index;not null"`
+	Platform      string `gorm:"index;not null"`
+	Handle        string `gorm:"index"`
+	// ParentTargetID is the author profile for posts whose author is known.
+	ParentTargetID *string `gorm:"index"`
+	Domain         string  `gorm:"index"`
+	// ExtractionVersion is the version that last wrote this row. It is
+	// informational: targets are shared across episodes, so staleness is
+	// tracked per link row (ShowNoteLink.ExtractionVersion), not here.
+	ExtractionVersion int `gorm:"not null"`
 }
 
 // DownloadStatus represents a public type.

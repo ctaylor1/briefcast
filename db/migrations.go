@@ -273,6 +273,21 @@ where id in (
 		Name:  "2026_11_05_01_00_DeleteOrphanedShowNoteLinks",
 		Query: "delete from show_note_links where podcast_item_id not in (select id from podcast_items)",
 	},
+	{
+		// Concurrent ingest and backfill could store the same URL twice for
+		// one episode. Keep the first occurrence so the unique index below
+		// can be created.
+		Name: "2026_11_05_02_00_DeleteDuplicateShowNoteLinks",
+		Query: "delete from show_note_links where id in (" +
+			"select id from (select id, row_number() over (" +
+			"partition by podcast_item_id, url order by position, created_at, id) as rn " +
+			"from show_note_links) ranked where rn > 1)",
+	},
+	{
+		// Makes link writes idempotent (ON CONFLICT target for SaveShowNoteLinks).
+		Name:  "2026_11_05_02_01_AddShowNoteLinksItemURLUniqueIndex",
+		Query: "create unique index if not exists idx_show_note_links_item_url on show_note_links (podcast_item_id, url)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

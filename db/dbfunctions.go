@@ -567,15 +567,6 @@ func UpdatePodcastItem(podcastItem *PodcastItem) error {
 	return tx.Error
 }
 
-// CreateShowNoteLinks batch-inserts show note links.
-func CreateShowNoteLinks(links []ShowNoteLink) error {
-	if len(links) == 0 {
-		return nil
-	}
-	tx := DB.Create(&links)
-	return tx.Error
-}
-
 // GetShowNoteLinksByPodcastItemID returns all links for an episode.
 func GetShowNoteLinksByPodcastItemID(podcastItemID string) ([]ShowNoteLink, error) {
 	var links []ShowNoteLink

@@ -187,6 +187,45 @@ func TestNormalizeLink_Classification(t *testing.T) {
 	}
 }
 
+func TestParentProfile(t *testing.T) {
+	posts := []string{
+		"https://x.com/AndrewBenson/status/2115458726396310008",
+		"https://www.instagram.com/theallinpod/reel/CxYz/",
+		"https://www.tiktok.com/@allin/video/7300000000000000000",
+		"https://www.threads.net/@TheAllInPod/post/C1abc",
+		"https://bsky.app/profile/Jay.bsky.team/post/3abc",
+	}
+	for _, raw := range posts {
+		post, err := NormalizeLink(raw)
+		if err != nil {
+			t.Fatalf("NormalizeLink(%q) error: %v", raw, err)
+		}
+		parent, ok := ParentProfile(post)
+		if !ok {
+			t.Errorf("ParentProfile(%q) reported no parent", raw)
+			continue
+		}
+		if parent.Key != post.ParentKey || parent.Kind != LinkKindProfile || parent.Platform != post.Platform {
+			t.Errorf("ParentProfile(%q) = %+v, want profile with key %q", raw, parent, post.ParentKey)
+		}
+	}
+
+	for _, raw := range []string{
+		"https://x.com/i/status/123", // author unknown
+		"https://x.com/jason",        // already a profile
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		"https://example.com/article",
+	} {
+		link, err := NormalizeLink(raw)
+		if err != nil {
+			t.Fatalf("NormalizeLink(%q) error: %v", raw, err)
+		}
+		if parent, ok := ParentProfile(link); ok {
+			t.Errorf("ParentProfile(%q) = %+v, want none", raw, parent)
+		}
+	}
+}
+
 func TestNormalizeLink_RejectsUnsupported(t *testing.T) {
 	for _, raw := range []string{
 		"",

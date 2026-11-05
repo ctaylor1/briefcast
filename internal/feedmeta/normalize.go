@@ -7,10 +7,11 @@ import (
 	"strings"
 )
 
-// LinkNormalizerVersion identifies the rules in this file. Bump it whenever a
-// rule change would produce a different Key for a URL that was already
-// normalized, so stored link targets can be re-normalized by a backfill.
-const LinkNormalizerVersion = 1
+// LinkExtractionVersion identifies the show note link extraction and
+// normalization rules. Bump it whenever a change would alter stored link data
+// (a URL's Key, a target's fields, or an extracted field such as a label), so
+// the link backfill re-processes episodes saved under an older version.
+const LinkExtractionVersion = 1
 
 // LinkKind classifies what a show note link points at.
 type LinkKind string
@@ -94,6 +95,34 @@ func NormalizeLink(rawURL string) (NormalizedLink, error) {
 		return webLink(PlatformWeb, LinkKindShortener, "short:", host, hostPort, parsed), nil
 	}
 	return webLink(PlatformWeb, LinkKindWeb, "web:", host, hostPort, parsed), nil
+}
+
+// ParentProfile returns the normalized author profile of a post whose author
+// is known from its URL (ParentKey is set). It reports false otherwise.
+func ParentProfile(link NormalizedLink) (NormalizedLink, bool) {
+	if link.ParentKey == "" || link.Handle == "" {
+		return NormalizedLink{}, false
+	}
+	var profileURL string
+	switch link.Platform {
+	case platformX:
+		profileURL = "https://x.com/" + link.Handle
+	case platformInstagram:
+		profileURL = "https://instagram.com/" + link.Handle
+	case platformTikTok:
+		profileURL = "https://tiktok.com/@" + link.Handle
+	case platformThreads:
+		profileURL = "https://threads.net/@" + link.Handle
+	case platformBluesky:
+		profileURL = "https://bsky.app/profile/" + link.Handle
+	default:
+		return NormalizedLink{}, false
+	}
+	parent, err := NormalizeLink(profileURL)
+	if err != nil || parent.Key != link.ParentKey || parent.Kind != LinkKindProfile {
+		return NormalizedLink{}, false
+	}
+	return parent, true
 }
 
 // trackingParams are query parameters that identify a share or campaign, not
