@@ -118,7 +118,7 @@ func LoadWhisperXConfig() WhisperXConfig {
 		BeamSize:           getEnvInt("WHISPERX_BEAM_SIZE", 5),
 		Patience:           getEnvFloat("WHISPERX_PATIENCE", 1),
 		ConditionOnPrev:    getEnvBool("WHISPERX_CONDITION_ON_PREVIOUS_TEXT", true),
-		InitialPrompt:      getEnvString("WHISPERX_INITIAL_PROMPT", "Podcast interview. Speakers are Host and Guest. Use punctuation and capitalization."),
+		InitialPrompt:      whisperxInitialPrompt(),
 		VADChunkSize:       getEnvInt("WHISPERX_VAD_CHUNK_SIZE", 45),
 		VADOnset:           getEnvFloat("WHISPERX_VAD_ONSET", 0.50),
 		VADOffset:          getEnvFloat("WHISPERX_VAD_OFFSET", 0.50),
@@ -702,6 +702,19 @@ func getEnvString(name string, fallback string) string {
 		return fallback
 	}
 	return raw
+}
+
+// whisperxInitialPrompt returns the decoder prompt, empty by default. Whisper
+// treats a prompt as text already spoken rather than as an instruction, and
+// batched WhisperX prepends it to every window, so an instruction such as
+// "Use punctuation and capitalization." gets transcribed during music and
+// silence. "none" or "off" also disables it.
+func whisperxInitialPrompt() string {
+	prompt := getEnvString("WHISPERX_INITIAL_PROMPT", "")
+	if strings.EqualFold(prompt, "none") || strings.EqualFold(prompt, "off") {
+		return ""
+	}
+	return prompt
 }
 
 func defaultWhisperXHFHome() string {

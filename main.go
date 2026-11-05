@@ -138,6 +138,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem) // deprecated
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
+	router.POST("/podcastitems/:id/retranscribe", controllers.RetranscribePodcastItem)
 	router.GET("/podcastitems/:id/summary", controllers.GetPodcastItemSummary)
 	router.GET("/podcastitems/:id/links", controllers.GetPodcastItemLinks)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
