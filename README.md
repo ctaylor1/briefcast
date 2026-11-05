@@ -362,6 +362,7 @@ DB_DRIVER=postgres
 - `BRIEFCAST_ALLOW_PRIVATE_BRIEFPOINT_URLS`: allow Briefpoint requests to private or loopback hosts; default `true`
 - `BRIEFCAST_ALLOW_PRIVATE_LLM_URLS`: allow LLM summary requests to private or loopback hosts for local OpenAI-compatible providers; default `true`
 - `BRIEFCAST_MAX_OUTBOUND_RESPONSE_BYTES`: maximum in-memory response size for feed/search/transcript metadata and LLM responses; default `20971520`
+- `BRIEFCAST_USER_AGENT`: `User-Agent` sent on feed, audio, artwork and chart requests; default `Briefcast/1.0 (+https://github.com/ctaylor1/briefcast)`. Printable ASCII, at most 256 characters; an invalid value is ignored with a warning. Keep it an honest identification of your install (name/version plus a contact URL) because hosts use it to attribute download statistics. Shown read-only under **Settings → Configuration → Network Identity**.
 
 ### Logging
 

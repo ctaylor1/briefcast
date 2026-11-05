@@ -566,12 +566,8 @@ func getRequestWithMethod(method string, targetURL string) (*http.Request, error
 		return nil, err
 	}
 
-	if db.DB != nil {
-		setting := db.GetOrCreateSetting()
-		if len(setting.UserAgent) > 0 {
-			req.Header.Add("User-Agent", setting.UserAgent)
-		}
-	}
+	userAgent, _ := CurrentOutboundUserAgent()
+	req.Header.Set("User-Agent", userAgent)
 
 	return req, nil
 }

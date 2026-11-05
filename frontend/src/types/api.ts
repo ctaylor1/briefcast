@@ -193,6 +193,9 @@ export interface AppSettings {
   briefpointAPIKeyConfigured: boolean;
   obsidianVault: string;
   obsidianFolder: string;
+  /** Read-only: outbound User-Agent, configured with BRIEFCAST_USER_AGENT in .env. */
+  userAgent?: string;
+  userAgentSource?: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings> & {
