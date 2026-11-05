@@ -842,13 +842,22 @@ func DownloadMissingEpisodes() error {
 
 	setting := db.GetOrCreateSetting()
 
+	if requeued, staleErr := requeueStaleDownloads(time.Now()); staleErr != nil {
+		jobLogger.Warnw("failed to requeue interrupted downloads", "error", staleErr)
+	} else if requeued > 0 {
+		jobLogger.Warnw("requeued interrupted downloads", "count", requeued, "stale_after", staleDownloadAge().String())
+	}
+
 	data, err := db.GetAllPodcastItemsToBeDownloaded()
 	if err != nil {
 		jobLogger.Errorw("failed to fetch episodes to download", "error", err)
 		return err
 	}
 
-	items := *data
+	items, waiting := splitDownloadBackoff(*data, time.Now())
+	if waiting > 0 {
+		jobLogger.Infow("episodes waiting after repeated download failures", "count", waiting)
+	}
 	jobLogger.Infow("processing episodes", "count", len(items))
 	if len(items) == 0 {
 		return nil
@@ -901,18 +910,25 @@ func DownloadMissingEpisodes() error {
 				_ = SetPodcastItemAsPaused(item.ID)
 				return
 			}
+			failures, nextAttempt := recordDownloadFailure(item.ID, time.Now())
 			jobLogger.Errorw("failed to download episode",
 				"podcast_item_id", item.ID,
 				"podcast", item.Podcast.Title,
 				"episode", item.Title,
 				"url", item.FileURL,
 				"error", downloadErr,
+				"consecutive_failures", failures,
+				"next_attempt_after", nextAttempt.UTC().Format(time.RFC3339),
 			)
-			_ = SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
+			if resetErr := SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded); resetErr != nil {
+				// The row stays "downloading"; requeueStaleDownloads recovers it later.
+				jobLogger.Warnw("failed to requeue episode after download failure", "podcast_item_id", item.ID, "error", resetErr)
+			}
 			setError(downloadErr)
 			return
 		}
 
+		clearDownloadFailures(item.ID)
 		if saveErr := SetPodcastItemAsDownloaded(item.ID, filePath); saveErr != nil {
 			jobLogger.Errorw("failed to update downloaded episode", "podcast_item_id", item.ID, "error", saveErr)
 			setError(saveErr)
@@ -1056,6 +1072,7 @@ func DownloadSingleEpisode(podcastItemID string) error {
 		_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.NotDownloaded)
 		return dlErr
 	}
+	clearDownloadFailures(podcastItem.ID)
 	err = SetPodcastItemAsDownloaded(podcastItem.ID, filePath)
 
 	if setting.DownloadEpisodeImages {
