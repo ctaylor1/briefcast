@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 )
@@ -14,6 +16,57 @@ type ShowNoteLinkData struct {
 	Title    string
 	Domain   string
 	Position int
+	// ContextLabel is the section label that introduces the link, such as
+	// "Referenced in the show" or "Follow on X", without its trailing colon.
+	// Empty when no label precedes the link.
+	ContextLabel string
+}
+
+// maxContextLabelRunes caps labels; longer text ending in a colon is prose,
+// not a section label.
+const maxContextLabelRunes = 120
+
+var sentenceEndRe = regexp.MustCompile(`[.!?]\s+`)
+
+// labelFromText returns the label that the text before a link introduces:
+// the last line (or the last sentence on it) when it ends in a colon, e.g.
+// "Great show. Referenced in the show:" gives "Referenced in the show".
+func labelFromText(segment string) (string, bool) {
+	// Only text after the last URL in the segment can introduce the next link.
+	if locs := bareURLRe.FindAllStringIndex(segment, -1); len(locs) > 0 {
+		segment = segment[locs[len(locs)-1][1]:]
+	}
+	segment = strings.TrimRightFunc(segment, unicode.IsSpace)
+	if !strings.HasSuffix(segment, ":") {
+		return "", false
+	}
+	if i := strings.LastIndexAny(segment, "\r\n"); i >= 0 {
+		segment = segment[i+1:]
+	}
+	if locs := sentenceEndRe.FindAllStringIndex(segment, -1); len(locs) > 0 {
+		segment = segment[locs[len(locs)-1][1]:]
+	}
+	return cleanLabel(segment)
+}
+
+// cleanLabel unescapes entities, collapses whitespace, drops a trailing
+// colon, and rejects empty or overlong labels.
+func cleanLabel(text string) (string, bool) {
+	label := strings.Join(strings.Fields(html.UnescapeString(text)), " ")
+	label = strings.TrimSpace(strings.TrimSuffix(label, ":"))
+	if label == "" || utf8.RuneCountInString(label) > maxContextLabelRunes {
+		return "", false
+	}
+	return label, true
+}
+
+var headingTags = map[string]bool{"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true}
+
+// lineBreakTags end a line of text, so a label on one line is not merged with
+// text on the next.
+var lineBreakTags = map[string]bool{
+	"br": true, "p": true, "div": true, "li": true, "ul": true, "ol": true,
+	"tr": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
 }
 
 var bareURLRe = regexp.MustCompile(`https?://[^\s<>"` + "`" + `\)\]\}]+`)
@@ -69,7 +122,9 @@ func extractDomain(rawURL string) string {
 	return host
 }
 
-// ExtractLinksFromHTML parses HTML and returns all <a href> links.
+// ExtractLinksFromHTML parses HTML and returns all <a href> links, each with
+// the section label (heading, or text ending in a colon) that precedes it.
+// A label applies to following links until another label appears.
 func ExtractLinksFromHTML(htmlContent string) []ShowNoteLinkData {
 	if strings.TrimSpace(htmlContent) == "" {
 		return nil
@@ -79,43 +134,89 @@ func ExtractLinksFromHTML(htmlContent string) []ShowNoteLinkData {
 	seen := make(map[string]bool)
 	pos := 0
 
+	var segment strings.Builder // text since the previous link or heading
+	var heading strings.Builder
+	headingDepth := 0
+	label := ""
+
 	for {
 		tt := tokenizer.Next()
 		if tt == html.ErrorToken {
 			break
 		}
-		if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
+		switch tt {
+		case html.TextToken:
+			text := tokenizer.Text()
+			segment.Write(text)
+			if headingDepth > 0 {
+				heading.Write(text)
+			}
 			continue
-		}
-		tn, hasAttr := tokenizer.TagName()
-		if string(tn) != "a" || !hasAttr {
+		case html.EndTagToken:
+			tn, _ := tokenizer.TagName()
+			name := string(tn)
+			if lineBreakTags[name] {
+				segment.WriteByte('\n')
+			}
+			if headingTags[name] && headingDepth > 0 {
+				headingDepth--
+				if headingDepth == 0 {
+					if headingLabel, ok := cleanLabel(heading.String()); ok {
+						label = headingLabel
+					}
+					heading.Reset()
+					segment.Reset()
+				}
+			}
+			continue
+		case html.StartTagToken, html.SelfClosingTagToken:
+		default:
 			continue
 		}
 
+		tn, hasAttr := tokenizer.TagName()
+		name := string(tn)
+		if lineBreakTags[name] {
+			segment.WriteByte('\n')
+		}
+		if headingTags[name] && tt == html.StartTagToken {
+			headingDepth++
+			continue
+		}
+		if name != "a" {
+			continue
+		}
+
+		if textLabel, ok := labelFromText(segment.String()); ok {
+			label = textLabel
+		}
+		segment.Reset()
+
 		var href string
-		for {
+		for hasAttr {
 			key, val, more := tokenizer.TagAttr()
 			if string(key) == "href" {
 				href = strings.TrimSpace(string(val))
 			}
-			if !more {
-				break
-			}
+			hasAttr = more
 		}
-		if href == "" || isNoiseURL(href) {
-			continue
+		// Consume the anchor's text even for skipped links so it cannot be
+		// mistaken for a label introducing the next link.
+		title := ""
+		if tt == html.StartTagToken {
+			title = extractAnchorText(tokenizer)
 		}
-		if seen[href] {
+		if href == "" || isNoiseURL(href) || seen[href] {
 			continue
 		}
 		seen[href] = true
 
-		title := extractAnchorText(tokenizer)
 		links = append(links, ShowNoteLinkData{
-			URL:      href,
-			Title:    title,
-			Domain:   extractDomain(href),
-			Position: pos,
+			URL:          href,
+			Title:        title,
+			Domain:       extractDomain(href),
+			Position:     pos,
+			ContextLabel: label,
 		})
 		pos++
 	}
@@ -143,25 +244,34 @@ func extractAnchorText(tokenizer *html.Tokenizer) string {
 	}
 }
 
-// ExtractBareURLs finds URLs in plain text that aren't inside HTML tags.
+// ExtractBareURLs finds URLs in plain text that aren't inside HTML tags, each
+// with the label (text ending in a colon) that precedes it. A label applies to
+// following URLs until another label appears.
 func ExtractBareURLs(text string) []ShowNoteLinkData {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	matches := bareURLRe.FindAllString(text, -1)
 	var links []ShowNoteLinkData
 	seen := make(map[string]bool)
 	pos := 0
-	for _, rawURL := range matches {
-		rawURL = strings.TrimRight(rawURL, ".,;:!?")
+	label := ""
+	prevEnd := 0
+	for _, loc := range bareURLRe.FindAllStringIndex(text, -1) {
+		if textLabel, ok := labelFromText(text[prevEnd:loc[0]]); ok {
+			label = textLabel
+		}
+		rawURL := strings.TrimRight(text[loc[0]:loc[1]], ".,;:!?")
+		// Trimmed punctuation belongs to the text before the next URL.
+		prevEnd = loc[0] + len(rawURL)
 		if seen[rawURL] || isNoiseURL(rawURL) {
 			continue
 		}
 		seen[rawURL] = true
 		links = append(links, ShowNoteLinkData{
-			URL:      rawURL,
-			Domain:   extractDomain(rawURL),
-			Position: pos,
+			URL:          rawURL,
+			Domain:       extractDomain(rawURL),
+			Position:     pos,
+			ContextLabel: label,
 		})
 		pos++
 	}

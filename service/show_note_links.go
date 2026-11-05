@@ -39,6 +39,7 @@ func buildShowNoteLinkWrites(podcastID, podcastItemID string, extracted []feedme
 			Title:             data.Title,
 			Domain:            data.Domain,
 			Position:          data.Position,
+			ContextLabel:      data.ContextLabel,
 			ExtractionVersion: feedmeta.LinkExtractionVersion,
 		}}
 		if normalized, err := feedmeta.NormalizeLink(data.URL); err == nil {

@@ -84,6 +84,17 @@ func TestPersistShowNoteLinksAllInFixtureIsIdempotent(t *testing.T) {
 	if post.ParentTargetID == nil || *post.ParentTargetID != author.ID {
 		t.Fatalf("post parent = %v, want %s", post.ParentTargetID, author.ID)
 	}
+
+	var showAccount db.ShowNoteLink
+	if err := db.DB.Where("podcast_item_id = ? AND url = ?", item.ID, "https://x.com/theallinpod").First(&showAccount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if showAccount.ContextLabel != "Follow on X" {
+		t.Fatalf("show account label = %q, want %q", showAccount.ContextLabel, "Follow on X")
+	}
+	if got := countModel(t, &db.ShowNoteLink{}, "podcast_item_id = ? AND context_label = ?", item.ID, "Referenced in the show"); got != 16 {
+		t.Fatalf("links labeled 'Referenced in the show' = %d, want 16", got)
+	}
 }
 
 func TestPersistShowNoteLinksSkipsOverlongURLs(t *testing.T) {

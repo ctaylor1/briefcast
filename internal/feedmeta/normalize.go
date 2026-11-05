@@ -11,7 +11,9 @@ import (
 // normalization rules. Bump it whenever a change would alter stored link data
 // (a URL's Key, a target's fields, or an extracted field such as a label), so
 // the link backfill re-processes episodes saved under an older version.
-const LinkExtractionVersion = 1
+//
+// History: 1 = normalization and link targets; 2 = context labels.
+const LinkExtractionVersion = 2
 
 // LinkKind classifies what a show note link points at.
 type LinkKind string

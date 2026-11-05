@@ -22,7 +22,7 @@ var linkTargetUpsertColumns = []string{
 }
 
 var showNoteLinkUpsertColumns = []string{
-	"title", "domain", "position", "link_target_id", "extraction_version", "updated_at",
+	"title", "domain", "position", "context_label", "link_target_id", "extraction_version", "updated_at",
 }
 
 // SaveShowNoteLinks upserts link targets and link occurrences in one

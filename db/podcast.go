@@ -147,6 +147,9 @@ type ShowNoteLink struct {
 	Title         string `gorm:"type:text"`
 	Domain        string `gorm:"index"`
 	Position      int
+	// ContextLabel is the show note section that introduces the link, e.g.
+	// "Referenced in the show" (feedmeta.ShowNoteLinkData.ContextLabel).
+	ContextLabel string `gorm:"type:text"`
 	// LinkTargetID is the canonical target this URL normalizes to. It is nil
 	// for links captured before normalization or URLs that cannot be
 	// normalized; the link backfill fills it in.
