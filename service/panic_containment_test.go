@@ -8,6 +8,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+	"gorm.io/gorm"
 )
 
 func observeServiceErrors(t *testing.T) *observer.ObservedLogs {
@@ -181,5 +182,47 @@ func TestJobsWithDeferredFlagsClearThemAfterPanic(t *testing.T) {
 				t.Fatal("expected the running flag to clear after a panic")
 			}
 		})
+	}
+}
+
+// panicOnDatabaseReads makes the next read panic. A nil database does not do this
+// for code that checks for it and returns an error instead.
+func panicOnDatabaseReads(t *testing.T) {
+	t.Helper()
+	handle := db.DB
+	boom := func(*gorm.DB) { panic("database read panicked") }
+	if err := handle.Callback().Query().Before("gorm:query").Register("test:panic_query", boom); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Callback().Row().Before("gorm:row").Register("test:panic_row", boom); err != nil {
+		t.Fatal(err)
+	}
+	// The handle outlives the test, so later tests would panic too.
+	t.Cleanup(func() {
+		_ = handle.Callback().Query().Remove("test:panic_query")
+		_ = handle.Callback().Row().Remove("test:panic_row")
+	})
+}
+
+func TestPipelineStatsRefreshClearsFlagAfterPanic(t *testing.T) {
+	setupRetentionTestDB(t)
+	logs := observeServiceErrors(t)
+	panicOnDatabaseReads(t)
+	resetPipelineStatsCacheForTests()
+	t.Cleanup(resetPipelineStatsCacheForTests)
+	cache := &pipelineStatsCache
+	cache.mu.Lock()
+	cache.refreshing = true
+	cache.mu.Unlock()
+
+	runSafely("pipeline stats refresh", func() { _, _, _ = refreshPipelineStats() })
+
+	if logs.FilterMessage("background work panicked").Len() != 1 {
+		t.Fatalf("expected the refresh to panic, got logs %+v", logs.All())
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.refreshing {
+		t.Fatal("expected the refreshing flag to clear after a panic, or the stats would never refresh again")
 	}
 }

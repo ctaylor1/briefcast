@@ -71,10 +71,10 @@ func EnrichSearchResults(results []*model.CommonSearchResultModel) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
+	SafeGo("search chart ranks", func() {
 		defer wg.Done()
 		applyAppleChartRanks(ctx, results)
-	}()
+	})
 
 	// Describe results in display order so the top results are filled first
 	// if the budget runs out.
@@ -91,7 +91,7 @@ func EnrichSearchResults(results []*model.CommonSearchResultModel) {
 	close(pending)
 	for w := 0; w < feedDescriptionConcurrency; w++ {
 		wg.Add(1)
-		go func() {
+		SafeGo("search feed descriptions", func() {
 			defer wg.Done()
 			for r := range pending {
 				if ctx.Err() != nil {
@@ -99,7 +99,7 @@ func EnrichSearchResults(results []*model.CommonSearchResultModel) {
 				}
 				r.Description = fetchFeedDescription(ctx, r.URL)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -128,10 +128,10 @@ func applyAppleChartRanks(ctx context.Context, results []*model.CommonSearchResu
 	var wg sync.WaitGroup
 	for i, key := range keys {
 		wg.Add(1)
-		go func(i int, key string) {
+		SafeGo("search chart fetch", func() {
 			defer wg.Done()
 			charts[i] = appleChartRanks(ctx, key)
-		}(i, key)
+		})
 	}
 	wg.Wait()
 	byKey := make(map[string]map[string]int, len(keys))

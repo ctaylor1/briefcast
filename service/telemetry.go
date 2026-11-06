@@ -75,7 +75,7 @@ var registerPipelineOnce sync.Once
 func RegisterPipelineMetrics() {
 	registerPipelineOnce.Do(func() {
 		telemetry.MustRegister(pipelineCollector{})
-		go func() { _, _, _ = refreshPipelineStats() }()
+		SafeGo("pipeline stats warmup", func() { _, _, _ = refreshPipelineStats() })
 	})
 }
 
@@ -114,7 +114,7 @@ func cachedPipelineStats() (QueueSnapshot, []MonitoringWindow, error) {
 		q, w := c.queue, c.windows
 		if time.Since(c.at) >= pipelineStatsTTL && !c.refreshing {
 			c.refreshing = true
-			go func() { _, _, _ = refreshPipelineStats() }()
+			SafeGo("pipeline stats refresh", func() { _, _, _ = refreshPipelineStats() })
 		}
 		c.mu.Unlock()
 		return q, w, nil
@@ -127,11 +127,16 @@ func refreshPipelineStats() (QueueSnapshot, []MonitoringWindow, error) {
 	c := &pipelineStatsCache
 	c.load.Lock()
 	defer c.load.Unlock()
+	// Deferred so a contained panic cannot block every later refresh.
+	defer func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.refreshing = false
+	}()
 	now := time.Now().UTC()
 	q, w, err := loadPipelineStats(now)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.refreshing = false
 	if err != nil {
 		logging.Sugar().Warnw("pipeline_stats_refresh_failed", "error", err)
 		return q, w, err
