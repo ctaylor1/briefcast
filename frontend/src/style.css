@@ -735,6 +735,18 @@ img {
   opacity: 1;
 }
 
+/* Hidden by opacity alone, a tooltip still widens any scroll container around it.
+   Collapse it until shown. Not display: none, so screen readers can still reach it. */
+.ui-tooltip-wrap:not(:hover, :focus-within) .ui-tooltip {
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .ui-dropdown {
   position: relative;
 }
@@ -1347,6 +1359,13 @@ img {
 
 .data-table tbody tr:hover {
   background: var(--color-hover);
+}
+
+/* Open leftward so a tooltip in the last column stays inside the table's scroll area. */
+.data-table td:last-child .ui-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .empty-state,

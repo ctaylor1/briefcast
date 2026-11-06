@@ -213,12 +213,8 @@ function progressAriaText(item: PodcastItem): string {
 </template>
 
 <style scoped>
-.episodes-table {
-  min-width: 1120px;
-}
-
 .episodes-table__episode {
-  min-width: 320px;
+  min-width: 280px;
 }
 
 .episodes-table__title {
@@ -266,7 +262,8 @@ function progressAriaText(item: PodcastItem): string {
 }
 
 .episodes-table__progress-track {
-  width: 160px;
+  width: 100%;
+  max-width: 160px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-hover);
@@ -289,7 +286,7 @@ function progressAriaText(item: PodcastItem): string {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  min-width: 280px;
+  min-width: 240px;
 }
 
 @keyframes pulse-track {

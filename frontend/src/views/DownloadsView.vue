@@ -657,10 +657,6 @@ onUnmounted(() => {
   width: 42%;
 }
 
-.downloads-table {
-  min-width: 1120px;
-}
-
 .downloads-table__row--downloading {
   box-shadow: inset 3px 0 0 var(--color-accent);
 }
@@ -670,7 +666,7 @@ onUnmounted(() => {
 }
 
 .downloads-table__episode {
-  min-width: 320px;
+  min-width: 280px;
 }
 
 .downloads-table__title {
@@ -691,15 +687,16 @@ onUnmounted(() => {
 }
 
 .downloads-table__actions {
-  min-width: 220px;
-}
-
-.downloads-table__progress {
   min-width: 180px;
 }
 
+.downloads-table__progress {
+  min-width: 140px;
+}
+
 .downloads-table__progress-track {
-  width: 180px;
+  width: 100%;
+  max-width: 180px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-hover);

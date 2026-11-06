@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
 
+### Fixed
+- Removed the horizontal scrollbar that the Podcasts, Episodes and Downloads tables showed at full window width. Tables now scroll sideways only when their columns do not fit.
+
 ## [1.9.4] - 2026-07-11
 
 ### Added
