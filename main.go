@@ -142,6 +142,9 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.DELETE("/podcastitems/:id/delete", controllers.DeletePodcastItem)
 	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem) // deprecated
 
+	router.GET("/links/top", controllers.GetTopLinks)
+	router.GET("/links/targets/:id", controllers.GetLinkTarget)
+
 	router.GET("/summaries", controllers.GetSummaries)
 	router.POST("/summaries/:id/favorite", controllers.FavoriteSummary)
 	router.POST("/summaries/:id/unfavorite", controllers.UnfavoriteSummary)

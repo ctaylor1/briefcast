@@ -288,6 +288,12 @@ where id in (
 		Name:  "2026_11_05_02_01_AddShowNoteLinksItemURLUniqueIndex",
 		Query: "create unique index if not exists idx_show_note_links_item_url on show_note_links (podcast_item_id, url)",
 	},
+	{
+		// Covers the per-podcast, per-target episode counts used by link
+		// rankings and boilerplate detection (TopLinkTargets).
+		Name:  "2026_11_05_03_00_AddShowNoteLinksPodcastTargetIndex",
+		Query: "create index if not exists idx_show_note_links_podcast_target_item on show_note_links (podcast_id, link_target_id, podcast_item_id)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
