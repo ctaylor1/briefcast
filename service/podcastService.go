@@ -1141,10 +1141,13 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	if err != nil {
 		return err
 	}
-	// Checked before anything is deleted, so a failed check leaves no partial delete.
-	sharedWith, err := otherPodcastIDsSharingFolder(podcast)
-	if err != nil {
-		return err
+	var sharedWith []string
+	if deleteFiles {
+		// Checked before anything is deleted, so a failed check leaves no partial delete.
+		sharedWith, err = otherPodcastIDsSharingFolder(podcast)
+		if err != nil {
+			return err
+		}
 	}
 	for _, item := range podcastItems {
 		if deleteFiles {
@@ -1164,9 +1167,12 @@ func DeletePodcast(id string, deleteFiles bool) error {
 
 	}
 
-	if len(sharedWith) > 0 {
+	switch {
+	case !deleteFiles:
+		// The caller asked to keep this podcast's files, so its folders stay too.
+	case len(sharedWith) > 0:
 		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
-	} else {
+	default:
 		err = deletePodcastFolder(podcast.Title)
 		if err != nil {
 			return err

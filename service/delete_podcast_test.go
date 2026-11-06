@@ -204,6 +204,23 @@ func TestDeletePodcastKeepsSharedFolderWhenFilesAreKept(t *testing.T) {
 	requirePodcastRows(t, survivor, survivorItem, true)
 }
 
+func TestDeletePodcastKeepsAllFoldersWhenFilesAreKept(t *testing.T) {
+	dataDir := filepath.Join(setupRetentionTestDB(t), "assets")
+
+	podcast := createPodcast(t, "Kept Show", false)
+	item := seedDownloadedEpisode(t, dataDir, podcast, "kept-episode")
+	folder := sanitizeAssetName(podcast.Title)
+	keptFiles := seedCategoryFolders(t, dataDir, folder, "kept.txt")
+	keptFiles = append(keptFiles, item.DownloadPath, writeAssetFile(t, filepath.Join(dataDir, folder), "kept-legacy.txt"))
+
+	if err := DeletePodcast(podcast.ID, false); err != nil {
+		t.Fatalf("delete podcast: %v", err)
+	}
+
+	requirePathsExist(t, keptFiles...)
+	requirePodcastRows(t, podcast, item, false)
+}
+
 func TestDeletePodcastRemovesAllFoldersForUniqueTitle(t *testing.T) {
 	dataDir := filepath.Join(setupRetentionTestDB(t), "assets")
 
