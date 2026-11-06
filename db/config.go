@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,14 @@ const (
 	// DriverPostgres is a public constant.
 	DriverPostgres DatabaseDriver = "postgres"
 )
+
+const (
+	defaultMaxOpenConns        = 25
+	defaultSQLiteMaxOpenConns  = 4
+	defaultSQLiteBusyTimeoutMS = 5000
+)
+
+var sqliteBusyTimeoutPragma = regexp.MustCompile(`(?i)^\s*busy_timeout\s*[(=]\s*(\d+)`)
 
 // DatabaseConfig represents a public type.
 type DatabaseConfig struct {
@@ -164,6 +173,71 @@ func normalizeSQLiteDSN(databaseURL string) (string, error) {
 	return raw, nil
 }
 
+// connectionDataSource returns the data source to open and, for SQLite, the
+// effective busy timeout. ResolveDatabaseConfig stays a plain path because the
+// command-line tools under cmd/ read it directly.
+func connectionDataSource(config DatabaseConfig) (string, int) {
+	if config.Driver != DriverSQLite {
+		return config.DataSource, 0
+	}
+	return withSQLiteBusyTimeout(config.DataSource)
+}
+
+// withSQLiteBusyTimeout adds a busy timeout as data source parameters, because
+// both drivers apply those to every connection they open. A PRAGMA run after Open
+// would reach only one pooled connection. mattn/go-sqlite3 reads _busy_timeout,
+// glebarez/sqlite reads _pragma, and each ignores the other's parameter. A timeout
+// already in the data source wins over SQLITE_BUSY_TIMEOUT_MS.
+func withSQLiteBusyTimeout(dataSource string) (string, int) {
+	timeoutMS := configuredSQLiteBusyTimeoutMS()
+	_, rawQuery, _ := strings.Cut(dataSource, "?")
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// Leave a malformed data source for the driver to reject.
+		return dataSource, timeoutMS
+	}
+
+	// mattn/go-sqlite3 prefers _timeout when both spellings are present.
+	mattnValue := firstNonEmpty(query.Get("_timeout"), query.Get("_busy_timeout"))
+	pragmaValue := sqliteBusyTimeoutPragmaValue(query["_pragma"])
+	if explicit, err := strconv.Atoi(firstNonEmpty(mattnValue, pragmaValue)); err == nil {
+		timeoutMS = explicit
+	}
+
+	var additions []string
+	if mattnValue == "" {
+		additions = append(additions, fmt.Sprintf("_busy_timeout=%d", timeoutMS))
+	}
+	if pragmaValue == "" {
+		additions = append(additions, fmt.Sprintf("_pragma=busy_timeout(%d)", timeoutMS))
+	}
+	if len(additions) == 0 {
+		return dataSource, timeoutMS
+	}
+	separator := "?"
+	if strings.Contains(dataSource, "?") {
+		separator = "&"
+	}
+	return dataSource + separator + strings.Join(additions, "&"), timeoutMS
+}
+
+func configuredSQLiteBusyTimeoutMS() int {
+	timeoutMS := getEnvInt("SQLITE_BUSY_TIMEOUT_MS", defaultSQLiteBusyTimeoutMS)
+	if timeoutMS < 0 {
+		return defaultSQLiteBusyTimeoutMS
+	}
+	return timeoutMS
+}
+
+func sqliteBusyTimeoutPragmaValue(pragmas []string) string {
+	for _, pragma := range pragmas {
+		if match := sqliteBusyTimeoutPragma.FindStringSubmatch(pragma); match != nil {
+			return match[1]
+		}
+	}
+	return ""
+}
+
 func sanitizeDataSource(dataSource string) string {
 	parsed, err := url.Parse(dataSource)
 	if err != nil {
@@ -180,9 +254,14 @@ func sanitizeDataSource(dataSource string) string {
 	return parsed.String()
 }
 
-func applyConnectionPool(db ConnPoolConfigurable) {
+// applyConnectionPool configures db and returns the DB_MAX_OPEN_CONNS value in effect.
+func applyConnectionPool(db ConnPoolConfigurable, driver DatabaseDriver) int {
+	defaultMaxOpen := defaultMaxOpenConns
+	if driver == DriverSQLite {
+		defaultMaxOpen = defaultSQLiteMaxOpenConns
+	}
 	maxIdle := getEnvInt("DB_MAX_IDLE_CONNS", 10)
-	maxOpen := getEnvInt("DB_MAX_OPEN_CONNS", 25)
+	maxOpen := getEnvInt("DB_MAX_OPEN_CONNS", defaultMaxOpen)
 	connMaxLifetimeMinutes := getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 0)
 
 	if maxIdle >= 0 {
@@ -194,6 +273,7 @@ func applyConnectionPool(db ConnPoolConfigurable) {
 	if connMaxLifetimeMinutes > 0 {
 		db.SetConnMaxLifetime(time.Duration(connMaxLifetimeMinutes) * time.Minute)
 	}
+	return maxOpen
 }
 
 // ConnPoolConfigurable represents a public type.

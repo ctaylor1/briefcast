@@ -343,7 +343,8 @@ For Docker Compose end users, most deployments only need `.env` values for:
 - `DB_DRIVER`: optional `sqlite` or `postgres`
 - `DATABASE_DRIVER`: alias for `DB_DRIVER`
 - `DB_MAX_IDLE_CONNS`: default `10`
-- `DB_MAX_OPEN_CONNS`: default `25`
+- `DB_MAX_OPEN_CONNS`: default `25`, or `4` for SQLite
+- `SQLITE_BUSY_TIMEOUT_MS`: how long a SQLite connection waits for a lock before failing; default `5000`. A timeout in `DATABASE_URL` takes precedence
 - `DB_CONN_MAX_LIFETIME_MINUTES`: default `0`
 
 SQLite:

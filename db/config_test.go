@@ -137,7 +137,7 @@ func TestApplyConnectionPool(t *testing.T) {
 	t.Setenv("DB_CONN_MAX_LIFETIME_MINUTES", "3")
 
 	mock := &fakeConnPool{}
-	applyConnectionPool(mock)
+	applyConnectionPool(mock, DriverPostgres)
 
 	if mock.maxIdle != 11 {
 		t.Fatalf("expected max idle 11, got %d", mock.maxIdle)

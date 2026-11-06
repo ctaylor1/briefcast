@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -22,12 +23,13 @@ func Init() (*gorm.DB, error) {
 		return nil, err
 	}
 
+	dataSource, sqliteBusyTimeoutMS := connectionDataSource(config)
 	var dialector gorm.Dialector
 	switch config.Driver {
 	case DriverSQLite:
-		dialector = sqlite.Open(config.DataSource)
+		dialector = sqlite.Open(dataSource)
 	case DriverPostgres:
-		dialector = postgres.Open(config.DataSource)
+		dialector = postgres.Open(dataSource)
 	default:
 		return nil, fmt.Errorf("unsupported database driver %q", config.Driver)
 	}
@@ -45,12 +47,23 @@ func Init() (*gorm.DB, error) {
 
 	localDB, err := db.DB()
 	if err == nil {
-		applyConnectionPool(localDB)
+		maxOpenConns := applyConnectionPool(localDB, config.Driver)
+		if config.Driver == DriverSQLite {
+			logSQLiteSettings(localDB, sqliteBusyTimeoutMS, maxOpenConns)
+		}
 	}
 
 	DB = db
 	activeDriver = config.Driver
 	return DB, nil
+}
+
+func logSQLiteSettings(localDB *sql.DB, busyTimeoutMS int, maxOpenConns int) {
+	var journalMode string
+	if err := localDB.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
+		logging.Sugar().Warnw("could not read sqlite journal mode", "error", err)
+	}
+	logging.Sugar().Infow("sqlite connection settings", "busy_timeout_ms", busyTimeoutMS, "max_open_conns", maxOpenConns, "journal_mode", journalMode)
 }
 
 // Migrate Database
