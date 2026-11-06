@@ -567,6 +567,23 @@ func UpdatePodcastItem(podcastItem *PodcastItem) error {
 	return tx.Error
 }
 
+// UpdatePodcastItemColumns writes only the given columns, so a change made to any
+// other column since the caller read the episode is kept. Keys are column names.
+// Unlike UpdatePodcastItem it cannot recreate a deleted episode: it returns
+// gorm.ErrRecordNotFound when no row matches id.
+func UpdatePodcastItemColumns(id string, columns map[string]interface{}) error {
+	// Silent for the same reason as UpdatePodcastItem: values can be whole transcripts.
+	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
+		Model(&PodcastItem{}).Where("id = ?", id).Updates(columns)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // GetShowNoteLinksByPodcastItemID returns all links for an episode.
 func GetShowNoteLinksByPodcastItemID(podcastItemID string) ([]ShowNoteLink, error) {
 	var links []ShowNoteLink

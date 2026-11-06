@@ -565,49 +565,26 @@ func UpdateAllFileSizes() {
 
 // SetPodcastItemAsQueuedForDownload handles the corresponding operation.
 func SetPodcastItemAsQueuedForDownload(id string) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.DownloadStatus = db.NotDownloaded
-	podcastItem.DownloadedBytes = 0
-	podcastItem.DownloadTotalBytes = 0
-
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{
+		"download_status":      db.NotDownloaded,
+		"downloaded_bytes":     0,
+		"download_total_bytes": 0,
+	})
 }
 
 // SetPodcastItemAsQueuedPreserveProgress handles the corresponding operation.
 func SetPodcastItemAsQueuedPreserveProgress(id string) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.DownloadStatus = db.NotDownloaded
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{"download_status": db.NotDownloaded})
 }
 
 // SetPodcastItemAsDownloading handles the corresponding operation.
 func SetPodcastItemAsDownloading(id string) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.DownloadStatus = db.Downloading
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{"download_status": db.Downloading})
 }
 
 // SetPodcastItemAsPaused handles the corresponding operation.
 func SetPodcastItemAsPaused(id string) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.DownloadStatus = db.Paused
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{"download_status": db.Paused})
 }
 
 // DownloadMissingImages handles the corresponding operation.
@@ -641,25 +618,19 @@ func downloadImageLocally(podcastItemID string) error {
 		return err
 	}
 
-	podcastItem.LocalImage = path
-
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(podcastItemID, map[string]interface{}{"local_image": path})
 }
 
 // SetPodcastItemBookmarkStatus handles the corresponding operation.
 func SetPodcastItemBookmarkStatus(id string, bookmark bool) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
+	bookmarkDate := time.Time{}
 	if bookmark {
-		podcastItem.BookmarkDate = time.Now().UTC()
-	} else {
-		podcastItem.BookmarkDate = time.Time{}
+		bookmarkDate = time.Now().UTC()
 	}
-	podcastItem.IsSummaryFavorited = bookmark
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{
+		"bookmark_date":        bookmarkDate,
+		"is_summary_favorited": bookmark,
+	})
 }
 
 // SetPodcastItemAsDownloaded handles the corresponding operation.
@@ -672,30 +643,32 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 		return err
 	}
 
-	size, err := GetFileSize(location)
-	if err == nil {
-		podcastItem.FileSize = size
+	columns := map[string]interface{}{
+		"download_date":   time.Now().UTC(),
+		"download_path":   location,
+		"download_status": db.Downloaded,
 	}
-
-	podcastItem.DownloadDate = time.Now().UTC()
-	podcastItem.DownloadPath = location
-	podcastItem.DownloadStatus = db.Downloaded
-	if podcastItem.FileSize > 0 {
-		podcastItem.DownloadedBytes = podcastItem.FileSize
-		podcastItem.DownloadTotalBytes = podcastItem.FileSize
+	fileSize := podcastItem.FileSize
+	if size, err := GetFileSize(location); err == nil {
+		fileSize = size
+		columns["file_size"] = size
+	}
+	if fileSize > 0 {
+		columns["downloaded_bytes"] = fileSize
+		columns["download_total_bytes"] = fileSize
 	}
 	if podcastItem.TranscriptStatus == "" && podcastItem.TranscriptJSON == "" {
-		podcastItem.TranscriptStatus = "pending_whisperx"
-		podcastItem.TranscriptProgressPct = 0
-		podcastItem.TranscriptProgressStage = "queued"
-		podcastItem.TranscriptCheckpointJSON = ""
-		podcastItem.TranscriptRetryCount = 0
-		podcastItem.TranscriptNextAttempt = nil
-		podcastItem.TranscriptLastError = ""
+		columns["transcript_status"] = "pending_whisperx"
+		columns["transcript_progress_pct"] = 0
+		columns["transcript_progress_stage"] = "queued"
+		columns["transcript_checkpoint_json"] = ""
+		columns["transcript_retry_count"] = 0
+		columns["transcript_next_attempt"] = nil
+		columns["transcript_last_error"] = ""
 	} else if podcastItem.TranscriptStatus == "available" {
-		podcastItem.TranscriptProgressPct = 100
-		podcastItem.TranscriptProgressStage = "complete"
-		podcastItem.TranscriptCheckpointJSON = ""
+		columns["transcript_progress_pct"] = 100
+		columns["transcript_progress_stage"] = "complete"
+		columns["transcript_checkpoint_json"] = ""
 	}
 
 	if id3meta.ShouldExtract(podcastItem.ChaptersJSON, podcastItem.ID3TagsJSON, podcastItem.ID3ChaptersJSON) {
@@ -708,47 +681,36 @@ func SetPodcastItemAsDownloaded(id string, location string) error {
 				Logger.Warnw("id3 metadata parse failed", "podcast_item_id", id, "error", splitErr)
 			} else {
 				if hasTags {
-					podcastItem.ID3TagsJSON = tagsJSON
+					columns["id3_tags_json"] = tagsJSON
 				}
 				if hasChapters {
-					podcastItem.ID3ChaptersJSON = chaptersJSON
+					columns["id3_chapters_json"] = chaptersJSON
 					if podcastItem.ChaptersJSON == "" {
-						podcastItem.ChaptersJSON = chaptersJSON
-						podcastItem.ChaptersType = "id3"
+						columns["chapters_json"] = chaptersJSON
+						columns["chapters_type"] = "id3"
 					}
 				}
 			}
 		}
 	}
 
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, columns)
 }
 
 // SetPodcastItemAsNotDownloaded handles the corresponding operation.
 func SetPodcastItemAsNotDownloaded(id string, downloadStatus db.DownloadStatus) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.DownloadDate = time.Time{}
-	podcastItem.DownloadPath = ""
-	podcastItem.DownloadStatus = downloadStatus
-	podcastItem.DownloadedBytes = 0
-	podcastItem.DownloadTotalBytes = 0
-
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{
+		"download_date":        time.Time{},
+		"download_path":        "",
+		"download_status":      downloadStatus,
+		"downloaded_bytes":     0,
+		"download_total_bytes": 0,
+	})
 }
 
 // SetPodcastItemPlayedStatus handles the corresponding operation.
 func SetPodcastItemPlayedStatus(id string, isPlayed bool) error {
-	var podcastItem db.PodcastItem
-	err := db.GetPodcastItemByID(id, &podcastItem)
-	if err != nil {
-		return err
-	}
-	podcastItem.IsPlayed = isPlayed
-	return db.UpdatePodcastItem(&podcastItem)
+	return db.UpdatePodcastItemColumns(id, map[string]interface{}{"is_played": isPlayed})
 }
 
 // SetAllEpisodesToDownload handles the corresponding operation.
@@ -991,7 +953,7 @@ func DownloadWithFallback(downloadID string, item *db.PodcastItem, prefix string
 		filePath, altErr := Download(downloadID, nextURL, episodeTitle, podcastTitle, prefix)
 		if altErr == nil {
 			item.FileURL = nextURL
-			if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
+			if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{"file_url": nextURL}); updateErr != nil {
 				Logger.Warnw("failed to persist working alternate URL", "podcast_item_id", item.ID, "error", updateErr)
 			}
 			return filePath, nil

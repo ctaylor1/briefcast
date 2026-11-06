@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -73,6 +74,62 @@ func newPodcastItem(t *testing.T, podcastID, guid, title string, status Download
 		t.Fatalf("create podcast item failed: %v", err)
 	}
 	return item
+}
+
+func TestUpdatePodcastItemColumns(t *testing.T) {
+	setupDBForTest(t)
+	podcast := newPodcast(t, "Columns", "https://example.com/columns.xml")
+	item := newPodcastItem(t, podcast.ID, "columns-guid", "Columns Episode", Downloaded, time.Now().UTC())
+
+	staleUpdatedAt := time.Date(2020, time.January, 2, 3, 4, 5, 0, time.UTC)
+	seed := DB.Model(&PodcastItem{}).Where("id = ?", item.ID).UpdateColumns(map[string]interface{}{
+		"is_played":               true,
+		"file_size":               99,
+		"download_path":           "/assets/episode.mp3",
+		"transcript_next_attempt": time.Now().UTC().Add(time.Hour),
+		"transcript_model":        "kept-model",
+		"updated_at":              staleUpdatedAt,
+	})
+	if seed.Error != nil {
+		t.Fatalf("seed episode: %v", seed.Error)
+	}
+
+	err := UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"is_played":               false,
+		"file_size":               0,
+		"download_path":           "",
+		"transcript_next_attempt": nil,
+	})
+	if err != nil {
+		t.Fatalf("update columns: %v", err)
+	}
+
+	var got PodcastItem
+	if err := GetPodcastItemByID(item.ID, &got); err != nil {
+		t.Fatalf("reload episode: %v", err)
+	}
+	if got.IsPlayed || got.FileSize != 0 || got.DownloadPath != "" {
+		t.Fatalf("expected zero values written, got played=%v size=%d path=%q", got.IsPlayed, got.FileSize, got.DownloadPath)
+	}
+	if got.TranscriptNextAttempt != nil {
+		t.Fatalf("expected NULL written for a nil value, got %v", got.TranscriptNextAttempt)
+	}
+	if !got.UpdatedAt.After(staleUpdatedAt) {
+		t.Fatalf("expected updated_at to advance past %s, got %s", staleUpdatedAt, got.UpdatedAt)
+	}
+	if got.TranscriptModel != "kept-model" || got.Title != item.Title || got.GUID != item.GUID {
+		t.Fatalf("expected other columns untouched, got model=%q title=%q guid=%q", got.TranscriptModel, got.Title, got.GUID)
+	}
+}
+
+func TestUpdatePodcastItemColumnsReturnsNotFoundForUnknownID(t *testing.T) {
+	setupDBForTest(t)
+
+	err := UpdatePodcastItemColumns("missing-episode", map[string]interface{}{"is_played": true})
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected record not found, got %v", err)
+	}
 }
 
 // TestPodcastAndItemQueries handles the corresponding operation.
