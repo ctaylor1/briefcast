@@ -1178,6 +1178,11 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	if err != nil {
 		return err
 	}
+	// Checked before anything is deleted, so a failed check leaves no partial delete.
+	sharedWith, err := otherPodcastIDsSharingFolder(podcast)
+	if err != nil {
+		return err
+	}
 	for _, item := range podcastItems {
 		if deleteFiles {
 			if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
@@ -1196,9 +1201,13 @@ func DeletePodcast(id string, deleteFiles bool) error {
 
 	}
 
-	err = deletePodcastFolder(podcast.Title)
-	if err != nil {
-		return err
+	if len(sharedWith) > 0 {
+		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
+	} else {
+		err = deletePodcastFolder(podcast.Title)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = db.DeletePodcastByID(id)
@@ -1207,6 +1216,24 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	}
 	return nil
 
+}
+
+// otherPodcastIDsSharingFolder returns the other podcasts stored in the same
+// folders as podcast. Folders are named only by the sanitized title, so different
+// titles can collide. Case is ignored because some filesystems ignore it.
+func otherPodcastIDsSharingFolder(podcast db.Podcast) ([]string, error) {
+	var podcasts []db.Podcast
+	if err := db.FindAllPodcastsPlain(&podcasts); err != nil {
+		return nil, err
+	}
+	folder := sanitizeAssetName(podcast.Title)
+	var ids []string
+	for _, other := range podcasts {
+		if other.ID != podcast.ID && strings.EqualFold(sanitizeAssetName(other.Title), folder) {
+			ids = append(ids, other.ID)
+		}
+	}
+	return ids, nil
 }
 
 func deletePodcastItemAssetFile(podcastItemID string, filePath string, field string) error {

@@ -601,16 +601,40 @@ func createConfigFolderIfNotExists(folder string) string {
 	return createFolder(folder, dataPath)
 }
 
+// podcastAssetCategories are the directories that hold one folder per podcast,
+// at DATA/<category>/<sanitized title>.
+var podcastAssetCategories = []string{
+	assetAudioDir,
+	assetImagesDir,
+	assetTranscriptDir,
+	assetSummariesDir,
+	assetMarkdownTranscriptDir,
+	assetMarkdownSummariesDir,
+}
+
+// isReservedAssetFolderName reports whether a sanitized title names a top-level
+// directory under DATA that holds every podcast's files. Case is ignored because
+// some filesystems ignore it.
+func isReservedAssetFolderName(sanitizedTitle string) bool {
+	for _, category := range podcastAssetCategories {
+		topLevel, _, _ := strings.Cut(category, "/")
+		if strings.EqualFold(sanitizedTitle, topLevel) {
+			return true
+		}
+	}
+	return false
+}
+
 func deletePodcastFolder(folder string) error {
 	var firstErr error
-	paths := []string{
-		dataPodcastFolderPath(folder),
-		dataCategoryPodcastFolderPath(assetAudioDir, folder),
-		dataCategoryPodcastFolderPath(assetImagesDir, folder),
-		dataCategoryPodcastFolderPath(assetTranscriptDir, folder),
-		dataCategoryPodcastFolderPath(assetSummariesDir, folder),
-		dataCategoryPodcastFolderPath(assetMarkdownTranscriptDir, folder),
-		dataCategoryPodcastFolderPath(assetMarkdownSummariesDir, folder),
+	paths := make([]string, 0, len(podcastAssetCategories)+1)
+	// The legacy layout is DATA/<sanitized title>, which for a reserved title is
+	// a whole category directory rather than this podcast's folder.
+	if !isReservedAssetFolderName(sanitizeAssetName(folder)) {
+		paths = append(paths, dataPodcastFolderPath(folder))
+	}
+	for _, category := range podcastAssetCategories {
+		paths = append(paths, dataCategoryPodcastFolderPath(category, folder))
 	}
 	for _, folderPath := range paths {
 		if !IsPathWithinAssetsDir(folderPath) {
