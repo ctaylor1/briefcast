@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	appdb "github.com/ctaylor1/briefcast/db"
@@ -105,6 +106,131 @@ func TestEveryAppTableIsCopiedOrDeliberatelySkipped(t *testing.T) {
 		if !copied[table] && !notCopied[table] {
 			t.Errorf("table %q would be lost in a migration: add it to tableCopies or notCopied", table)
 		}
+	}
+}
+
+func seedPodcastWithEpisode(t *testing.T, database *gorm.DB) appdb.PodcastItem {
+	t.Helper()
+	podcast := appdb.Podcast{Title: "Fixture", URL: "https://example.com/feed.xml"}
+	if err := database.Create(&podcast).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := appdb.PodcastItem{PodcastID: podcast.ID, Title: "Fixture episode"}
+	if err := database.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+func countRows(t *testing.T, database *gorm.DB, table string) int64 {
+	t.Helper()
+	var count int64
+	if err := database.Table(table).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+// SQLite never enforced these foreign keys, so a long-lived database can hold rows that
+// Postgres would reject.
+func TestMigrationSkipsOrphanedTagLinksAndKeepsTheRest(t *testing.T) {
+	source := openMigratedSQLite(t, "source")
+	item := seedPodcastWithEpisode(t, source)
+	tag := appdb.Tag{Label: "news"}
+	if err := source.Create(&tag).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []podcastTag{
+		{PodcastID: item.PodcastID, TagID: tag.ID},
+		{PodcastID: "deleted-podcast", TagID: tag.ID},
+		{PodcastID: item.PodcastID, TagID: "deleted-tag"},
+	} {
+		if err := source.Create(&link).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	destination := openMigratedSQLite(t, "target")
+	if err := migrateAll(source, destination, false); err != nil {
+		t.Fatal(err)
+	}
+
+	var copied []podcastTag
+	if err := destination.Find(&copied).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(copied) != 1 || copied[0].PodcastID != item.PodcastID || copied[0].TagID != tag.ID {
+		t.Fatalf("expected only the valid tag link, got %+v", copied)
+	}
+}
+
+func TestMigrationStopsBeforeWritingWhenRowsAreOrphaned(t *testing.T) {
+	cases := map[string]func(t *testing.T, source *gorm.DB){
+		"episode without a podcast": func(t *testing.T, source *gorm.DB) {
+			orphan := appdb.PodcastItem{PodcastID: "deleted-podcast", Title: "Orphan"}
+			if err := source.Create(&orphan).Error; err != nil {
+				t.Fatal(err)
+			}
+		},
+		"revision without an episode": func(t *testing.T, source *gorm.DB) {
+			if err := source.Exec("INSERT INTO markdown_revisions (id, document_id, revision, episode_id, content_type, fingerprint, content) VALUES ('r1', 'd1', 1, 'deleted-episode', 'summary', 'f', 'c')").Error; err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, makeOrphan := range cases {
+		t.Run(name, func(t *testing.T) {
+			source := openMigratedSQLite(t, "source")
+			seedPodcastWithEpisode(t, source)
+			makeOrphan(t, source)
+			destination := openMigratedSQLite(t, "target")
+
+			err := migrateAll(source, destination, false)
+
+			if err == nil || !strings.Contains(err.Error(), "missing") {
+				t.Fatalf("expected an orphaned row error, got %v", err)
+			}
+			if got := countRows(t, destination, "podcasts"); got != 0 {
+				t.Fatalf("wrote %d podcasts before stopping", got)
+			}
+		})
+	}
+}
+
+func TestMigrationWritesNothingWhenACopyFails(t *testing.T) {
+	source := openMigratedSQLite(t, "source")
+	seedPodcastWithEpisode(t, source)
+	lock := appdb.JobLock{Name: "fixture"}
+	if err := source.Create(&lock).Error; err != nil {
+		t.Fatal(err)
+	}
+	destination := openMigratedSQLite(t, "target")
+	// job_locks is copied last, so this fails after everything else has been written.
+	if err := destination.Exec("DROP TABLE job_locks").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateAll(source, destination, false); err == nil {
+		t.Fatal("expected the copy to fail")
+	}
+
+	for _, table := range []string{"podcasts", "podcast_items"} {
+		if got := countRows(t, destination, table); got != 0 {
+			t.Fatalf("left %d rows in %s after a failed migration", got, table)
+		}
+	}
+}
+
+func TestMigrationRefusesATargetThatAlreadyHasData(t *testing.T) {
+	source := openMigratedSQLite(t, "source")
+	seedPodcastWithEpisode(t, source)
+	destination := openMigratedSQLite(t, "target")
+	seedPodcastWithEpisode(t, destination)
+
+	err := migrateAll(source, destination, false)
+
+	if err == nil || !strings.Contains(err.Error(), "not empty") {
+		t.Fatalf("expected a not-empty error, got %v", err)
 	}
 }
 

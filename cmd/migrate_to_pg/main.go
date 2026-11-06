@@ -103,7 +103,61 @@ func tableCopies() []tableCopy {
 	}
 }
 
+// requiredParents lists foreign keys that Postgres enforces and SQLite never did, so a
+// long-lived source can break them. Dropping such rows silently would lose data, so
+// the migration stops and leaves the choice to the operator.
+var requiredParents = []struct{ table, column, parent string }{
+	{"podcast_items", "podcast_id", "podcasts"},
+	{"markdown_revisions", "episode_id", "podcast_items"},
+}
+
+func checkSource(src *gorm.DB) error {
+	for _, check := range requiredParents {
+		if !src.Migrator().HasTable(check.table) {
+			continue
+		}
+		var orphans int64
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s NOT IN (SELECT id FROM %s)", check.table, check.column, check.parent)
+		if err := src.Raw(query).Scan(&orphans).Error; err != nil {
+			return fmt.Errorf("check %s: %w", check.table, err)
+		}
+		if orphans > 0 {
+			return fmt.Errorf("%d rows in %s point at a missing %s row, which Postgres would reject. Nothing was written. Remove them from a copy of the source, then run this again", orphans, check.table, check.parent)
+		}
+	}
+	return nil
+}
+
+func checkTargetEmpty(dst *gorm.DB) error {
+	for _, table := range []string{"settings", "podcasts", "podcast_items"} {
+		var count int64
+		if err := dst.Table(table).Count(&count).Error; err != nil {
+			return fmt.Errorf("check target %s: %w", table, err)
+		}
+		if count > 0 {
+			return fmt.Errorf("target is not empty: %s already has %d rows. Use a new empty database, and do not start the app against it before migrating", table, count)
+		}
+	}
+	return nil
+}
+
 func migrateAll(src, dst *gorm.DB, dryRun bool) error {
+	if err := checkSource(src); err != nil {
+		return err
+	}
+	if dryRun {
+		return copyTables(src, dst, true)
+	}
+	if err := checkTargetEmpty(dst); err != nil {
+		return err
+	}
+	// One transaction, so a failure leaves the target empty and a retry is safe.
+	return dst.Transaction(func(tx *gorm.DB) error {
+		return copyTables(src, tx, false)
+	})
+}
+
+func copyTables(src, dst *gorm.DB, dryRun bool) error {
 	for _, step := range tableCopies() {
 		if step.optional && !src.Migrator().HasTable(step.table) {
 			fmt.Printf("%-20s not in source (skip)\n", step.table)
@@ -153,11 +207,20 @@ type podcastTag struct {
 func (podcastTag) TableName() string { return "podcast_tags" }
 
 func migratePodcastTags(src, dst *gorm.DB, dryRun bool) error {
+	var total int64
+	if err := src.Model(&podcastTag{}).Count(&total).Error; err != nil {
+		return fmt.Errorf("count podcast_tags: %w", err)
+	}
+	// SQLite let deleted podcasts leave these links behind. They point at nothing and
+	// Postgres would reject them, so skipping them loses no information.
 	var rows []podcastTag
-	if err := src.Find(&rows).Error; err != nil {
+	if err := src.Where("podcast_id IN (SELECT id FROM podcasts) AND tag_id IN (SELECT id FROM tags)").Find(&rows).Error; err != nil {
 		return fmt.Errorf("read podcast_tags: %w", err)
 	}
 	fmt.Printf("%-20s %d rows", "podcast_tags", len(rows))
+	if skipped := total - int64(len(rows)); skipped > 0 {
+		fmt.Printf(", %d orphaned links skipped", skipped)
+	}
 	if len(rows) == 0 {
 		fmt.Println(" (skip)")
 		return nil

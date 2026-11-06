@@ -185,6 +185,10 @@ func DeletePodcastByID(id string) error {
 		if err := tx.Where("podcast_id = ?", id).Delete(&ShowNoteLink{}).Error; err != nil {
 			return err
 		}
+		// Postgres enforces this foreign key, so a leftover tag link blocks the delete.
+		if err := tx.Exec("DELETE FROM podcast_tags WHERE podcast_id = ?", id).Error; err != nil {
+			return err
+		}
 		return tx.Where("id=?", id).Delete(&Podcast{}).Error
 	})
 }

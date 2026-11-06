@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Removed the horizontal scrollbar that the Podcasts, Episodes and Downloads tables showed at full window width. Tables now scroll sideways only when their columns do not fit.
 - Reduced `database is locked` errors on SQLite. Two queries that run about once a minute read through every stored transcript and held the lock for seconds; two new indexes on `podcast_items` take them to about a millisecond.
+- Fixed deleting a tagged podcast on Postgres. The delete failed on a foreign key after its episodes were already gone. On SQLite it left orphaned rows in `podcast_tags`.
+- `cmd/migrate_to_pg` now copies `show_note_links`, `link_targets` and `prompt_versions`, which it used to leave behind while reporting success. It also runs in one transaction, refuses a target that already has data, skips orphaned tag links, and stops before writing if episodes or Markdown revisions are orphaned.
 
 ## [1.9.4] - 2026-07-11
 

@@ -74,6 +74,43 @@ func TestDeletingEpisodeDeletesOnlyItsShowNoteLinks(t *testing.T) {
 	}
 }
 
+// Postgres enforces this foreign key. A leftover tag link made the delete fail after
+// the episodes were already gone. SQLite does not enforce it, so this test checks the
+// row directly rather than relying on an error.
+func TestDeletingPodcastRemovesOnlyItsTagLinks(t *testing.T) {
+	setupDBForTest(t)
+	deleted := newPodcast(t, "Deleted podcast", "https://example.com/deleted.xml")
+	kept := newPodcast(t, "Kept podcast", "https://example.com/kept.xml")
+	tag := Tag{Label: "news"}
+	if err := DB.Create(&tag).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{deleted.ID, kept.ID} {
+		if err := AddTagToPodcast(id, tag.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := DeletePodcastByID(deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	countLinks := func(podcastID string) int64 {
+		t.Helper()
+		var count int64
+		if err := DB.Table("podcast_tags").Where("podcast_id = ?", podcastID).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	if got := countLinks(deleted.ID); got != 0 {
+		t.Fatalf("deleted podcast tag links = %d, want 0", got)
+	}
+	if got := countLinks(kept.ID); got != 1 {
+		t.Fatalf("kept podcast tag links = %d, want 1", got)
+	}
+}
+
 func TestDeletingPodcastDeletesOnlyItsShowNoteLinks(t *testing.T) {
 	setupDBForTest(t)
 	deletedPodcast := newPodcast(t, "Deleted podcast", "https://example.com/deleted.xml")
