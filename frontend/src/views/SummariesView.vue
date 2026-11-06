@@ -1026,11 +1026,11 @@ onBeforeUnmount(() => {
 }
 
 .reader__fav-btn:hover {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 .reader__fav-btn--active {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 /* ── Tabs ───────────────────────────────────────────────── */
@@ -1262,6 +1262,11 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
+/* The contents list scrolls, so the focus ring has to sit inside the link. */
+.reader__toc-link:focus-visible {
+  outline-offset: -2px;
+}
+
 .reader__toc-actions {
   margin-top: var(--space-4);
   padding-top: var(--space-3);
@@ -1346,7 +1351,7 @@ onBeforeUnmount(() => {
 }
 
 .summaries-filters__favorites-toggle:has(input:checked) svg {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 .summaries-filters__podcast-filter {
@@ -1504,11 +1509,11 @@ onBeforeUnmount(() => {
 }
 
 .summaries-list__fav-btn:hover {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 .summaries-list__fav-btn--active {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 .summaries-list__content {

@@ -349,7 +349,7 @@ function resetFilters(): void {
 }
 
 .episodes-filters__favorites-toggle:has(input:checked) svg {
-  color: var(--color-warning, #e5a00d);
+  color: var(--color-favorite);
 }
 
 @media (min-width: 768px) {

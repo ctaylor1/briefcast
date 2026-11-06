@@ -204,6 +204,11 @@ function getPodcastImage(id: string): string {
   display: block;
 }
 
+/* The card clips its overflow, so the focus ring has to sit inside the cover. */
+.podcast-card__cover-trigger:focus-visible {
+  outline-offset: -2px;
+}
+
 .podcast-card__content {
   padding: var(--space-4);
 }
