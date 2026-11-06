@@ -257,11 +257,11 @@ func PatchPodcastBriefpoint(c *gin.Context) {
 	controllerLogger.Infow("podcast briefpoint updated", "podcast_id", searchByIDQuery.ID, "enabled", *patch.BriefpointEnabled)
 
 	if *patch.BriefpointEnabled {
-		go func() {
+		service.SafeGo("briefpoint sync after enable", func() {
 			if _, err := service.SendPodcastToBriefpoint(searchByIDQuery.ID); err != nil {
 				controllerLogger.Warnw("briefpoint sync failed", "podcast_id", searchByIDQuery.ID, "error", err)
 			}
-		}()
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
@@ -280,11 +280,11 @@ func SyncPodcastToBriefpoint(c *gin.Context) {
 		return
 	}
 
-	go func() {
+	service.SafeGo("briefpoint sync", func() {
 		if _, err := service.SendPodcastToBriefpoint(searchByIDQuery.ID); err != nil {
 			controllerLogger.Warnw("briefpoint sync failed", "podcast_id", searchByIDQuery.ID, "error", err)
 		}
-	}()
+	})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "briefpoint sync started"})
 }
@@ -342,7 +342,7 @@ func PatchPodcastAlternateFeeds(c *gin.Context) {
 		return
 	}
 
-	go func() {
+	service.SafeGo("alternate feed resolution", func() {
 		var podcast db.Podcast
 		if err := db.GetPodcastByID(searchByIDQuery.ID, &podcast); err != nil {
 			controllerLogger.Warnw("failed to load podcast for alternate feed resolution", "podcast_id", searchByIDQuery.ID, "error", err)
@@ -351,7 +351,7 @@ func PatchPodcastAlternateFeeds(c *gin.Context) {
 		if err := service.ResolveAlternateFileURLs(&podcast); err != nil {
 			controllerLogger.Warnw("failed to resolve alternate file URLs", "podcast_id", podcast.ID, "error", err)
 		}
-	}()
+	})
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -459,11 +459,11 @@ func DownloadAllEpisodesByPodcastID(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 			return
 		}
-		go func() {
+		service.SafeGo("refresh after queue all", func() {
 			if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
 				controllerLogger.Warnw("background refresh after queue-all failed", "podcast_id", searchByIDQuery.ID, "error", refreshErr)
 			}
-		}()
+		})
 		c.JSON(200, gin.H{})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -710,11 +710,12 @@ func DownloadPodcastItem(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "Downloads are paused."})
 			return
 		}
-		go func(podcastItemID string) {
+		podcastItemID := searchByIDQuery.ID
+		service.SafeGo("episode download", func() {
 			if err := service.DownloadSingleEpisode(podcastItemID); err != nil {
 				controllerLogger.Warnw("failed to download podcast item", "podcast_item_id", podcastItemID, "error", err)
 			}
-		}(searchByIDQuery.ID)
+		})
 		c.JSON(200, gin.H{})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -727,11 +728,12 @@ func DeletePodcastItem(c *gin.Context) {
 
 	if c.ShouldBindUri(&searchByIDQuery) == nil {
 
-		go func(podcastItemID string) {
+		podcastItemID := searchByIDQuery.ID
+		service.SafeGo("episode file delete", func() {
 			if err := service.DeleteEpisodeFile(podcastItemID); err != nil {
 				controllerLogger.Warnw("failed to delete podcast item file", "podcast_item_id", podcastItemID, "error", err)
 			}
-		}(searchByIDQuery.ID)
+		})
 		c.JSON(200, gin.H{})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -745,11 +747,11 @@ func AddPodcast(c *gin.Context) {
 	if err == nil {
 		pod, err := service.AddPodcast(addPodcastData.URL)
 		if err == nil {
-			go func() {
+			service.SafeGo("refresh after add podcast", func() {
 				if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
 					controllerLogger.Warnw("background refresh after add podcast failed", "url", addPodcastData.URL, "error", refreshErr)
 				}
-			}()
+			})
 			c.JSON(200, pod)
 		} else {
 			if v, ok := err.(*model.PodcastAlreadyExistsError); ok {

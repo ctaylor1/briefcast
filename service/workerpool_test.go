@@ -2,7 +2,9 @@ package service
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestBoundedWorkerCount handles the corresponding operation.
@@ -56,5 +58,28 @@ func TestRunWorkerPoolNoopConditions(t *testing.T) {
 	runWorkerPool([]int{1, 2}, 0, func(_ int) { calls++ })
 	if calls != 0 {
 		t.Fatalf("expected no calls, got %d", calls)
+	}
+}
+
+func TestRunWorkerPoolCompletesWhenAJobPanics(t *testing.T) {
+	var completed atomic.Int32
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		runWorkerPool([]int{1, 2, 3, 4, 5, 6}, 2, func(job int) {
+			if job == 3 {
+				panic("job failed")
+			}
+			completed.Add(1)
+		})
+	}()
+
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker pool did not return after a job panicked")
+	}
+	if got := completed.Load(); got != 5 {
+		t.Fatalf("expected the other 5 jobs to complete, got %d", got)
 	}
 }

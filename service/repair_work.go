@@ -162,13 +162,32 @@ func StartRepairWork(limit int) (RepairWorkResponse, error) {
 	repairWorkLastRun = &RepairWorkRun{StartedAt: startedAt}
 	repairWorkMu.Unlock()
 
-	go runRepairWork(startedAt)
+	SafeGo("repair work", func() { runRepairWork(startedAt) })
 	return GetRepairWorkStatus(limit)
 }
 
 func runRepairWork(startedAt time.Time) {
 	run := RepairWorkRun{StartedAt: startedAt}
 	var errorsOut []string
+	completed := false
+	// Deferred so a panic reports a failed run instead of leaving repair work
+	// marked as running until the next restart.
+	defer func() {
+		if !completed {
+			errorsOut = append(errorsOut, "repair work stopped unexpectedly")
+		}
+		if len(errorsOut) > 0 {
+			run.Error = strings.Join(errorsOut, "; ")
+		}
+		finishedAt := time.Now().UTC()
+		run.FinishedAt = &finishedAt
+
+		repairWorkMu.Lock()
+		repairWorkRunning = false
+		repairWorkStartedAt = nil
+		repairWorkLastRun = &run
+		repairWorkMu.Unlock()
+	}()
 
 	summaryEligible, err := countSummaryBackfillEligible()
 	if err != nil {
@@ -226,17 +245,7 @@ func runRepairWork(startedAt time.Time) {
 		}
 	}
 
-	if len(errorsOut) > 0 {
-		run.Error = strings.Join(errorsOut, "; ")
-	}
-	finishedAt := time.Now().UTC()
-	run.FinishedAt = &finishedAt
-
-	repairWorkMu.Lock()
-	repairWorkRunning = false
-	repairWorkStartedAt = nil
-	repairWorkLastRun = &run
-	repairWorkMu.Unlock()
+	completed = true
 }
 
 func BuildWorkQueueSnapshot(limit int) (WorkQueueSnapshot, error) {

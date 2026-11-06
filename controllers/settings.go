@@ -366,9 +366,9 @@ func BackfillLinks(c *gin.Context) {
 		return
 	}
 
-	go func() {
+	service.SafeGo("link backfill", func() {
 		service.BackfillShowNoteLinks()
-	}()
+	})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "link backfill started"})
 }
@@ -385,9 +385,9 @@ func ExportAll(c *gin.Context) {
 		return
 	}
 
-	go func() {
+	service.SafeGo("export all", func() {
 		service.ExportAll()
-	}()
+	})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "export started"})
 }

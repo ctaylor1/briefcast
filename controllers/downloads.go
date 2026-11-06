@@ -126,11 +126,12 @@ func ResumePodcastItemDownload(c *gin.Context) {
 		return
 	}
 	if shouldStart {
-		go func(podcastItemID string) {
+		podcastItemID := searchByIDQuery.ID
+		service.SafeGo("episode download resume", func() {
 			if runErr := service.DownloadSingleEpisode(podcastItemID); runErr != nil {
 				controllerLogger.Warnw("failed to resume podcast item download", "podcast_item_id", podcastItemID, "error", runErr)
 			}
-		}(searchByIDQuery.ID)
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{})

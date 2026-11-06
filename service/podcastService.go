@@ -26,7 +26,7 @@ import (
 var Logger = logging.Sugar()
 
 var startPostOpmlRefresh = func() {
-	go refreshEpisodesAfterOPMLImport()
+	SafeGo("refresh after OPML import", refreshEpisodesAfterOPMLImport)
 }
 
 const (
@@ -250,7 +250,7 @@ func getItunesImageURL(body []byte) string {
 		return ""
 	}
 	channel, err := xmlquery.Query(doc, "//channel")
-	if err != nil {
+	if err != nil || channel == nil {
 		return ""
 	}
 
@@ -915,11 +915,12 @@ func DeleteEpisodeFile(podcastItemID string) error {
 	}
 
 	if podcastItem.LocalImage != "" {
-		go func(localImagePath string) {
+		localImagePath := podcastItem.LocalImage
+		SafeGo("local image delete", func() {
 			if deleteErr := deletePodcastItemAssetFile(podcastItemID, localImagePath, "local_image"); deleteErr != nil {
 				Logger.Warnw("failed to delete local image", "podcast_item_id", podcastItemID, "path", localImagePath, "error", deleteErr)
 			}
-		}(podcastItem.LocalImage)
+		})
 	}
 
 	return SetPodcastItemAsNotDownloaded(podcastItem.ID, db.Deleted)
@@ -1079,11 +1080,11 @@ func RefreshEpisodes() error {
 		}
 	})
 
-	go func() {
+	SafeGo("download after refresh", func() {
 		if downloadErr := DownloadMissingEpisodes(); downloadErr != nil {
 			jobLogger.Warnw("background download job failed after refresh", "error", downloadErr)
 		}
-	}()
+	})
 
 	if firstErr != nil {
 		jobLogger.Errorw("job_completed_with_errors", "error", firstErr)

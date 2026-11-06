@@ -448,11 +448,11 @@ func AddNewPodcast(c *gin.Context) {
 
 		_, err = service.AddPodcast(addPodcastData.URL)
 		if err == nil {
-			go func() {
+			service.SafeGo("refresh after add page", func() {
 				if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
 					controllerLogger.Warnw("background refresh after add page failed", "error", refreshErr)
 				}
-			}()
+			})
 			c.Redirect(http.StatusFound, "/")
 
 		} else {

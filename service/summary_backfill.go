@@ -26,6 +26,8 @@ var summaryJobStatus SummaryBackfillStatus
 
 var ErrSummaryJobAlreadyRunning = errors.New("a summary job is already running")
 
+var errSummaryJobStopped = errors.New("summary job stopped unexpectedly")
+
 // GetSummaryJobStatus returns a snapshot of the latest summary job.
 func GetSummaryJobStatus() SummaryBackfillStatus {
 	summaryJobStatusMu.RLock()
@@ -72,6 +74,16 @@ func finishSummaryJob(succeeded, failed int, err error) {
 	summaryBackfillRunning.Store(false)
 }
 
+// runSummaryJob runs a reserved job and always finishes it. The finish is deferred
+// so a panic in job reports errSummaryJobStopped instead of leaving the job marked
+// as running until the next restart.
+func runSummaryJob(job func() (succeeded, failed int, err error)) (int, int, error) {
+	succeeded, failed, err := 0, 0, errSummaryJobStopped
+	defer func() { finishSummaryJob(succeeded, failed, err) }()
+	succeeded, failed, err = job()
+	return succeeded, failed, err
+}
+
 func validateSummaryConfig(cfg LLMConfig) error {
 	if !cfg.Enabled {
 		return fmt.Errorf("LLM summarization is not enabled (set LLM_ENABLED=true)")
@@ -92,10 +104,11 @@ func StartSummaryBackfill() (SummaryBackfillStatus, error) {
 	if err := reserveSummaryJob(); err != nil {
 		return SummaryBackfillStatus{}, err
 	}
-	go func() {
-		succeeded, failed, err := runSummaryBackfill(cfg, setSummaryJobStatus)
-		finishSummaryJob(succeeded, failed, err)
-	}()
+	SafeGo("summary backfill", func() {
+		_, _, _ = runSummaryJob(func() (int, int, error) {
+			return runSummaryBackfill(cfg, setSummaryJobStatus)
+		})
+	})
 	return GetSummaryJobStatus(), nil
 }
 
@@ -109,10 +122,12 @@ func StartResummarizeSummaries(filter ResummarizeFilter) (SummaryBackfillStatus,
 	if err := reserveSummaryJob(); err != nil {
 		return SummaryBackfillStatus{}, err
 	}
-	go func() {
-		result, err := runResummarizeSummaries(filter, cfg, setSummaryJobStatus)
-		finishSummaryJob(result.Succeeded, result.Failed, err)
-	}()
+	SafeGo("resummarize summaries", func() {
+		_, _, _ = runSummaryJob(func() (int, int, error) {
+			result, err := runResummarizeSummaries(filter, cfg, setSummaryJobStatus)
+			return result.Succeeded, result.Failed, err
+		})
+	})
 	return GetSummaryJobStatus(), nil
 }
 
@@ -147,7 +162,7 @@ func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt st
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 	for w := 0; w < concurrency; w++ {
-		go func() {
+		SafeGo("summary batch worker", func() {
 			defer wg.Done()
 			for i := range work {
 				if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
@@ -168,7 +183,7 @@ func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt st
 					})
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -186,14 +201,14 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 	if err := reserveSummaryJob(); err != nil {
 		return 0, 0, err
 	}
-	succeeded, failed, err = runSummaryBackfill(cfg, func(status SummaryBackfillStatus) {
-		setSummaryJobStatus(status)
-		if progressFn != nil {
-			progressFn(status)
-		}
+	return runSummaryJob(func() (int, int, error) {
+		return runSummaryBackfill(cfg, func(status SummaryBackfillStatus) {
+			setSummaryJobStatus(status)
+			if progressFn != nil {
+				progressFn(status)
+			}
+		})
 	})
-	finishSummaryJob(succeeded, failed, err)
-	return succeeded, failed, err
 }
 
 func runSummaryBackfill(cfg LLMConfig, progressFn func(SummaryBackfillStatus)) (succeeded int, failed int, err error) {
@@ -262,13 +277,17 @@ func ResummarizeSummaries(filter ResummarizeFilter, progressFn func(status Summa
 	if err := reserveSummaryJob(); err != nil {
 		return ResummarizeResult{}, err
 	}
-	result, err := runResummarizeSummaries(filter, cfg, func(status SummaryBackfillStatus) {
-		setSummaryJobStatus(status)
-		if progressFn != nil {
-			progressFn(status)
-		}
+	var result ResummarizeResult
+	_, _, err := runSummaryJob(func() (int, int, error) {
+		var jobErr error
+		result, jobErr = runResummarizeSummaries(filter, cfg, func(status SummaryBackfillStatus) {
+			setSummaryJobStatus(status)
+			if progressFn != nil {
+				progressFn(status)
+			}
+		})
+		return result.Succeeded, result.Failed, jobErr
 	})
-	finishSummaryJob(result.Succeeded, result.Failed, err)
 	return result, err
 }
 

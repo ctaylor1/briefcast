@@ -47,10 +47,10 @@ func main() {
 	}
 	db.Migrate()
 	r := buildRouter()
-	go controllers.DefaultHub.Run()
+	service.SafeGo("websocket hub", controllers.DefaultHub.Run)
 
-	go assetEnv()
-	go intiCron()
+	service.SafeGo("startup configuration log", assetEnv)
+	service.SafeGo("cron scheduler", intiCron)
 
 	if err := r.Run(); err != nil {
 		appLogger.Fatalw("http server terminated", "error", err)

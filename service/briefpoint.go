@@ -144,20 +144,20 @@ func SendPodcastToBriefpoint(podcastID string) (*BriefpointSyncResult, error) {
 
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(episode *db.PodcastItem) {
+		SafeGo("briefpoint episode send", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			err := sendEpisodeToBriefpoint(cfg, &podcast, episode)
+			err := sendEpisodeToBriefpoint(cfg, &podcast, ep)
 			mu.Lock()
 			if err != nil {
-				logger.Warnw("briefpoint ingest failed", "episode_id", episode.ID, "error", err)
+				logger.Warnw("briefpoint ingest failed", "episode_id", ep.ID, "error", err)
 				result.Failed++
 			} else {
 				result.Sent++
 			}
 			mu.Unlock()
-		}(ep)
+		})
 	}
 
 	wg.Wait()
