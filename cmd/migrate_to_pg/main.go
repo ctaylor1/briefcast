@@ -68,33 +68,51 @@ func main() {
 	fmt.Println("\nmigration complete.")
 }
 
+// tableCopy copies one table. An optional table may be missing from an older source
+// database, and is copied only when present, so the source needs no upgrade first.
+type tableCopy struct {
+	table    string
+	optional bool
+	run      func(src, dst *gorm.DB, dryRun bool) error
+}
+
+// notCopied lists tables deliberately left out. RunMigrations already fills migrations
+// on the target. A test fails if a table is in neither this nor tableCopies, so a new
+// table cannot be silently lost in a migration.
+var notCopied = map[string]bool{"migrations": true}
+
+func copyOf[T any](table string) func(src, dst *gorm.DB, dryRun bool) error {
+	return func(src, dst *gorm.DB, dryRun bool) error {
+		return migrateTable[T](src, dst, table, dryRun)
+	}
+}
+
+// tableCopies lists every copied table, parents before the tables that refer to them.
+func tableCopies() []tableCopy {
+	return []tableCopy{
+		{table: "settings", run: copyOf[appdb.Setting]("settings")},
+		{table: "podcasts", run: copyOf[appdb.Podcast]("podcasts")},
+		{table: "tags", run: copyOf[appdb.Tag]("tags")},
+		{table: "podcast_tags", run: migratePodcastTags},
+		{table: "podcast_items", run: copyOf[appdb.PodcastItem]("podcast_items")},
+		{table: "link_targets", optional: true, run: copyOf[appdb.LinkTarget]("link_targets")},
+		{table: "show_note_links", optional: true, run: copyOf[appdb.ShowNoteLink]("show_note_links")},
+		{table: "prompt_versions", optional: true, run: copyOf[appdb.PromptVersion]("prompt_versions")},
+		{table: "markdown_revisions", optional: true, run: copyOf[appdb.MarkdownRevision]("markdown_revisions")},
+		{table: "job_locks", run: copyOf[appdb.JobLock]("job_locks")},
+	}
+}
+
 func migrateAll(src, dst *gorm.DB, dryRun bool) error {
-	if err := migrateTable[appdb.Setting](src, dst, "settings", dryRun); err != nil {
-		return err
-	}
-	if err := migrateTable[appdb.Podcast](src, dst, "podcasts", dryRun); err != nil {
-		return err
-	}
-	if err := migrateTable[appdb.Tag](src, dst, "tags", dryRun); err != nil {
-		return err
-	}
-	if err := migratePodcastTags(src, dst, dryRun); err != nil {
-		return err
-	}
-	if err := migrateTable[appdb.PodcastItem](src, dst, "podcast_items", dryRun); err != nil {
-		return err
-	}
-	// Older source databases do not have export history yet. Preserve it when
-	// present without requiring an upgrade/migration of the source database.
-	if src.Migrator().HasTable(&appdb.MarkdownRevision{}) {
-		if err := migrateTable[appdb.MarkdownRevision](src, dst, "markdown_revisions", dryRun); err != nil {
+	for _, step := range tableCopies() {
+		if step.optional && !src.Migrator().HasTable(step.table) {
+			fmt.Printf("%-20s not in source (skip)\n", step.table)
+			continue
+		}
+		if err := step.run(src, dst, dryRun); err != nil {
 			return err
 		}
 	}
-	if err := migrateTable[appdb.JobLock](src, dst, "job_locks", dryRun); err != nil {
-		return err
-	}
-	// Skip migrations table — RunMigrations already populated it.
 	return nil
 }
 
