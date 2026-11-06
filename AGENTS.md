@@ -196,3 +196,64 @@ Each backlog item should include:
 - Do not introduce global mutable state unless explicitly justified.
 - Do not add hidden background processes, telemetry, or network calls.
 - Do not use destructive commands such as `rm -rf`, `git reset --hard`, or force-push unless explicitly instructed and the risk is acknowledged.
+
+## Repository facts for agents
+
+### Canonical commands
+
+| Purpose | Command | Notes |
+| --- | --- | --- |
+| Build | `go build ./...` | |
+| Static check | `go vet ./...` | |
+| Go tests | `go test ./... -count=1` | About two minutes. The root package autoloads `.env`; run it in CI, or locally only with a scratch `.env` or in a copy without one. |
+| Focused Go test | `go test ./service/ -run 'TestName' -count=1` | |
+| Race detector | `go test -race ./internal/transcription/... ./internal/whisperxworker/... ./service/...` | Needs cgo. |
+| Frontend | `npm --prefix frontend run test:unit` then `npm --prefix frontend run build` | Node 24. |
+| Python | `just ci-python` | Needs `uv`; tooling targets Python 3.14, shipped scripts run on 3.12. |
+| Packaging | `uv run pytest tests/test_packaging.py` | Needs pwsh; the compose rendering tests need Docker. |
+
+- On Windows, Go is at `C:\Program Files\Go\bin` and may not be on the Git Bash `PATH`.
+- With `CGO_ENABLED=0`, Go tests fall back to the pure-Go SQLite driver. CI and
+  production use the cgo driver. Say which one you ran.
+- `gofmt -l` is noisy on Windows checkouts (CRLF). Do not reformat files you did not edit.
+
+### Data-safety rules
+
+- Never call `os.RemoveAll` or `os.Remove` on a path built from a podcast or episode
+  title without a test that proves no other podcast's files are affected.
+- Treat only `fs.ErrNotExist` as "file is gone". Any other stat error means "unknown":
+  do not change database state because of it.
+- Write episode state with `db.UpdatePodcastItemColumns`. Do not add new callers of
+  `db.UpdatePodcastItem`: it rewrites the whole row and can recreate a deleted episode.
+- Start background goroutines with `service.SafeGo`. Clear any "running" flag in a
+  `defer`, because a contained panic skips ordinary cleanup code.
+- New state-changing routes use POST, PATCH or DELETE. Do not add GET routes with side
+  effects.
+- Every ID placed in a frontend request path goes through `encodeURIComponent`.
+
+### Change-control rules
+
+- Compose defaults, `Dockerfile`, migrations, public routes and anything under `scripts/`
+  that deploys or deletes are approval-required changes. Label them in the PR title.
+- One concern per PR. Mechanical moves, behaviour changes and test-only changes are
+  separate PRs.
+- A migration that deletes or dedupes rows needs a verified backup step and a note on
+  how to restore.
+
+### Do not touch without an explicit request
+
+- `internal/sanitize` (vendored fork).
+- `internal/whisperxworker` journal, checkpoint and guardian code (fail-closed by design).
+- `RELEASE_RESET.ps1`, `RELEASE_RUN.ps1`, `RELEASE_BUILD.ps1` (legacy and destructive;
+  never run them).
+- `.env`, `secrets/`, `config/`, `assets/`, `logs/`, `worker-state/`, `worker-cache/`.
+
+### Local conventions to preserve
+
+- Handlers bind into small request structs and answer with `gin.H{"error": ...}`.
+- Logging is zap with key-value pairs and IDs (`podcast_id`, `podcast_item_id`); never
+  log transcripts, prompts, tokens or database URLs.
+- All outbound HTTP goes through `validateOutboundURL` and `outboundHTTPTransport`.
+- Tests use `t.TempDir()`, `t.Setenv`, `httptest` servers and temp-file SQLite.
+- Raw-SQL migrations go in `db/migrations.go` with a dated, unique name and must be
+  safe to run on both SQLite and Postgres.

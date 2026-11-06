@@ -1,0 +1,374 @@
+# Briefcast refactor backlog — machine-readable mirror of BACKLOG.md
+# date: 2026-11-05
+# branch: feat/show-note-link-tracking
+# commit: 69252adde6d6a741fb70583ff9ed218d026434df (dirty working tree; see ASSESSMENT.md section 1)
+# scoring: total = 2*risk + blast_radius + frequency + confidence + payoff - effort
+# effort scale: S=1, M=3, L=5
+# pr_group values refer to the PR slicing plan in BACKLOG.md ("later" = after PR 12)
+
+items:
+  - id: P1
+    title: "Secure compose defaults: loopback bind, auth warning, sane log output"
+    category: security
+    findings: [F5, F22]
+    scores: { risk: 4, blast_radius: 5, frequency: 5, confidence: 5, payoff: 4, effort: 1 }
+    total: 26
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    requires_maintainer_approval: true
+    files:
+      - docker-compose.yml
+      - docker-compose.legacy.yml
+      - main.go
+      - main_test.go
+      - tests/test_packaging.py
+      - README.md
+      - CHANGELOG.md
+    depends_on: []
+    pr_group: [PR9]
+
+  - id: P2
+    title: "Explicit, driver-independent SQLite concurrency settings"
+    category: reliability
+    findings: [F7]
+    scores: { risk: 4, blast_radius: 5, frequency: 5, confidence: 4, payoff: 3, effort: 1 }
+    total: 24
+    effort: S
+    confidence: confirmed-code-likely-impact
+    refactor_type: behavior-changing
+    files:
+      - db/db.go
+      - db/config.go
+      - db/config_test.go
+      - README.md
+    depends_on: []
+    pr_group: [PR10]
+    notes: "WAL opt-in is a follow-up that depends on P11"
+
+  - id: P3
+    title: "Column-scoped episode updates instead of whole-row Save"
+    category: correctness
+    findings: [F6]
+    scores: { risk: 4, blast_radius: 5, frequency: 4, confidence: 5, payoff: 5, effort: 3 }
+    total: 24
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - db/dbfunctions.go
+      - db/dbfunctions_test.go
+      - service/podcastService.go
+      - service/summarize.go
+      - service/whisperx.go
+      - service/alternate_feeds.go
+      - service/chapters.go
+      - service/state_transitions_characterization_test.go
+    depends_on: []
+    pr_group: [PR11, PR12]
+
+  - id: P4
+    title: "Panic containment for background goroutines"
+    category: reliability
+    findings: [F8]
+    scores: { risk: 4, blast_radius: 5, frequency: 3, confidence: 5, payoff: 4, effort: 1 }
+    total: 24
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - service/workerpool.go
+      - service/workerpool_test.go
+      - service/podcastService.go
+      - service/summary_backfill.go
+      - service/repair_work.go
+      - service/briefpoint.go
+      - controllers/podcast.go
+      - controllers/settings.go
+      - controllers/downloads.go
+      - main.go
+    depends_on: []
+    pr_group: [PR4]
+
+  - id: P5
+    title: "Podcast delete: path guards, then atomic ordering"
+    category: correctness
+    findings: [F1, F13]
+    scores: { risk: 5, blast_radius: 3, frequency: 2, confidence: 5, payoff: 4, effort: 1 }
+    total: 23
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    recommended_first_pr: true
+    files:
+      - service/fileService.go
+      - service/podcastService.go
+      - service/asset_paths.go
+      - db/dbfunctions.go
+    depends_on: []
+    pr_group: [PR1, later]
+
+  - id: P6
+    title: "HTTP server lifecycle: timeouts, shutdown, body limits"
+    category: reliability
+    findings: [F16]
+    scores: { risk: 3, blast_radius: 5, frequency: 5, confidence: 5, payoff: 3, effort: 1 }
+    total: 23
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - main.go
+      - main_test.go
+      - service/itunesService.go
+    depends_on: []
+    pr_group: [PR8, later]
+
+  - id: P7
+    title: "CheckMissingFiles: only 'not exist' means missing"
+    category: correctness
+    findings: [F2]
+    scores: { risk: 4, blast_radius: 3, frequency: 4, confidence: 4, payoff: 4, effort: 1 }
+    total: 22
+    effort: S
+    confidence: confirmed-mechanism-likely-impact
+    refactor_type: behavior-changing
+    files:
+      - service/podcastService.go
+      - service/fileService.go
+    depends_on: []
+    pr_group: [PR3]
+
+  - id: P8
+    title: "Remove state-changing GET aliases; encode IDs in the SPA"
+    category: security
+    findings: [F4]
+    scores: { risk: 4, blast_radius: 3, frequency: 3, confidence: 5, payoff: 4, effort: 1 }
+    total: 22
+    effort: S
+    confidence: confirmed
+    refactor_type: api-changing
+    files:
+      - main.go
+      - main_test.go
+      - frontend/src/lib/api/episodes.ts
+      - frontend/src/lib/api/podcasts.ts
+      - frontend/src/lib/api/downloads.ts
+      - frontend/src/lib/api/summaries.ts
+      - frontend/src/lib/api/settings.ts
+      - frontend/src/views/PlayerView.vue
+    depends_on: []
+    pr_group: [PR5, PR6]
+
+  - id: P9
+    title: "Local transcription: never delete audio on a string match"
+    category: correctness
+    findings: [F9]
+    scores: { risk: 5, blast_radius: 3, frequency: 2, confidence: 5, payoff: 3, effort: 1 }
+    total: 22
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - service/whisperx.go
+      - service/whisperx_characterization_test.go
+    depends_on: []
+    pr_group: [PR7]
+
+  - id: P10
+    title: "Delivery baseline: converge branches, add CI gates"
+    category: delivery
+    findings: [F20, F26]
+    scores: { risk: 3, blast_radius: 5, frequency: 4, confidence: 5, payoff: 4, effort: 3 }
+    total: 21
+    effort: M
+    confidence: confirmed
+    refactor_type: mechanical
+    files:
+      - .gitignore
+      - .gitattributes
+      - .github/workflows/ci.yml
+      - justfile
+      - docker/app/requirements.lock
+    depends_on: []
+    pr_group: [PR0, PR2]
+    notes: "PR0 is a maintainer-led merge of origin/main and feat/whisperx-service"
+
+  - id: P11
+    title: "Backup and migration safety"
+    category: reliability
+    findings: [F15, F25]
+    scores: { risk: 4, blast_radius: 5, frequency: 2, confidence: 4, payoff: 4, effort: 3 }
+    total: 20
+    effort: M
+    confidence: confirmed-code-likely-impact
+    refactor_type: behavior-changing
+    files:
+      - service/fileService.go
+      - db/db.go
+      - db/migrations.go
+      - main.go
+      - scripts/ReleasePackaging.ps1
+      - tests/test_packaging.py
+    depends_on: []
+    pr_group: [later]
+
+  - id: P12
+    title: "Download integrity: collisions, If-Range, in-flight guard"
+    category: correctness
+    findings: [F3]
+    scores: { risk: 4, blast_radius: 3, frequency: 4, confidence: 4, payoff: 4, effort: 3 }
+    total: 20
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - service/fileService.go
+      - service/podcastService.go
+      - service/download_manager.go
+    depends_on: [P3]
+    pr_group: [later]
+
+  - id: P13
+    title: "Worker reliability: resume invariant, fatal fault, lifecycle"
+    category: reliability
+    findings: [F10, F11, F27]
+    scores: { risk: 4, blast_radius: 3, frequency: 3, confidence: 5, payoff: 4, effort: 3 }
+    total: 20
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - internal/whisperxworker/worker.go
+      - internal/whisperxworker/artifacts.go
+      - cmd/whisperx-worker/main.go
+      - service/transcription_remote.go
+      - service/transcription_remote_state.go
+      - service/transcription_http.go
+    depends_on: []
+    pr_group: [later]
+
+  - id: P14
+    title: "Lightweight queries on hot paths"
+    category: performance
+    findings: [F18]
+    scores: { risk: 3, blast_radius: 3, frequency: 5, confidence: 5, payoff: 4, effort: 3 }
+    total: 20
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-preserving
+    files:
+      - controllers/podcast.go
+      - db/dbfunctions.go
+      - db/search_helpers.go
+      - main.go
+      - service/podcastService.go
+    depends_on: [P3]
+    pr_group: [later]
+    notes: "The handler slice is independent of P3 and can go first"
+
+  - id: P15
+    title: "Outbound fetch and helper-process hygiene"
+    category: security
+    findings: [F14, F23]
+    scores: { risk: 3, blast_radius: 3, frequency: 4, confidence: 4, payoff: 3, effort: 1 }
+    total: 19
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - service/fileService.go
+      - service/outbound_url_policy.go
+      - service/feedparser.go
+      - service/transcription_local.go
+      - scripts/feedparser_parse.py
+    depends_on: []
+    pr_group: [later]
+
+  - id: P16
+    title: "Handler error responses and PATCH zero values"
+    category: correctness
+    findings: [F17]
+    scores: { risk: 3, blast_radius: 3, frequency: 3, confidence: 5, payoff: 3, effort: 1 }
+    total: 19
+    effort: S
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - controllers/podcast.go
+      - controllers/pages.go
+    depends_on: []
+    pr_group: [later]
+
+  - id: P17
+    title: "Take LLM calls and remote fetches out of feed refresh"
+    category: reliability
+    findings: [F19]
+    scores: { risk: 3, blast_radius: 3, frequency: 4, confidence: 5, payoff: 4, effort: 3 }
+    total: 19
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - service/podcastService.go
+      - service/summary_backfill.go
+    depends_on: [P3]
+    pr_group: [later]
+
+  - id: P18
+    title: "AddPodcast error branch and uniqueness constraints"
+    category: correctness
+    findings: [F12]
+    scores: { risk: 3, blast_radius: 3, frequency: 3, confidence: 5, payoff: 4, effort: 3 }
+    total: 18
+    effort: M
+    confidence: confirmed
+    refactor_type: data-changing
+    files:
+      - service/podcastService.go
+      - db/podcast.go
+      - db/migrations.go
+    depends_on: [P11]
+    pr_group: [later]
+    rollback_note: "Dedupe is irreversible; take a verified backup before the migration"
+
+  - id: P19
+    title: "Frontend save guards, latest-wins fetches, test harness"
+    category: testing
+    findings: [F24]
+    scores: { risk: 3, blast_radius: 3, frequency: 3, confidence: 5, payoff: 3, effort: 3 }
+    total: 17
+    effort: M
+    confidence: confirmed
+    refactor_type: behavior-changing
+    files:
+      - frontend/src/views/SettingsView.vue
+      - frontend/src/views/DashboardView.vue
+      - frontend/src/views/PlayerView.vue
+      - frontend/src/views/SummariesView.vue
+      - frontend/src/composables/useEpisodeDrawer.ts
+      - frontend/src/lib/sanitize.ts
+      - frontend/src/lib/sanitize.test.ts
+    depends_on: []
+    pr_group: [later]
+
+  - id: P20
+    title: "Remove dead legacy UI and destructive legacy scripts"
+    category: delivery
+    findings: [F21, F28]
+    scores: { risk: 3, blast_radius: 2, frequency: 1, confidence: 5, payoff: 3, effort: 1 }
+    total: 16
+    effort: S
+    confidence: confirmed
+    refactor_type: mechanical
+    files:
+      - controllers/pages.go
+      - controllers/podcast.go
+      - client/
+      - webassets/
+      - RELEASE_BUILD.ps1
+      - RELEASE_RUN.ps1
+      - RELEASE_RESET.ps1
+      - RELEASE.md
+    depends_on: [P8]
+    pr_group: [later]
