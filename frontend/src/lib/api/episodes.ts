@@ -1,4 +1,4 @@
-import type { ChaptersResponse, EpisodeSorting, EpisodesResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../../types/api";
+import type { ChaptersResponse, EpisodeLinksResponse, EpisodeSorting, EpisodesResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../../types/api";
 import { httpClient } from "./http";
 
 export interface EpisodeListQuery {
@@ -53,6 +53,9 @@ export const episodesApi = {
   },
   getTranscript(id: string): Promise<TranscriptResponse> {
     return httpClient.get<TranscriptResponse>(`/podcastitems/${id}/transcript`);
+  },
+  getLinks(id: string): Promise<EpisodeLinksResponse> {
+    return httpClient.get<EpisodeLinksResponse>(`/podcastitems/${encodeURIComponent(id)}/links`);
   },
   getSummary(id: string): Promise<SummaryResponse> {
     return httpClient.get<SummaryResponse>(`/podcastitems/${id}/summary`);

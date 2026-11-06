@@ -5,9 +5,9 @@ import {
   DEFAULT_OBSIDIAN_VAULT,
   sendPodcastMarkdownToObsidian,
 } from "../lib/obsidian";
-import type { Chapter, ChaptersResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../types/api";
+import type { Chapter, ChaptersResponse, PodcastItem, ShowNoteLink, SummaryResponse, TranscriptResponse } from "../types/api";
 
-type DrawerTab = "overview" | "chapters" | "transcript" | "summary";
+type DrawerTab = "overview" | "chapters" | "transcript" | "summary" | "links";
 type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
 type TranscriptAsset = { url?: string; type?: string; language?: string };
 
@@ -17,6 +17,7 @@ export function useEpisodeDrawer() {
     { id: "chapters", label: "Chapters" },
     { id: "transcript", label: "Transcript" },
     { id: "summary", label: "Summary" },
+    { id: "links", label: "Links" },
   ];
   const drawerOpen = ref(false);
   const drawerItem = ref<PodcastItem | null>(null);
@@ -29,6 +30,8 @@ export function useEpisodeDrawer() {
   const drawerTranscriptAssets = ref<TranscriptAsset[]>([]);
   const drawerLoadingChapters = ref(false);
   const drawerLoadingTranscript = ref(false);
+  const drawerLinks = ref<ShowNoteLink[]>([]);
+  const drawerLoadingLinks = ref(false);
   const drawerLoadError = ref("");
   const chaptersSearch = ref("");
   const transcriptSearch = ref("");
@@ -116,6 +119,7 @@ export function useEpisodeDrawer() {
     drawerTranscriptSegments.value = [];
     drawerTranscriptText.value = "";
     drawerTranscriptAssets.value = [];
+    drawerLinks.value = [];
     drawerCanonicalTranscript.value = "";
     transcriptMarkdown.value = "";
     transcriptMarkdownFile.value = "";
@@ -145,8 +149,27 @@ export function useEpisodeDrawer() {
     drawerLoadingChapters.value = true;
     drawerLoadingTranscript.value = true;
     drawerLoadingSummary.value = true;
+    drawerLoadingLinks.value = true;
 
-    await Promise.all([fetchChapters(id), fetchTranscript(id), fetchSummary(id)]);
+    await Promise.all([fetchChapters(id), fetchTranscript(id), fetchSummary(id), fetchLinks(id)]);
+  }
+
+  async function fetchLinks(id: string): Promise<void> {
+    drawerLoadingLinks.value = true;
+    try {
+      const response = await episodesApi.getLinks(id);
+      if (drawerItem.value?.ID === id) {
+        drawerLinks.value = response.links ?? [];
+      }
+    } catch (error) {
+      if (drawerItem.value?.ID === id) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load links.");
+      }
+    } finally {
+      if (drawerItem.value?.ID === id) {
+        drawerLoadingLinks.value = false;
+      }
+    }
   }
 
   async function fetchChapters(id: string): Promise<void> {
@@ -411,6 +434,8 @@ export function useEpisodeDrawer() {
     drawerTranscriptAssets,
     drawerLoadingChapters,
     drawerLoadingTranscript,
+    drawerLinks,
+    drawerLoadingLinks,
     drawerLoadError,
     chaptersSearch,
     transcriptSearch,

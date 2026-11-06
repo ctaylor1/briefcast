@@ -4,6 +4,7 @@ import AboutView from "../views/AboutView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DownloadsView from "../views/DownloadsView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
+import LinksView from "../views/LinksView.vue";
 import PlayerView from "../views/PlayerView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import SummariesView from "../views/SummariesView.vue";
@@ -28,6 +29,12 @@ const router = createRouter({
       name: "summaries",
       component: SummariesView,
       meta: { title: "Summaries" },
+    },
+    {
+      path: "/links",
+      name: "links",
+      component: LinksView,
+      meta: { title: "Most referenced" },
     },
     {
       path: "/downloads",

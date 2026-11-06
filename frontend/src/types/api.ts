@@ -132,6 +132,84 @@ export interface EpisodesResponse {
   filter: EpisodesFilter;
 }
 
+export interface ShowNoteLink {
+  ID: string;
+  URL: string;
+  Title: string;
+  Domain: string;
+  Position: number;
+  ContextLabel: string;
+  LinkTargetID: string | null;
+}
+
+export interface EpisodeLinksResponse {
+  episodeId: string;
+  podcastId: string;
+  count: number;
+  links: ShowNoteLink[] | null;
+}
+
+export type LinkKind = "profile" | "post" | "shortener" | "web";
+
+export interface LinkTargetSummary {
+  targetId: string;
+  normalizedKey: string;
+  canonicalUrl: string;
+  kind: LinkKind;
+  platform: string;
+  handle?: string;
+  domain: string;
+  parentTargetId?: string;
+}
+
+export interface LinkTargetRank extends LinkTargetSummary {
+  episodeCount: number;
+  podcastCount: number;
+  boilerplatePodcastCount: number;
+  firstSeen?: string;
+  lastSeen?: string;
+}
+
+export interface BoilerplateRule {
+  minEpisodes: number;
+  percent: number;
+}
+
+export interface TopLinksResponse {
+  count: number;
+  includeBoilerplate: boolean;
+  boilerplateRule: BoilerplateRule;
+  targets: LinkTargetRank[] | null;
+}
+
+export interface LinkTargetPodcastCount {
+  podcastId: string;
+  podcastTitle: string;
+  episodeCount: number;
+  podcastEpisodeCount: number;
+  boilerplate: boolean;
+}
+
+export interface LinkTargetOccurrence {
+  episodeId: string;
+  episodeTitle: string;
+  pubDate?: string;
+  podcastId: string;
+  podcastTitle: string;
+  url: string;
+  title: string;
+  contextLabel: string;
+}
+
+export interface LinkTargetDetail {
+  target: LinkTargetSummary;
+  parent?: LinkTargetSummary;
+  episodeCount: number;
+  podcastCount: number;
+  podcasts: LinkTargetPodcastCount[] | null;
+  occurrences: LinkTargetOccurrence[] | null;
+}
+
 export interface SearchResult {
   url: string;
   title: string;

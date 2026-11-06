@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
+import EpisodeLinksPanel from "../components/episodes/EpisodeLinksPanel.vue";
 import EpisodesFilters from "../components/episodes/EpisodesFilters.vue";
 import EpisodesListItem from "../components/episodes/EpisodesListItem.vue";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
@@ -40,6 +41,8 @@ const {
   drawerTranscriptAssets,
   drawerLoadingChapters,
   drawerLoadingTranscript,
+  drawerLinks,
+  drawerLoadingLinks,
   drawerLoadError,
   chaptersSearch,
   transcriptSearch,
@@ -605,6 +608,12 @@ onMounted(() => {
             </ul>
           </div>
         </div>
+
+        <EpisodeLinksPanel
+          v-else-if="drawerTab === 'links'"
+          :links="drawerLinks"
+          :loading="drawerLoadingLinks"
+        />
 
         <div v-else-if="drawerTab === 'summary'" class="stack-3">
           <p v-if="drawerLoadingSummary" class="meta-text">Loading summary...</p>
