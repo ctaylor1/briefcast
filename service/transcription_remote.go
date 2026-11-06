@@ -11,6 +11,7 @@ import (
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
 	"github.com/ctaylor1/briefcast/internal/transcription"
+	"gorm.io/gorm"
 )
 
 func transcribeRemotePending(parent context.Context, cfg WhisperXConfig, b *httpTranscriptionBackend, lock *db.JobLock) error {
@@ -85,7 +86,7 @@ func remoteQueueItems(cfg WhisperXConfig, now time.Time) ([]db.PodcastItem, erro
 	const dueSQL = "COALESCE(transcript_next_attempt, download_date)"
 	for {
 		var page []db.PodcastItem
-		q := db.DB.Where("download_status = ? AND download_path <> '' AND COALESCE(transcript_json, '') = '' AND deleted_at IS NULL", db.Downloaded).Where("transcript_status IN ?", statuses).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", now)
+		q := remoteQueueQuery(statuses, now)
 		if after != "" {
 			q = q.Where("("+prioritySQL+") > ? OR (("+prioritySQL+") = ? AND ("+dueSQL+" > ? OR ("+dueSQL+" = ? AND (download_date > ? OR (download_date = ? AND id > ?)))))", priority, priority, due, due, downloaded, downloaded, after)
 		}
@@ -336,13 +337,28 @@ func acknowledgeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *
 	return nil
 }
 
+// remoteQueueQuery selects episodes waiting for the worker. It runs about once a
+// minute and must stay on idx_podcast_items_transcript_queue: without an index,
+// testing transcript_status reads through every stored transcript.
+func remoteQueueQuery(statuses []string, now time.Time) *gorm.DB {
+	return db.DB.Where("download_status = ? AND download_path <> '' AND COALESCE(transcript_json, '') = '' AND deleted_at IS NULL", db.Downloaded).Where("transcript_status IN ?", statuses).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", now)
+}
+
+// remoteReceiptQuery selects completed HTTP envelopes written by
+// json.Marshal(remoteEnvelope). It filters their fixed receipt marker before the
+// batch limit so completed legacy checkpoints cannot consume every reconciliation
+// slot. The decoded identity/digest are still validated before any ACK or
+// checkpoint clearing.
+//
+// The <> '' term changes no results, because both LIKE patterns need text. It must
+// stay, written literally: it is what lets idx_podcast_items_open_checkpoint apply.
+func remoteReceiptQuery(now time.Time) *gorm.DB {
+	return db.DB.Where("transcript_status = 'available' AND transcript_json <> '' AND deleted_at IS NULL AND transcript_checkpoint_json <> ''").Where("transcript_checkpoint_json LIKE ? AND transcript_checkpoint_json LIKE ?", `%"backend":"http"%`, `%"receipt_result_sha256":"%`).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", now).Order("COALESCE(transcript_next_attempt, updated_at) ASC").Order("id ASC").Limit(100)
+}
+
 func reconcileRemoteReceipts(ctx context.Context, b *httpTranscriptionBackend, l *remoteLease) error {
 	var items []db.PodcastItem
-	// Completed HTTP envelopes are written by json.Marshal(remoteEnvelope).
-	// Filter their fixed receipt marker before the batch limit so completed
-	// legacy checkpoints cannot consume every reconciliation slot. The decoded
-	// identity/digest are still validated before any ACK or checkpoint clearing.
-	if err := db.DB.Where("transcript_status = 'available' AND transcript_json <> '' AND deleted_at IS NULL").Where("transcript_checkpoint_json LIKE ? AND transcript_checkpoint_json LIKE ?", `%"backend":"http"%`, `%"receipt_result_sha256":"%`).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", time.Now().UTC()).Order("COALESCE(transcript_next_attempt, updated_at) ASC").Order("id ASC").Limit(100).Find(&items).Error; err != nil {
+	if err := remoteReceiptQuery(time.Now().UTC()).Find(&items).Error; err != nil {
 		return err
 	}
 	var first error

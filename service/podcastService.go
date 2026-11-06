@@ -895,13 +895,13 @@ func DownloadMissingEpisodes() error {
 
 // CheckMissingFiles handles the corresponding operation.
 func CheckMissingFiles() error {
-	data, err := db.GetAllPodcastItemsAlreadyDownloaded()
+	items, err := db.GetDownloadedItemPaths()
 	setting := db.GetOrCreateSetting()
 
 	if err != nil {
 		return err
 	}
-	for _, item := range *data {
+	for _, item := range items {
 		fileExists := FileExists(item.DownloadPath)
 		if !fileExists {
 			if setting.DontDownloadDeletedFromDisk {

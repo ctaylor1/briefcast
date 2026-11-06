@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Removed the horizontal scrollbar that the Podcasts, Episodes and Downloads tables showed at full window width. Tables now scroll sideways only when their columns do not fit.
+- Reduced `database is locked` errors on SQLite. Two queries that run about once a minute read through every stored transcript and held the lock for seconds; two new indexes on `podcast_items` take them to about a millisecond.
 
 ## [1.9.4] - 2026-07-11
 

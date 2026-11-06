@@ -294,6 +294,18 @@ where id in (
 		Name:  "2026_11_05_03_00_AddShowNoteLinksPodcastTargetIndex",
 		Query: "create index if not exists idx_show_note_links_podcast_target_item on show_note_links (podcast_id, link_target_id, podcast_item_id)",
 	},
+	{
+		// Without this, the once-a-minute worker queue query reads through every
+		// stored transcript, because transcript_status sits after them in the row.
+		Name:  "2026_11_06_01_00_AddPodcastItemsTranscriptQueueIndex",
+		Query: "create index if not exists idx_podcast_items_transcript_queue on podcast_items(download_status, transcript_status)",
+	},
+	{
+		// Same reason, for the once-a-minute receipt query. Partial, because few
+		// rows have an open checkpoint. The query must keep the matching condition.
+		Name:  "2026_11_06_01_01_AddPodcastItemsOpenCheckpointIndex",
+		Query: "create index if not exists idx_podcast_items_open_checkpoint on podcast_items(transcript_status) where transcript_checkpoint_json <> ''",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

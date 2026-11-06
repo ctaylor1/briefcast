@@ -306,11 +306,18 @@ func GetAllPodcastItemsToBeDownloaded() (*[]PodcastItem, error) {
 	return &podcastItems, result.Error
 }
 
-// GetAllPodcastItemsAlreadyDownloaded handles the corresponding operation.
-func GetAllPodcastItemsAlreadyDownloaded() (*[]PodcastItem, error) {
-	var podcastItems []PodcastItem
-	result := podcastItemsWithAssociations(DB).Where("download_status=?", Downloaded).Find(&podcastItems)
-	return &podcastItems, result.Error
+// DownloadedItemPath is the part of a downloaded episode that a file check needs.
+// It is a separate type so a partial row can never be saved back over a whole one.
+type DownloadedItemPath struct {
+	ID           string
+	DownloadPath string
+}
+
+// GetDownloadedItemPaths lists downloaded episodes without loading their transcripts.
+func GetDownloadedItemPaths() ([]DownloadedItemPath, error) {
+	var paths []DownloadedItemPath
+	result := DB.Model(&PodcastItem{}).Where("download_status = ?", Downloaded).Find(&paths)
+	return paths, result.Error
 }
 
 // GetPodcastItemsForWhisperx handles the corresponding operation.

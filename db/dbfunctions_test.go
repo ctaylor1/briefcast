@@ -267,12 +267,12 @@ func TestPodcastAndItemQueries(t *testing.T) {
 		t.Fatalf("expected only itemA2 queued, got %+v", *queued)
 	}
 
-	downloaded, err := GetAllPodcastItemsAlreadyDownloaded()
+	downloaded, err := GetDownloadedItemPaths()
 	if err != nil {
-		t.Fatalf("GetAllPodcastItemsAlreadyDownloaded failed: %v", err)
+		t.Fatalf("GetDownloadedItemPaths failed: %v", err)
 	}
-	if len(*downloaded) != 1 || (*downloaded)[0].ID != itemA1.ID {
-		t.Fatalf("expected only itemA1 downloaded, got %+v", *downloaded)
+	if len(downloaded) != 1 || downloaded[0].ID != itemA1.ID || downloaded[0].DownloadPath != itemA1.DownloadPath {
+		t.Fatalf("expected only itemA1 downloaded, got %+v", downloaded)
 	}
 
 	queueByStatus, err := GetPodcastItemsByDownloadStatuses([]DownloadStatus{NotDownloaded, Paused}, 0)
