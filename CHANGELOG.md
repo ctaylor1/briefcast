@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Upgrade note:** Docker Compose now publishes the app on `127.0.0.1` by default. Set `HOST_BIND=0.0.0.0` to keep LAN access, and set `PASSWORD` if you do, because an empty password leaves every route unauthenticated.
+- **Upgrade note:** `HOST_PORT` now takes a port number only. A value such as `127.0.0.1:18080` makes Compose fail with an `invalid IP address` error; set `HOST_BIND` and `HOST_PORT` separately.
+- `LOG_OUTPUT` now defaults to `stdout` in `docker-compose.yml`. The previous default, `both`, was not a keyword: logs went to a file named `both` inside the container and never reached `docker logs`.
+
+### Added
+- Added a startup warning when `PASSWORD` is empty.
+
 ## [1.9.4] - 2026-07-11
 
 ### Added

@@ -324,10 +324,19 @@ func intiCron() {
 func assetEnv() {
 	appLogger := logging.Sugar()
 	appLogger.Infow("runtime configuration", "config_dir", os.Getenv("CONFIG"), "assets_dir", os.Getenv("DATA"), "check_frequency_mins", os.Getenv("CHECK_FREQUENCY"), "database_driver", db.CurrentDriver())
+	warnIfAuthDisabled(appLogger, os.Getenv("PASSWORD"))
 	if os.Getenv("DATABASE_URL") == "" {
 		appLogger.Infow("database URL not set, using sqlite default")
 	} else {
 		appLogger.Infow("database URL configured")
+	}
+}
+
+// warnIfAuthDisabled uses the same condition as authRouterGroup, so the warning
+// appears exactly when every route is unauthenticated.
+func warnIfAuthDisabled(logger *zap.SugaredLogger, password string) {
+	if password == "" {
+		logger.Warnw("PASSWORD is not set: authentication is disabled, so every route is open to anyone who can reach this port")
 	}
 }
 

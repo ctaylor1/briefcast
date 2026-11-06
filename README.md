@@ -178,10 +178,13 @@ BRIEFCAST_IMAGE=briefcast:local
 HOST_CONFIG_DIR=./config
 HOST_ASSETS_DIR=./assets
 HOST_LOGS_DIR=./logs
+HOST_BIND=127.0.0.1
 HOST_PORT=8080
 PASSWORD=
 DATABASE_URL=sqlite:///config/briefcast.db
 ```
+
+Compose publishes the app on `127.0.0.1` only. To reach it from other machines, set `HOST_BIND=0.0.0.0` or one interface address, and set `PASSWORD`: an empty `PASSWORD` leaves every route unauthenticated. `HOST_PORT` takes a port number only.
 
 Set `BRIEFCAST_IMAGE` to a published release digest, or build the example development tag before starting:
 
@@ -315,6 +318,7 @@ For Docker Compose end users, most deployments only need `.env` values for:
 - `HOST_CONFIG_DIR`
 - `HOST_ASSETS_DIR`
 - `HOST_LOGS_DIR`
+- `HOST_BIND`
 - `HOST_PORT`
 - `PASSWORD`
 - `CHECK_FREQUENCY`
@@ -327,7 +331,9 @@ For Docker Compose end users, most deployments only need `.env` values for:
 - `CONFIG`: config directory inside the container or local runtime
 - `DATA`: assets directory inside the container or local runtime
 - `CHECK_FREQUENCY`: base scheduler interval in minutes; invalid values fall back to `30`
-- `PASSWORD`: optional basic auth password; username is always `briefcast`
+- `HOST_BIND`: host address Compose publishes the app on; default `127.0.0.1`. Set `0.0.0.0` for LAN access
+- `HOST_PORT`: host port number Compose publishes the app on; default `8080`
+- `PASSWORD`: optional basic auth password; username is always `briefcast`. When empty, authentication is off and a warning is logged at startup
 - `GIN_MODE`: set to `release` for production
 - `PUID`, `PGID`: optional ownership mapping for created files on NAS/Linux hosts
 
@@ -367,7 +373,7 @@ DB_DRIVER=postgres
 
 - `LOG_LEVEL`: `debug`, `info`, `warn`, or `error`; default `info`
 - `LOG_FORMAT`: `json` or `text`; default `json` for Go services
-- `LOG_OUTPUT`: comma-separated outputs such as `stdout,file:/logs/briefcast-{startup_ts}.log`
+- `LOG_OUTPUT`: comma-separated outputs such as `stdout,file:/logs/briefcast-{startup_ts}.log`; `docker-compose.yml` defaults to `stdout`. The in-app logs page reads `.log` files, so add a file output to use it
 - `LOG_FILE_MAX_SIZE_MB`: default `50`
 - `LOG_FILE_MAX_BACKUPS`: default `7`
 - `LOG_FILE_MAX_AGE_DAYS`: default `14`

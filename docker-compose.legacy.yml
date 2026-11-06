@@ -51,7 +51,7 @@ services:
       - ${HOST_ASSETS_DIR:-./assets}:/assets
       - ${HOST_LOGS_DIR:-./logs}:/logs
     ports:
-      - ${HOST_PORT:-8080}:8080
+      - ${HOST_BIND:-127.0.0.1}:${HOST_PORT:-8080}:8080
     restart: unless-stopped
 
   postgres:

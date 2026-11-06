@@ -530,7 +530,7 @@ Runtime requirements:
 
 Compose requirements:
 
-- Main service maps `${HOST_PORT:-8080}:8080`.
+- Main service maps `${HOST_BIND:-127.0.0.1}:${HOST_PORT:-8080}:8080`.
 - Mount `${HOST_CONFIG_DIR:-./config}:/config`.
 - Mount `${HOST_ASSETS_DIR:-./assets}:/assets`.
 - Mount `${HOST_LOGS_DIR:-./logs}:/logs`.

@@ -26,27 +26,9 @@ def run_ps(*args, env=None):
     return result
 
 
-@pytest.mark.parametrize("runtime", ["disabled", "cpu", "cuda"])
-@pytest.mark.parametrize("advanced", [False, True])
-@pytest.mark.parametrize("source_build", [False, True])
-def test_compose_matrix(tmp_path, runtime, advanced, source_build):
-    if not shutil.which("docker"):
-        pytest.skip("Docker Compose is required for the packaging matrix")
-    advanced_file = tmp_path / "advanced.env"
-    if advanced:
-        advanced_file.write_text("WHISPERX_DIARIZATION=true\nWHISPERX_MAX_CONCURRENCY=3\n")
-    env_file = tmp_path / "fixture $literal config.env"
-    env_file.write_text(
-        f"WHISPERX_RUNTIME={runtime}\nWHISPERX_ENV_FILE={advanced_file.as_posix()}\n"
-        "DATABASE_URL=sqlite:///config/fixture.db\nLLM_ENABLED=false\n"
-        "BRIEFCAST_IMAGE=fixture/app@sha256:" + "a" * 64 + "\n"
-        "WHISPERX_IMAGE=fixture/worker@sha256:" + "b" * 64 + "\n"
-        f"HOST_WHISPERX_TOKEN_FILE={tmp_path.as_posix()}/token\n"
-        f"HOST_WHISPERX_HF_TOKEN_FILE={tmp_path.as_posix()}/hf-token\n"
-        "WHISPERX_DIARIZATION=false\nWHISPERX_MAX_CONCURRENCY=1\n"
-    )
+def synthetic_env():
     # Do not inherit operator settings; only synthetic test configuration is rendered.
-    env = {
+    return {
         k: v
         for k, v in os.environ.items()
         if k.upper()
@@ -66,6 +48,28 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
             "COMSPEC",
         }
     }
+
+
+@pytest.mark.parametrize("runtime", ["disabled", "cpu", "cuda"])
+@pytest.mark.parametrize("advanced", [False, True])
+@pytest.mark.parametrize("source_build", [False, True])
+def test_compose_matrix(tmp_path, runtime, advanced, source_build):
+    if not shutil.which("docker"):
+        pytest.skip("Docker Compose is required for the packaging matrix")
+    advanced_file = tmp_path / "advanced.env"
+    if advanced:
+        advanced_file.write_text("WHISPERX_DIARIZATION=true\nWHISPERX_MAX_CONCURRENCY=3\n")
+    env_file = tmp_path / "fixture $literal config.env"
+    env_file.write_text(
+        f"WHISPERX_RUNTIME={runtime}\nWHISPERX_ENV_FILE={advanced_file.as_posix()}\n"
+        "DATABASE_URL=sqlite:///config/fixture.db\nLLM_ENABLED=false\n"
+        "BRIEFCAST_IMAGE=fixture/app@sha256:" + "a" * 64 + "\n"
+        "WHISPERX_IMAGE=fixture/worker@sha256:" + "b" * 64 + "\n"
+        f"HOST_WHISPERX_TOKEN_FILE={tmp_path.as_posix()}/token\n"
+        f"HOST_WHISPERX_HF_TOKEN_FILE={tmp_path.as_posix()}/hf-token\n"
+        "WHISPERX_DIARIZATION=false\nWHISPERX_MAX_CONCURRENCY=1\n"
+    )
+    env = synthetic_env()
     source_args = ["-SourceBuild"] if source_build else []
     env["ENV_FILE"] = str(env_file)
     output = run_ps(
@@ -88,6 +92,10 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
     assert app["environment"]["WHISPERX_BACKEND"] == "http"
     assert app["environment"]["WHISPERX_DIARIZATION"] == str(advanced).lower()
     assert app["environment"]["WHISPERX_MAX_CONCURRENCY"] == ("3" if advanced else "1")
+    assert app["environment"]["LOG_OUTPUT"] == "stdout"
+    assert [(p["host_ip"], p["published"], p["target"]) for p in app["ports"]] == [
+        ("127.0.0.1", "8080", 8080)
+    ]
     assert config["services"]["postgres"]["profiles"] == ["postgres"]
     if runtime == "disabled":
         assert "whisperx" not in config["services"]
@@ -118,6 +126,42 @@ def test_compose_matrix(tmp_path, runtime, advanced, source_build):
     assert "--device=" + ("cuda" if runtime == "cuda" else "cpu") in worker["command"]
     assert ("deploy" in worker) == (runtime == "cuda")
     assert not config["networks"]["default"].get("internal", False)
+
+
+@pytest.mark.parametrize("compose_file", ["docker-compose.yml", "docker-compose.legacy.yml"])
+@pytest.mark.parametrize("host_bind", [None, "0.0.0.0"])
+def test_published_port_is_loopback_unless_host_bind_is_set(tmp_path, compose_file, host_bind):
+    if not shutil.which("docker"):
+        pytest.skip("Docker Compose is required for the packaging matrix")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "BRIEFCAST_IMAGE=fixture/app@sha256:" + "a" * 64 + "\n"
+        "HOST_PORT=18080\n" + (f"HOST_BIND={host_bind}\n" if host_bind else "")
+    )
+    (tmp_path / ".env.whisperx").write_text("")
+    output = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--project-directory",
+            tmp_path,
+            "--env-file",
+            env_file,
+            "-f",
+            ROOT / compose_file,
+            "config",
+            "--format",
+            "json",
+        ],
+        env=synthetic_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert output.returncode == 0, output.stderr
+    ports = json.loads(output.stdout)["services"]["briefcast"]["ports"]
+    assert [(p["host_ip"], p["published"], p["target"]) for p in ports] == [
+        (host_bind or "127.0.0.1", "18080", 8080)
+    ]
 
 
 @pytest.mark.parametrize("bad_checksum", [False, True])

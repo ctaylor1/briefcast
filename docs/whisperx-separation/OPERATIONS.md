@@ -73,7 +73,7 @@ Selection uses explicit `-Runtime`, otherwise process/primary dotenv `WHISPERX_R
 ### Fresh isolated development setup
 
 1. Create a new private lab root **outside this repository**, with fresh config/media/log/state/cache directories and token files. Use a new database, container name, project and loopback host port; keep LLM disabled. Never point a test app at production (startup unlocks jobs).
-2. Copy `.env.example` to a private lab env file. Set absolute `HOST_*` paths to that new root, `BRIEFCAST_CONTAINER_NAME=briefcast-split-dev`, `HOST_PORT=127.0.0.1:18080`, `DATABASE_URL=sqlite:///config/briefcast.db`, and `WHISPERX_ENABLED=false`. Set `WHISPERX_ENV_FILE` to a lab-specific absent file, or a private copy of `whisperx.env.example`, to avoid accidentally loading the repository operator file.
+2. Copy `.env.example` to a private lab env file. Set absolute `HOST_*` paths to that new root, `BRIEFCAST_CONTAINER_NAME=briefcast-split-dev`, `HOST_BIND=127.0.0.1`, `HOST_PORT=18080`, `DATABASE_URL=sqlite:///config/briefcast.db`, and `WHISPERX_ENABLED=false`. Set `WHISPERX_ENV_FILE` to a lab-specific absent file, or a private copy of `whisperx.env.example`, to avoid accidentally loading the repository operator file.
 3. Build the app dev tag, set `BRIEFCAST_IMAGE=briefcast:local`, then render/start only the app. For CPU/CUDA, build the appropriate worker tag, set its image/profile/runtime and mounts, copy/preload the tested cache, then explicitly enable dispatch. `cuda` is a Compose mode; the Dockerfile build argument/tag variant is `cu128`.
 
 Examples are for that new lab; assign `$LabEnv` to its absolute env path:

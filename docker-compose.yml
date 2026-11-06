@@ -17,7 +17,7 @@ services:
       - DATABASE_DRIVER=${DATABASE_DRIVER:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FORMAT=${LOG_FORMAT:-json}
-      - LOG_OUTPUT=${LOG_OUTPUT:-both}
+      - LOG_OUTPUT=${LOG_OUTPUT:-stdout}
       - LOG_FILE_MAX_SIZE_MB=${LOG_FILE_MAX_SIZE_MB:-50}
       - LOG_FILE_MAX_BACKUPS=${LOG_FILE_MAX_BACKUPS:-7}
       - LOG_FILE_MAX_AGE_DAYS=${LOG_FILE_MAX_AGE_DAYS:-14}
@@ -53,7 +53,7 @@ services:
       - ${HOST_ASSETS_DIR:-./assets}:/assets
       - ${HOST_LOGS_DIR:-./logs}:/logs
     ports:
-      - ${HOST_PORT:-8080}:8080
+      - ${HOST_BIND:-127.0.0.1}:${HOST_PORT:-8080}:8080
     restart: unless-stopped
 
   postgres:

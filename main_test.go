@@ -14,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	glebarezsqlite "github.com/glebarez/sqlite"
 	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -337,6 +339,32 @@ func TestAssetEnv(t *testing.T) {
 	t.Setenv("CHECK_FREQUENCY", "30")
 	t.Setenv("DATABASE_URL", "")
 	assetEnv()
+}
+
+func TestAssetEnvWarnsOnlyWhenPasswordIsEmpty(t *testing.T) {
+	const password = "not-a-real-password"
+	cases := []struct {
+		name     string
+		password string
+		warnings int
+	}{
+		{name: "empty password", password: "", warnings: 1},
+		{name: "password set", password: password, warnings: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zap.WarnLevel)
+			warnIfAuthDisabled(zap.New(core).Sugar(), tc.password)
+			if got := logs.Len(); got != tc.warnings {
+				t.Fatalf("expected %d warnings, got %d", tc.warnings, got)
+			}
+			for _, entry := range logs.All() {
+				if strings.Contains(entry.Message, password) {
+					t.Fatalf("warning must not contain the password: %q", entry.Message)
+				}
+			}
+		})
+	}
 }
 
 // TestResolveCheckFrequency handles the corresponding operation.
