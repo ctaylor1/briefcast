@@ -6,14 +6,16 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
+import MonitoringPanel from "../components/settings/MonitoringPanel.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
 import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
+import { userAgentSourceLabel } from "../lib/userAgent";
 import type { AppLogEntry, AppLogsResponse, AppSettings, OpenRouterModelsResponse, PromptVersion, RepairWorkResponse, SummaryJobStatus, WorkQueueItem } from "../types/api";
 
-type SettingsTab = "configuration" | "work" | "logs";
+type SettingsTab = "configuration" | "work" | "monitoring" | "logs";
 
 type RetentionForm = {
   keepAllEpisodes: boolean;
@@ -76,6 +78,8 @@ const isStartingRepairWork = ref(false);
 const workQueuePayload = ref<RepairWorkResponse | null>(null);
 const workQueueErrorMessage = ref("");
 const briefpointAPIKeyConfigured = ref(false);
+const outboundUserAgent = ref("");
+const outboundUserAgentSource = ref("");
 const defaultModel = ref("");
 const defaultProvider = ref("");
 const openRouterCatalog = ref<OpenRouterModelsResponse | null>(null);
@@ -242,6 +246,8 @@ async function loadSettings(): Promise<void> {
       briefpointAPIKey: "",
     };
     briefpointAPIKeyConfigured.value = settings.briefpointAPIKeyConfigured ?? false;
+    outboundUserAgent.value = settings.userAgent ?? "";
+    outboundUserAgentSource.value = settings.userAgentSource ?? "";
     defaultModel.value = settings.defaultModel ?? "";
     defaultProvider.value = settings.defaultProvider ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
@@ -723,6 +729,16 @@ onUnmounted(() => {
         @click="selectSettingsTab('work')"
       >
         Work Queue
+      </button>
+      <button
+        type="button"
+        class="settings-tab"
+        :class="{ 'settings-tab--active': activeTab === 'monitoring' }"
+        role="tab"
+        :aria-selected="activeTab === 'monitoring'"
+        @click="selectSettingsTab('monitoring')"
+      >
+        Monitoring
       </button>
       <button
         type="button"
@@ -1265,6 +1281,22 @@ onUnmounted(() => {
       </div>
     </UiCard>
 
+    <!-- Network identity (read-only; configured in .env) -->
+    <UiCard v-if="!isLoading && outboundUserAgent" padding="lg" class="stack-4">
+      <div class="stack-2">
+        <h3 class="settings-section-title">Network Identity</h3>
+        <p class="section-subtitle">
+          The User-Agent Briefcast sends when it fetches feeds, audio, artwork and charts.
+          Podcast hosts use it to count downloads by app.
+        </p>
+      </div>
+      <div class="stack-1">
+        <span class="settings-label">User-Agent</span>
+        <code class="settings-user-agent">{{ outboundUserAgent }}</code>
+        <p class="meta-text">{{ userAgentSourceLabel(outboundUserAgentSource) }}</p>
+      </div>
+    </UiCard>
+
     <!-- Briefpoint Integration -->
     <UiCard v-if="!isLoading" padding="lg" class="stack-4">
       <div class="stack-2">
@@ -1486,6 +1518,10 @@ onUnmounted(() => {
       </UiCard>
     </template>
 
+    <template v-else-if="activeTab === 'monitoring'">
+      <MonitoringPanel />
+    </template>
+
     <template v-else>
       <UiCard padding="lg" class="stack-4">
         <div class="surface-row surface-row--between">
@@ -1632,6 +1668,16 @@ onUnmounted(() => {
   font-size: var(--font-section-size);
   line-height: var(--font-section-line-height);
   font-weight: var(--font-section-weight);
+}
+
+.settings-user-agent {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .settings-tabs {

@@ -44,11 +44,16 @@ type SettingModel struct {
 var searchOptions = map[string]string{
 	"itunes":       "iTunes",
 	"podcastindex": "PodcastIndex",
+	"gpodder":      "gpodder.net",
 }
 var searchProvider = map[string]service.SearchService{
 	"itunes":       new(service.ItunesService),
 	"podcastindex": new(service.PodcastIndexService),
+	"gpodder":      new(service.GpodderService),
 }
+
+// enrichSearchResults is swappable so handler tests stay offline.
+var enrichSearchResults = service.EnrichSearchResults
 
 // AddPage handles the corresponding operation.
 func AddPage(c *gin.Context) {
@@ -341,6 +346,7 @@ func Search(c *gin.Context) {
 		}
 
 		data := searcher.Query(searchQuery.Q)
+		enrichSearchResults(data)
 		allPodcasts := service.GetAllPodcasts("")
 
 		urls := make(map[string]string, len(*allPodcasts))

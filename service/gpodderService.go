@@ -14,6 +14,15 @@ import (
 
 var gpodderBaseURL = "https://gpodder.net"
 
+// GpodderService searches the gpodder.net directory (includes subscriber counts).
+type GpodderService struct {
+}
+
+// Query handles the corresponding operation.
+func (service GpodderService) Query(q string) []*model.CommonSearchResultModel {
+	return Query(q)
+}
+
 // Query handles the corresponding operation.
 func Query(q string) []*model.CommonSearchResultModel {
 	url := fmt.Sprintf("%s/search.json?q=%s", gpodderBaseURL, url.QueryEscape(q))

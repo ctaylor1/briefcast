@@ -369,6 +369,7 @@ DB_DRIVER=postgres
 - `BRIEFCAST_ALLOW_PRIVATE_BRIEFPOINT_URLS`: allow Briefpoint requests to private or loopback hosts; default `true`
 - `BRIEFCAST_ALLOW_PRIVATE_LLM_URLS`: allow LLM summary requests to private or loopback hosts for local OpenAI-compatible providers; default `true`
 - `BRIEFCAST_MAX_OUTBOUND_RESPONSE_BYTES`: maximum in-memory response size for feed/search/transcript metadata and LLM responses; default `20971520`
+- `BRIEFCAST_USER_AGENT`: `User-Agent` sent on feed, audio, artwork and chart requests; default `Briefcast/1.0 (+https://github.com/ctaylor1/briefcast)`. Printable ASCII, at most 256 characters; an invalid value is ignored with a warning. Keep it an honest identification of your install (name/version plus a contact URL) because hosts use it to attribute download statistics. Shown read-only under **Settings → Configuration → Network Identity**.
 
 ### Logging
 
@@ -420,7 +421,7 @@ HTTP mode also requires `WHISPERX_SERVICE_URL`, `WHISPERX_SERVICE_TOKEN_FILE` an
 - `WHISPERX_BEAM_SIZE`: default `5`
 - `WHISPERX_PATIENCE`: default `1`
 - `WHISPERX_CONDITION_ON_PREVIOUS_TEXT`: default `true`
-- `WHISPERX_INITIAL_PROMPT`: optional prompt
+- `WHISPERX_INITIAL_PROMPT`: optional decoder prompt; off by default (`none` or `off` also disables it). Whisper treats the prompt as text already spoken, not as an instruction, and batched WhisperX prepends it to every window, so instruction-style prompts get transcribed during music and silence. If you set one, write it like transcript text (for example, names and terms used on the show).
 - `WHISPERX_VAD_METHOD`: default `pyannote`; falls back to `silero` if pyannote VAD fails
 - `WHISPERX_ALIGN`: default `true`
 - `WHISPERX_DIARIZATION`: Compose default `false` (source/local default `true`)

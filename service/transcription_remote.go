@@ -127,6 +127,7 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 	if err := l.check(); err != nil {
 		return err
 	}
+	started := time.Now()
 	e, err := b.prepare(ctx, item)
 	if err != nil {
 		return failRemoteItem(b, l, &item, nil, err)
@@ -161,6 +162,8 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 	item.TranscriptStatus = "processing"
 	item.TranscriptProgressStage = stage
 	item.TranscriptProgressPct = pct
+	recordTranscriptionStarted(&item, e, stage)
+	var lastStatus transcription.JobStatus
 	check := func() error {
 		if err = l.check(); err != nil {
 			return err
@@ -176,6 +179,7 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 		return ctx.Err()
 	}
 	result, err := b.execute(ctx, e, func(e *remoteEnvelope, s transcription.JobStatus) error {
+		lastStatus = s
 		raw, _ := json.Marshal(e)
 		pct := max(item.TranscriptProgressPct, min(s.Percent, 99))
 		stage := s.Stage
@@ -220,6 +224,7 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 	if item.TranscriptCheckpointJSON != string(raw) || item.TranscriptJSON != text || item.TranscriptStatus != "available" {
 		return errRemoteOwnership
 	}
+	recordTranscriptionCompleted(&item, e, lastStatus, started)
 	ackErr := acknowledgeRemoteItem(ctx, b, l, &item, e)
 	if err = l.check(); err != nil {
 		return errors.Join(ackErr, err)
@@ -289,6 +294,7 @@ func failRemoteItem(b *httpTranscriptionBackend, l *remoteLease, item *db.Podcas
 	if updateErr := l.update(item, updates, false); updateErr != nil {
 		return errors.Join(err, updateErr)
 	}
+	recordTranscriptionProblem(item, e, problem, status, stage, retries, nextPtr)
 	return err
 }
 

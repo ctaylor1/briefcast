@@ -49,6 +49,9 @@ type SettingsResponse struct {
 	// Obsidian
 	ObsidianVault  string `json:"obsidianVault"`
 	ObsidianFolder string `json:"obsidianFolder"`
+	// Network identity (read-only; set BRIEFCAST_USER_AGENT in .env).
+	UserAgent       string `json:"userAgent"`
+	UserAgentSource string `json:"userAgentSource"`
 }
 
 // SettingsPatch is the partial update payload accepted by PATCH /settings.
@@ -444,7 +447,10 @@ func RestorePromptVersion(c *gin.Context) {
 
 func settingsFromModel(setting *db.Setting) SettingsResponse {
 	cfg := service.LoadLLMConfig()
+	userAgent, userAgentSource := service.OutboundUserAgent(setting.UserAgent)
 	return SettingsResponse{
+		UserAgent:                  userAgent,
+		UserAgentSource:            userAgentSource,
 		KeepAllEpisodes:            setting.RetentionKeepAll,
 		KeepLatestEpisodes:         setting.RetentionKeepLatest,
 		DeleteAfterDays:            setting.RetentionDeleteAfterDays,

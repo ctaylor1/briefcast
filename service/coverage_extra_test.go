@@ -379,6 +379,12 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	if got := getItunesImageURL(itunesXML); got != "https://cdn.example/cover.jpg" {
 		t.Fatalf("unexpected itunes image url: %q", got)
 	}
+	// Regression: a parseable document with no <channel> (e.g. an Atom feed)
+	// previously dereferenced a nil node and panicked while adding the podcast.
+	atomXML := []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><title>t</title></feed>`)
+	if got := getItunesImageURL(atomXML); got != "" {
+		t.Fatalf("expected empty image url for feed without channel, got %q", got)
+	}
 
 	if got := GetSearchFromGpodder(model.GPodcast{URL: "u", LogoURL: "i", Title: "t", Description: "d"}); got.Title != "t" {
 		t.Fatalf("unexpected gpodder mapping: %+v", got)

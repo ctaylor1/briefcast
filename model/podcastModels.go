@@ -100,4 +100,19 @@ type CommonSearchResultModel struct {
 	AlreadySaved bool     `json:"already_saved"`
 	Description  string   `json:"description"`
 	Categories   []string `json:"categories"`
+
+	// Optional directory metadata used to judge popularity and activity.
+	Author              string `json:"author,omitempty"`
+	EpisodeCount        int    `json:"episode_count,omitempty"`
+	LatestEpisodeDate   string `json:"latest_episode_date,omitempty"` // RFC 3339
+	Subscribers         int    `json:"subscribers,omitempty"`         // gpodder.net subscribers
+	SubscribersLastWeek int    `json:"subscribers_last_week,omitempty"`
+	AppleChartRank      int    `json:"apple_chart_rank,omitempty"` // position in Apple's US Top Podcasts chart
+	AppleGenreRank      int    `json:"apple_genre_rank,omitempty"` // position in Apple's US chart for its genre
+	AppleGenreName      string `json:"apple_genre_name,omitempty"` // set only with AppleGenreRank
+
+	// Apple identifiers used to look up chart data; not serialized.
+	AppleID      string `json:"-"`
+	AppleGenreID string `json:"-"`
+	AppleGenre   string `json:"-"`
 }

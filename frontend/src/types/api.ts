@@ -3,7 +3,7 @@ export interface PodcastTagRef {
   Label: string;
 }
 
-export type SearchSource = "itunes" | "podcastindex";
+export type SearchSource = "itunes" | "podcastindex" | "gpodder";
 export type EpisodeTriState = "nil" | "true" | "false";
 export type EpisodeSorting =
   | "release_desc"
@@ -217,6 +217,14 @@ export interface SearchResult {
   already_saved: boolean;
   description: string;
   categories?: string[];
+  author?: string;
+  episode_count?: number;
+  latest_episode_date?: string;
+  subscribers?: number;
+  subscribers_last_week?: number;
+  apple_chart_rank?: number;
+  apple_genre_rank?: number;
+  apple_genre_name?: string;
 }
 
 export type LocalSearchRecordType = "podcast" | "episode" | "chapter" | "transcript" | "summary";
@@ -263,6 +271,9 @@ export interface AppSettings {
   briefpointAPIKeyConfigured: boolean;
   obsidianVault: string;
   obsidianFolder: string;
+  /** Read-only: outbound User-Agent, configured with BRIEFCAST_USER_AGENT in .env. */
+  userAgent?: string;
+  userAgentSource?: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings> & {
@@ -341,6 +352,68 @@ export interface WorkQueueConfig {
   llmEnabled: boolean;
   llmApiKeyConfigured: boolean;
   summarizationEnabled: boolean;
+}
+
+export interface MonitoringWindow {
+  label: string;
+  hours: number;
+  downloads: number;
+  transcripts: number;
+  transcribed_audio_seconds: number;
+}
+
+export interface MonitoringGPU {
+  index: string;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  utilization: number;
+}
+
+export interface MonitoringWorker {
+  configured: boolean;
+  reachable: boolean;
+  error?: string;
+  healthy: boolean;
+  accepting: boolean;
+  running: number;
+  queued: number;
+  max_running: number;
+  engine_profile?: string;
+  device?: string;
+  state_free_bytes: number;
+  jobs_finished: Record<string, number>;
+  avg_speed_ratio: number;
+  avg_stage_seconds: Record<string, number>;
+  transcribed_audio_seconds: number;
+  gpus: MonitoringGPU[];
+}
+
+export interface MonitoringSinceStart {
+  started_at: string;
+  downloads: Record<string, number>;
+  download_bytes: number;
+  avg_download_seconds: number;
+  transcriptions: Record<string, number>;
+  transcribed_audio_seconds: number;
+  avg_processing_seconds: number;
+  avg_end_to_end_seconds: number;
+  avg_worker_queue_seconds: number;
+  avg_speed_ratio: number;
+  scheduled_job_failures: Record<string, number>;
+  transcript_export_failures: number;
+}
+
+export interface MonitoringSnapshot {
+  generated_at: string;
+  queue: {
+    episodes_by_download_state: Record<string, number>;
+    transcripts_by_state: Record<string, number>;
+    oldest_pending_seconds: number;
+  };
+  windows: MonitoringWindow[];
+  since_start: MonitoringSinceStart;
+  worker: MonitoringWorker;
+  assets_free_bytes: number | null;
 }
 
 export interface WorkQueueItem {

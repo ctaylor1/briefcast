@@ -122,6 +122,7 @@ func TestSettingsEndpoints(t *testing.T) {
 		t.Fatalf("expected 400 from invalid PATCH /settings, got %d", resp.Code)
 	}
 
+	t.Setenv("BRIEFCAST_USER_AGENT", "")
 	validPatch := `{"keepAllEpisodes":false,"keepLatestEpisodes":3,"deleteAfterDays":10,"deleteOnlyPlayed":true}`
 	req = httptest.NewRequest(http.MethodPatch, "/settings", bytes.NewBufferString(validPatch))
 	req.Header.Set("Content-Type", "application/json")
@@ -140,6 +141,9 @@ func TestSettingsEndpoints(t *testing.T) {
 	}
 	if payload["obsidianVault"] != db.DefaultObsidianVault {
 		t.Fatalf("expected obsidianVault default %q, got %+v", db.DefaultObsidianVault, payload)
+	}
+	if payload["userAgent"] != service.DefaultUserAgent || payload["userAgentSource"] != service.UserAgentSourceDefault {
+		t.Fatalf("expected default user agent in settings, got %v (%v)", payload["userAgent"], payload["userAgentSource"])
 	}
 
 	obsidianPatch := `{"obsidianVault":"Research Vault","obsidianFolder":"Research\\Podcasts/Summaries"}`

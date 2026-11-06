@@ -17,6 +17,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/feedmeta"
 	"github.com/ctaylor1/briefcast/internal/id3meta"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/telemetry"
 	"github.com/ctaylor1/briefcast/model"
 	strip "github.com/grokify/html-strip-tags-go"
 	"gorm.io/gorm"
@@ -790,13 +791,22 @@ func DownloadMissingEpisodes() error {
 
 	setting := db.GetOrCreateSetting()
 
+	if requeued, staleErr := requeueStaleDownloads(time.Now()); staleErr != nil {
+		jobLogger.Warnw("failed to requeue interrupted downloads", "error", staleErr)
+	} else if requeued > 0 {
+		jobLogger.Warnw("requeued interrupted downloads", "count", requeued, "stale_after", staleDownloadAge().String())
+	}
+
 	data, err := db.GetAllPodcastItemsToBeDownloaded()
 	if err != nil {
 		jobLogger.Errorw("failed to fetch episodes to download", "error", err)
 		return err
 	}
 
-	items := *data
+	items, waiting := splitDownloadBackoff(*data, time.Now())
+	if waiting > 0 {
+		jobLogger.Infow("episodes waiting after repeated download failures", "count", waiting)
+	}
 	jobLogger.Infow("processing episodes", "count", len(items))
 	if len(items) == 0 {
 		return nil
@@ -835,7 +845,9 @@ func DownloadMissingEpisodes() error {
 		}
 
 		prefix := GetPodcastPrefix(&item, &settingSnapshot)
+		downloadStart := time.Now()
 		filePath, downloadErr := DownloadWithFallback(item.ID, &item, prefix)
+		recordEpisodeDownload(&item, downloadOutcome(downloadErr), downloadStart, filePath)
 		if downloadErr != nil {
 			if downloadErr == ErrDownloadCancelled {
 				jobLogger.Infow("download cancelled", "podcast_item_id", item.ID)
@@ -847,18 +859,25 @@ func DownloadMissingEpisodes() error {
 				_ = SetPodcastItemAsPaused(item.ID)
 				return
 			}
+			failures, nextAttempt := recordDownloadFailure(item.ID, time.Now())
 			jobLogger.Errorw("failed to download episode",
 				"podcast_item_id", item.ID,
 				"podcast", item.Podcast.Title,
 				"episode", item.Title,
 				"url", item.FileURL,
 				"error", downloadErr,
+				"consecutive_failures", failures,
+				"next_attempt_after", nextAttempt.UTC().Format(time.RFC3339),
 			)
-			_ = SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded)
+			if resetErr := SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded); resetErr != nil {
+				// The row stays "downloading"; requeueStaleDownloads recovers it later.
+				jobLogger.Warnw("failed to requeue episode after download failure", "podcast_item_id", item.ID, "error", resetErr)
+			}
 			setError(downloadErr)
 			return
 		}
 
+		clearDownloadFailures(item.ID)
 		if saveErr := SetPodcastItemAsDownloaded(item.ID, filePath); saveErr != nil {
 			jobLogger.Errorw("failed to update downloaded episode", "podcast_item_id", item.ID, "error", saveErr)
 			setError(saveErr)
@@ -986,7 +1005,9 @@ func DownloadSingleEpisode(podcastItemID string) error {
 	}
 
 	prefix := GetPodcastPrefix(&podcastItem, setting)
+	downloadStart := time.Now()
 	filePath, dlErr := DownloadWithFallback(podcastItem.ID, &podcastItem, prefix)
+	recordEpisodeDownload(&podcastItem, downloadOutcome(dlErr), downloadStart, filePath)
 
 	if dlErr != nil {
 		if dlErr == ErrDownloadCancelled {
@@ -1001,6 +1022,7 @@ func DownloadSingleEpisode(podcastItemID string) error {
 		_ = SetPodcastItemAsNotDownloaded(podcastItem.ID, db.NotDownloaded)
 		return dlErr
 	}
+	clearDownloadFailures(podcastItem.ID)
 	err = SetPodcastItemAsDownloaded(podcastItem.ID, filePath)
 
 	if setting.DownloadEpisodeImages {
@@ -1074,7 +1096,9 @@ func RefreshEpisodes() error {
 			jobLogger.Infow("forcing last episode date for new podcast", "podcast_id", item.ID, "title", item.Title)
 			db.ForceSetLastEpisodeDate(item.ID)
 		}
-		if addErr := AddPodcastItems(&item, isNewPodcast); addErr != nil {
+		addErr := AddPodcastItems(&item, isNewPodcast)
+		telemetry.ObserveFeedRefresh(addErr)
+		if addErr != nil {
 			jobLogger.Errorw("failed to refresh podcast feed", "podcast_id", item.ID, "title", item.Title, "error", addErr)
 			setError(addErr)
 		}
@@ -1276,6 +1300,9 @@ func GetSearchFromGpodder(pod model.GPodcast) *model.CommonSearchResultModel {
 	p.Image = pod.LogoURL
 	p.Title = pod.Title
 	p.Description = pod.Description
+	p.Author = pod.Author
+	p.Subscribers = pod.Subscribers
+	p.SubscribersLastWeek = pod.SubscribersLastWeek
 	return p
 }
 
@@ -1285,6 +1312,29 @@ func GetSearchFromItunes(pod model.ItunesSingleResult) *model.CommonSearchResult
 	p.URL = pod.FeedURL
 	p.Image = pod.ArtworkURL600
 	p.Title = pod.TrackName
+	p.Author = pod.ArtistName
+	p.EpisodeCount = pod.TrackCount
+	if !pod.ReleaseDate.IsZero() {
+		p.LatestEpisodeDate = pod.ReleaseDate.UTC().Format(time.RFC3339)
+	}
+	for _, genre := range pod.Genres {
+		if genre != "" && genre != "Podcasts" {
+			p.Categories = append(p.Categories, genre)
+		}
+	}
+	if pod.CollectionID > 0 {
+		p.AppleID = strconv.Itoa(pod.CollectionID)
+	} else if pod.TrackID > 0 {
+		p.AppleID = strconv.Itoa(pod.TrackID)
+	}
+	// genreIds lists the primary genre first; "26" is the generic Podcasts genre.
+	for _, id := range pod.GenreIds {
+		if id != "" && id != "26" {
+			p.AppleGenreID = id
+			p.AppleGenre = pod.PrimaryGenreName
+			break
+		}
+	}
 
 	return p
 }
@@ -1296,6 +1346,10 @@ func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchRes
 	p.Image = pod.Image
 	p.Title = pod.Title
 	p.Description = pod.Description
+	p.Author = pod.Author
+	if pod.ItunesID > 0 {
+		p.AppleID = strconv.Itoa(pod.ItunesID)
+	}
 
 	if pod.Categories != nil {
 		values := make([]string, 0, len(pod.Categories))

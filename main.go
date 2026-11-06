@@ -12,6 +12,7 @@ import (
 	"github.com/ctaylor1/briefcast/controllers"
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/logging"
+	"github.com/ctaylor1/briefcast/internal/telemetry"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-contrib/location"
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,8 @@ func main() {
 		return
 	}
 	db.Migrate()
+	telemetry.SetVersion(resolveRunningVersion())
+	service.RegisterPipelineMetrics()
 	r := buildRouter()
 	service.SafeGo("websocket hub", controllers.DefaultHub.Run)
 
@@ -135,6 +138,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem) // deprecated
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
+	router.POST("/podcastitems/:id/retranscribe", controllers.RetranscribePodcastItem)
 	router.GET("/podcastitems/:id/summary", controllers.GetPodcastItemSummary)
 	router.GET("/podcastitems/:id/links", controllers.GetPodcastItemLinks)
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
@@ -178,6 +182,10 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/settings/backfill-links", controllers.GetBackfillLinksStatus)
 	router.POST("/settings/export-all", controllers.ExportAll)
 	router.GET("/settings/export-all", controllers.GetExportAllStatus)
+	router.GET("/settings/monitoring", controllers.GetMonitoring)
+	// Prometheus scrape endpoints (same auth as the rest of the app).
+	router.GET("/metrics", gin.WrapH(telemetry.Handler()))
+	router.GET("/metrics/worker", controllers.GetWorkerMetrics)
 	router.GET("/settings/prompt-versions", controllers.GetPromptVersions)
 	router.POST("/settings/prompt-versions/:id/restore", controllers.RestorePromptVersion)
 	router.GET("/version", func(c *gin.Context) {
@@ -274,7 +282,9 @@ func runCronJob(name string, fn func() error) {
 	start := time.Now()
 	jobLogger.Infow("job_started")
 
-	if err := fn(); err != nil {
+	err := fn()
+	telemetry.ObserveScheduledJob(name, err, time.Since(start))
+	if err != nil {
 		jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return
 	}

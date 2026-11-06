@@ -15,20 +15,10 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useGlobalSearch } from "../composables/useGlobalSearch";
 import { useTheme } from "../composables/useTheme";
+import { groupNavSections, primaryNavItems, routeNavItems, type NavIcon } from "../lib/navigation";
 import type { LocalSearchResult } from "../types/api";
 import UiDropdown from "./ui/UiDropdown.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
-
-type NavIcon = "podcasts" | "episodes" | "summaries" | "links" | "downloads" | "add" | "player" | "settings" | "about";
-
-interface NavItem {
-  to: string;
-  label: string;
-  icon: NavIcon;
-  section: string;
-  meta: string;
-  keywords: string;
-}
 
 interface CommandRouteItem {
   kind: "route";
@@ -54,94 +44,7 @@ const route = useRoute();
 const router = useRouter();
 const { cycleTheme, themeModeLabel, initTheme } = useTheme();
 
-const primaryNavItems: NavItem[] = [
-  {
-    to: "/",
-    label: "Podcasts",
-    icon: "podcasts",
-    section: "Library",
-    meta: "Subscribed feeds",
-    keywords: "dashboard home feeds subscriptions library",
-  },
-  {
-    to: "/episodes",
-    label: "Episodes",
-    icon: "episodes",
-    section: "Library",
-    meta: "Chapters, transcripts, filters",
-    keywords: "episodes search chapters transcript filters",
-  },
-  {
-    to: "/summaries",
-    label: "Summaries",
-    icon: "summaries",
-    section: "Library",
-    meta: "Browse AI summaries",
-    keywords: "summaries ai llm read browse library",
-  },
-  {
-    to: "/links",
-    label: "Most referenced",
-    icon: "links",
-    section: "Library",
-    meta: "Links your podcasts cite most",
-    keywords: "links references show notes mentions people articles posts ranking top",
-  },
-  {
-    to: "/downloads",
-    label: "Downloads",
-    icon: "downloads",
-    section: "Library",
-    meta: "Queue status and progress",
-    keywords: "downloads queue status progress pause cancel",
-  },
-  {
-    to: "/add",
-    label: "Add Podcast",
-    icon: "add",
-    section: "Library",
-    meta: "Add by URL, OPML, discovery",
-    keywords: "add import discover rss feed url opml",
-  },
-  {
-    to: "/player",
-    label: "Player",
-    icon: "player",
-    section: "Playback",
-    meta: "Now playing queue",
-    keywords: "audio player playback listen now playing",
-  },
-  {
-    to: "/settings",
-    label: "Settings",
-    icon: "settings",
-    section: "System",
-    meta: "Retention and defaults",
-    keywords: "settings preferences retention defaults",
-  },
-];
-
-const aboutNavItem: NavItem = {
-  to: "/about",
-  label: "About",
-  icon: "about",
-  section: "System",
-  meta: "Repo and running version",
-  keywords: "about version github source repository release",
-};
-
-const routeNavItems: NavItem[] = [...primaryNavItems, aboutNavItem];
-
-const navSections = computed(() => {
-  const grouped = new Map<string, NavItem[]>();
-  for (const item of primaryNavItems) {
-    if (!grouped.has(item.section)) {
-      grouped.set(item.section, []);
-    }
-    grouped.get(item.section)?.push(item);
-  }
-  return Array.from(grouped.entries()).map(([title, items]) => ({ title, items }));
-});
+const navSections = groupNavSections(routeNavItems);
 
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const sidebarExpanded = ref(false);
@@ -588,30 +491,6 @@ onBeforeUnmount(() => {
         </svg>
         <span class="app-nav__label">{{ sidebarExpandedState ? "Collapse" : "Expand" }}</span>
       </button>
-
-      <div class="app-sidebar__footer">
-        <RouterLink
-          :to="aboutNavItem.to"
-          class="app-nav__link"
-          :aria-current="isActive(aboutNavItem.to) ? 'page' : undefined"
-        >
-          <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              v-for="stroke in iconStrokes(aboutNavItem.icon)"
-              :key="stroke"
-              :d="stroke"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span class="app-nav__text">
-            <span class="app-nav__label">{{ aboutNavItem.label }}</span>
-            <span class="app-nav__meta meta-text">{{ aboutNavItem.meta }}</span>
-          </span>
-        </RouterLink>
-      </div>
     </aside>
 
     <div class="app-main-wrap">
