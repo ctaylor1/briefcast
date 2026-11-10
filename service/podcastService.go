@@ -1214,57 +1214,52 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	if err != nil {
 		return err
 	}
-	var podcastItems []db.PodcastItem
-
-	err = db.GetAllPodcastItemsByPodcastID(id, &podcastItems)
-	if err != nil {
-		return err
-	}
+	var items []db.PodcastItemAssetPaths
 	var sharedWith []string
 	if deleteFiles {
+		// Read everything needed for file removal before deleting any rows.
+		if items, err = db.GetPodcastItemAssetPaths(id); err != nil {
+			return err
+		}
 		// Checked before anything is deleted, so a failed check leaves no partial delete.
-		sharedWith, err = otherPodcastIDsSharingFolder(podcast)
-		if err != nil {
-			return err
-		}
-	}
-	for _, item := range podcastItems {
-		if deleteFiles {
-			if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
-				Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
-			}
-			if item.LocalImage != "" {
-				if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
-					Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
-				}
-			}
-
-		}
-		if deleteErr := db.DeletePodcastItemByID(item.ID); deleteErr != nil {
-			return deleteErr
-		}
-
-	}
-
-	switch {
-	case !deleteFiles:
-		// The caller asked to keep this podcast's files, so its folders stay too.
-	case len(sharedWith) > 0:
-		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
-	default:
-		err = deletePodcastFolder(podcast.Title)
-		if err != nil {
+		if sharedWith, err = otherPodcastIDsSharingFolder(podcast); err != nil {
 			return err
 		}
 	}
 
-	err = db.DeletePodcastByID(id)
-	if err != nil {
+	// Rows first, in one transaction: a failure leaves the podcast complete,
+	// and a later file error can no longer leave a podcast with no episodes.
+	if err := db.DeletePodcastByID(id); err != nil {
 		return err
 	}
-	return nil
+	if !deleteFiles {
+		// The caller asked to keep this podcast's files, so its folders stay too.
+		return nil
+	}
 
+	// File removal is best effort: the rows are already gone.
+	for _, item := range items {
+		if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
+			Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
+		}
+		if item.LocalImage != "" {
+			if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
+				Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
+			}
+		}
+	}
+	if len(sharedWith) > 0 {
+		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
+		return nil
+	}
+	if err := removePodcastFolder(podcast.Title); err != nil {
+		Logger.Errorw("podcast deleted but its folders could not be removed", "podcast_id", id, "error", err)
+	}
+	return nil
 }
+
+// removePodcastFolder is a seam so tests can make folder removal fail.
+var removePodcastFolder = deletePodcastFolder
 
 // otherPodcastIDsSharingFolder returns the other podcasts stored in the same
 // folders as podcast. Folders are named only by the sanitized title, so different

@@ -272,3 +272,42 @@ func TestDeletePodcastDeletesNothingWhenSharedFolderCheckFails(t *testing.T) {
 	requirePathsExist(t, item.DownloadPath)
 	requirePodcastRows(t, podcast, item, true)
 }
+
+func TestDeletePodcastRemovesRowsEvenWhenFolderRemovalFails(t *testing.T) {
+	dataDir := filepath.Join(setupRetentionTestDB(t), "assets")
+	podcast := createPodcast(t, "Folder Failure Show", false)
+	item := seedDownloadedEpisode(t, dataDir, podcast, "folder-failure-episode")
+
+	original := removePodcastFolder
+	t.Cleanup(func() { removePodcastFolder = original })
+	removePodcastFolder = func(string) error { return errors.New("injected folder failure") }
+
+	if err := DeletePodcast(podcast.ID, true); err != nil {
+		t.Fatalf("a file error after the rows are deleted must not fail the delete: %v", err)
+	}
+	requirePodcastRows(t, podcast, item, false)
+}
+
+func TestDeletePodcastRollsBackEverythingWhenTheDatabaseFails(t *testing.T) {
+	dataDir := filepath.Join(setupRetentionTestDB(t), "assets")
+	podcast := createPodcast(t, "Rollback Show", false)
+	item := seedDownloadedEpisode(t, dataDir, podcast, "rollback-episode")
+
+	errDeleteFailed := errors.New("injected podcast delete failure")
+	failPodcastDelete := func(tx *gorm.DB) {
+		if tx.Statement.Table == "podcasts" {
+			_ = tx.AddError(errDeleteFailed)
+		}
+	}
+	if err := db.DB.Callback().Delete().Before("gorm:delete").Register("test:fail_podcast_delete", failPodcastDelete); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+	t.Cleanup(func() { _ = db.DB.Callback().Delete().Remove("test:fail_podcast_delete") })
+
+	if err := DeletePodcast(podcast.ID, true); !errors.Is(err, errDeleteFailed) {
+		t.Fatalf("expected the delete error, got %v", err)
+	}
+	// The episode delete ran first in the same transaction and was rolled back.
+	requirePodcastRows(t, podcast, item, true)
+	requirePathsExist(t, item.DownloadPath)
+}

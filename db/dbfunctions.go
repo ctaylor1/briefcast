@@ -179,10 +179,19 @@ func DeletePodcastItemByID(id string) error {
 	})
 }
 
-// DeletePodcastByID handles the corresponding operation.
+// DeletePodcastByID deletes a podcast and everything that belongs to it in one
+// transaction: its episodes, their Markdown revisions and show-note links, and
+// its tag links. Either all of it is gone or none of it is.
 func DeletePodcastByID(id string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("podcast_id = ?", id).Delete(&ShowNoteLink{}).Error; err != nil {
+		episodeIDs := tx.Model(&PodcastItem{}).Select("id").Where("podcast_id = ?", id)
+		if err := tx.Where("episode_id IN (?)", episodeIDs).Delete(&MarkdownRevision{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("podcast_id = ? OR podcast_item_id IN (?)", id, episodeIDs).Delete(&ShowNoteLink{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("podcast_id = ?", id).Delete(&PodcastItem{}).Error; err != nil {
 			return err
 		}
 		// Postgres enforces this foreign key, so a leftover tag link blocks the delete.
@@ -191,6 +200,20 @@ func DeletePodcastByID(id string) error {
 		}
 		return tx.Where("id=?", id).Delete(&Podcast{}).Error
 	})
+}
+
+// PodcastItemAssetPaths is the subset of an episode needed to remove its files.
+type PodcastItemAssetPaths struct {
+	ID           string
+	DownloadPath string
+	LocalImage   string
+}
+
+// GetPodcastItemAssetPaths lists a podcast's episode file paths without loading transcripts.
+func GetPodcastItemAssetPaths(podcastID string) ([]PodcastItemAssetPaths, error) {
+	var paths []PodcastItemAssetPaths
+	result := DB.Model(&PodcastItem{}).Select("id", "download_path", "local_image").Where("podcast_id = ?", podcastID).Find(&paths)
+	return paths, result.Error
 }
 
 // DeleteTagByID handles the corresponding operation.

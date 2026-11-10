@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - A panic in request middleware, such as settings loading, now returns `500` instead of dropping the connection.
 - Transcription, summaries, alternate feed URLs and ID3 chapter updates now write only the columns they change. A long transcription or summary no longer undoes a "played" or bookmark change made while it ran, and an episode deleted during either job stays deleted instead of being recreated.
 - A summary is no longer generated from a transcript that failed to save.
+- Deleting a podcast now removes its episodes, their Markdown revisions and show-note links, its tag links and the podcast in one database transaction, before touching any files. A failure no longer leaves a podcast with some or all of its episodes gone. File removal happens afterwards on a best-effort basis; failures are logged.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

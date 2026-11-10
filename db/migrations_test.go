@@ -257,3 +257,47 @@ func TestObsidianColumnsExistAfterMigrate(t *testing.T) {
 		t.Fatalf("expected default obsidian folder %q, got %q", DefaultObsidianFolder, setting.ObsidianFolder)
 	}
 }
+
+func TestDeletePodcastByIDRemovesEpisodesAndTheirRowsTogether(t *testing.T) {
+	setupDBForTest(t)
+	deleted := newPodcast(t, "Atomic podcast", "https://example.com/atomic.xml")
+	kept := newPodcast(t, "Kept podcast", "https://example.com/kept.xml")
+	deletedItem := newPodcastItem(t, deleted.ID, "atomic-guid", "Atomic episode", NotDownloaded, time.Now().UTC())
+	keptItem := newPodcastItem(t, kept.ID, "kept-guid", "Kept episode", NotDownloaded, time.Now().UTC())
+	newShowNoteLink(t, deleted.ID, deletedItem.ID, "https://x.com/jason")
+	newShowNoteLink(t, kept.ID, keptItem.ID, "https://x.com/jason")
+	for _, rev := range []MarkdownRevision{
+		{DocumentID: "doc-deleted", Revision: 1, EpisodeID: deletedItem.ID, ContentType: "summary", Fingerprint: "f1", Content: "a"},
+		{DocumentID: "doc-kept", Revision: 1, EpisodeID: keptItem.ID, ContentType: "summary", Fingerprint: "f2", Content: "b"},
+	} {
+		rev := rev
+		if err := DB.Create(&rev).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := DeletePodcastByID(deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(model interface{}, column, value string) int64 {
+		t.Helper()
+		var n int64
+		if err := DB.Model(model).Where(column+" = ?", value).Count(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(&PodcastItem{}, "podcast_id", deleted.ID); n != 0 {
+		t.Fatalf("deleted podcast kept %d episodes", n)
+	}
+	if n := count(&MarkdownRevision{}, "episode_id", deletedItem.ID); n != 0 {
+		t.Fatalf("deleted episode kept %d markdown revisions", n)
+	}
+	if n := count(&ShowNoteLink{}, "podcast_item_id", deletedItem.ID); n != 0 {
+		t.Fatalf("deleted episode kept %d links", n)
+	}
+	if count(&PodcastItem{}, "podcast_id", kept.ID) != 1 || count(&MarkdownRevision{}, "episode_id", keptItem.ID) != 1 || count(&ShowNoteLink{}, "podcast_item_id", keptItem.ID) != 1 {
+		t.Fatal("another podcast's rows were deleted")
+	}
+}
