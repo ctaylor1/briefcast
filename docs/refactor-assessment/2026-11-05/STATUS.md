@@ -44,11 +44,15 @@
 | The link backfill's back-to-back writes starved the per-minute transcription job of the lock. | Fixed: the backfill pauses 250 ms every 20 episodes. Not yet measured on a production-sized copy. |
 | A summary of an episode deleted after it was loaded wrote an orphaned Markdown revision (found by the Postgres run). | Fixed. |
 | "Download all" re-read the feed inside the request and could hang. | Fixed (see P17). |
+| `pip-audit` failed the Python CI job on `main`: ten dev-tool packages in `uv.lock` had known advisories. | Fixed: all ten updated; the dev audit is clean ("update Python dependencies with known advisories"). |
+| The worker images' `urllib3` 2.7.0 had three advisories. | Fixed: 2.8.0. |
+| The worker locks have 119 more advisories in 12 baseline packages. | **Open** (see below). |
 
 ## Open follow-ups
 
 - **`podcasts.url` uniqueness** (P18): decide how to handle existing duplicates before adding the index.
 - **F27, second part:** the app checks its execution timeout only after the worker accepts a job, and the two sides read different settings.
 - **Export file names** include an episode number (rank by publish date) that changes when older or undated episodes are added. The transcript and summary exports of one episode can therefore get different names.
-- **Python dependencies** (CI will report these): the dev environment's `virtualenv` 20.38.0 has three advisories (fixed in 21.14.9). The worker lock files pin `urllib3` 2.7.0, which has three advisories (fixed in 2.8.0). Updating either is a lock-file change that needs approval.
+- **Worker image advisories:** on 2026-11-10, `pip-audit` reported 119 advisories in 12 packages of both worker locks: `aiohttp`, `certifi`, `filelock`, `fsspec`, `lightning`, `multidict`, `nltk`, `opentelemetry-api`, `pillow`, `pytorch-lightning`, `setuptools` and `transformers`. Three `transformers` advisories have no fixed release. These are the preserved WhisperX baseline; several fixes are major upgrades (`pillow` 13, `transformers` 5) that change the transcription engine and need a GPU acceptance run. Until then the CI step "Audit shipped Python lock files" fails on the worker locks. Decide whether that step blocks, reports only, or ignores reviewed advisory IDs.
+- **Worker `VERSION`:** this release changes the worker (P13) and its `urllib3` pin, but `docker/whisperx/VERSION` is still `1.0.0`. Bump it before the next `worker-release.yml` publish so the published tag is not reused for different contents.
 - **Decisions left open in the backlog:** whether `/ws` and the hub are removed; whether a tripped missing-file breaker should show in the UI.

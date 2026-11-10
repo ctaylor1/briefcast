@@ -64,6 +64,8 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 - The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.
+- The worker images now ship `urllib3` 2.8.0 (was 2.7.0), fixing PYSEC-2026-4175, PYSEC-2026-4176 and PYSEC-2026-4177. Other packages in the worker images still have known advisories; see `docs/refactor-assessment/2026-11-05/STATUS.md`.
+- The development tools' lock (`uv.lock`) now has no known advisories. Updated: `virtualenv` 21.14.13, `filelock` 4.2.4, `pip` 26.2.2, `pytest` 9.0.3, `requests` 2.33.1, `urllib3` 2.8.0, `certifi` 2026.10.23, `idna` 3.15, `msgpack` 1.2.4 and `pygments` 2.20.0. `virtualenv` 21 also brings in `python-discovery` 1.6.4 and needs `distlib` 0.4.4 and `packaging` 26.3. These are not shipped in any image.
 
 ## [1.9.4] - 2026-07-11
 
