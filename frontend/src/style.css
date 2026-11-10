@@ -10,9 +10,11 @@
    * solid fill behind --color-on-solid. Each theme's values must hold 4.5:1
    * in both roles against that theme's surfaces (primary, secondary, hover).
    */
-  --color-accent: #1b6ec2;
-  --color-accent-hover: #15579b;
-  --color-accent-subtle: #e8f0fe;
+  /* Brand accent: taken from the logo gradient (#0ea7e0 -> #1a2d6b) at the first step that
+     holds 4.5:1 as text on every light surface and under white text. */
+  --color-accent: #1370ab;
+  --color-accent-hover: #155b97;
+  --color-accent-subtle: #e7f6fc;
   --color-on-solid: #ffffff;
   --color-danger: #b93434;
   --color-success: #28735f;
@@ -42,22 +44,31 @@
     "Segoe UI",
     Roboto,
     sans-serif;
-  --font-page-title-size: 30px;
-  --font-page-title-line-height: 36px;
+  /* Type scale (1.2 ratio, rounded): 12 / 14 / 16 / 18 / 20 / 24 / 30. Semantic sizes below
+     map onto it. */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 30px;
+  --font-page-title-size: var(--text-2xl);
+  --font-page-title-line-height: 32px;
   --font-page-title-weight: 700;
-  --font-section-size: 20px;
+  --font-section-size: var(--text-xl);
   --font-section-line-height: 28px;
   --font-section-weight: 600;
-  --font-card-title-size: 16px;
+  --font-card-title-size: var(--text-md);
   --font-card-title-line-height: 24px;
   --font-card-title-weight: 600;
-  --font-body-size: 16px;
+  --font-body-size: var(--text-md);
   --font-body-line-height: 24px;
   --font-body-weight: 400;
-  --font-caption-size: 12px;
+  --font-caption-size: var(--text-xs);
   --font-caption-line-height: 18px;
   --font-caption-weight: 400;
-  --font-button-size: 14px;
+  --font-button-size: var(--text-sm);
   --font-button-weight: 500;
   --font-button-tracking: 0.01em;
   --space-0: 0;
@@ -108,9 +119,10 @@
   --color-text-primary: #e0e0e0;
   --color-text-secondary: #bcbcbc;
   --color-text-tertiary: #909090;
-  --color-accent: #6bb0f5;
-  --color-accent-hover: #8fc4f8;
-  --color-accent-subtle: rgba(35, 131, 226, 0.2);
+  /* The logo's own cyan holds 4.5:1 on the dark surfaces and under dark text. */
+  --color-accent: #0ea7e0;
+  --color-accent-hover: #56c1e9;
+  --color-accent-subtle: rgba(14, 167, 224, 0.12);
   --color-on-solid: #101214;
   --color-danger: #f28b8b;
   --color-success: #5fc4b1;
@@ -362,6 +374,21 @@ img {
 .section-subtitle {
   margin: 0;
   color: var(--color-text-secondary);
+}
+
+/* Since the top bar no longer repeats it, the page header's title is the page title. */
+.page-header .section-title {
+  font-size: var(--font-page-title-size);
+  line-height: var(--font-page-title-line-height);
+  font-weight: var(--font-page-title-weight);
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --font-page-title-size: var(--text-3xl);
+    --font-page-title-line-height: 38px;
+  }
 }
 
 .meta-text {
@@ -1381,8 +1408,8 @@ img {
 }
 
 [data-theme="dark"] .command-pill--podcast {
-  background: rgba(35, 131, 226, 0.2);
-  color: #7cb8f7;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
 }
 
 [data-theme="dark"] .command-pill--episode {
