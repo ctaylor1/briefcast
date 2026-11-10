@@ -1,3 +1,4 @@
+import { toast } from "../lib/toast";
 import { computed, ref } from "vue";
 import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
@@ -357,13 +358,13 @@ export function useEpisodeDrawer() {
     const url = `${scheme}`;
     const w = window.open(url, "_blank");
     if (!w) {
-      alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+      toast.error(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
     } else {
       setTimeout(() => {
         try {
           if (w.closed) return;
           w.close();
-          alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+          toast.error(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
         } catch {
           // cross-origin — app likely opened
         }
@@ -377,7 +378,7 @@ export function useEpisodeDrawer() {
     const maxURLLen = 8000;
     if (encoded.length > maxURLLen) {
       downloadCanonicalTranscript();
-      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to ChatGPT manually.");
+      toast.info("The transcript is too large to send directly, so it was downloaded as a file. Upload it to ChatGPT yourself.");
       return;
     }
     void sendToApp(`chatgpt://chat?prompt=${encoded}`, "ChatGPT");
@@ -389,7 +390,7 @@ export function useEpisodeDrawer() {
     const maxURLLen = 8000;
     if (encoded.length > maxURLLen) {
       downloadCanonicalTranscript();
-      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to Claude manually.");
+      toast.info("The transcript is too large to send directly, so it was downloaded as a file. Upload it to Claude yourself.");
       return;
     }
     void sendToApp(`claude://chat?prompt=${encoded}`, "Claude");

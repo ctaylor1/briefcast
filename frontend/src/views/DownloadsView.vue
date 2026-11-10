@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "../lib/toast";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useDownloadQueue } from "../composables/useDownloadQueue";
@@ -9,12 +10,11 @@ import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { formatDateTime } from "../lib/format";
 import { DownloadStatus, isDownloaded, isDownloading, isPaused } from "../lib/episodeStatus";
 
-const infoMessage = ref("");
-const actionError = ref("");
 const confirmStopAllOpen = ref(false);
 const stoppingAllBusy = ref(false);
 const undoCancelItem = ref<PodcastItem | null>(null);
@@ -211,40 +211,34 @@ function downloadDateLabel(item: PodcastItem): string {
 }
 
 async function pauseAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await pauseDownloads();
-    infoMessage.value = "Downloads paused.";
+    toast.success("Downloads paused.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not update download pause.");
+    toast.error(getErrorMessage(error, "Could not update download pause."));
   }
 }
 
 async function resumeAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await resumeDownloads();
-    infoMessage.value = "Downloads resumed.";
+    toast.success("Downloads resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume downloads.");
+    toast.error(getErrorMessage(error, "Could not resume downloads."));
   }
 }
 
 async function cancelAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   stoppingAllBusy.value = true;
   try {
     await cancelAllQueuedDownloads();
-    infoMessage.value = "All queued downloads cancelled.";
+    toast.success("All queued downloads cancelled.");
     await fetchQueue();
     clearUndoCancel();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not cancel downloads.");
+    toast.error(getErrorMessage(error, "Could not cancel downloads."));
   } finally {
     stoppingAllBusy.value = false;
   }
@@ -281,40 +275,34 @@ async function undoCancelDownload(): Promise<void> {
   if (!item) {
     return;
   }
-  infoMessage.value = "";
-  actionError.value = "";
   clearUndoCancel();
   try {
     await resumeEpisodeDownload(item.ID);
-    infoMessage.value = "Download resumed.";
+    toast.success("Download resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume download.");
+    toast.error(getErrorMessage(error, "Could not resume download."));
   }
 }
 
 async function cancelDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await cancelEpisodeDownload(item.ID);
-    infoMessage.value = "Download cancelled.";
+    toast.success("Download cancelled.");
     armUndoCancel(item);
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not cancel download.");
+    toast.error(getErrorMessage(error, "Could not cancel download."));
   }
 }
 
 async function resumeDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await resumeEpisodeDownload(item.ID);
-    infoMessage.value = "Download resumed.";
+    toast.success("Download resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume download.");
+    toast.error(getErrorMessage(error, "Could not resume download."));
   }
 }
 
@@ -366,12 +354,6 @@ onUnmounted(() => {
       </p>
     </header>
 
-    <UiAlert v-if="infoMessage" tone="success">
-      {{ infoMessage }}
-    </UiAlert>
-    <UiAlert v-if="actionError" tone="danger">
-      {{ actionError }}
-    </UiAlert>
     <UiAlert v-if="undoCancelItem" tone="info">
       <div class="queue-undo">
         <span>Stopped "{{ undoCancelItem.Title }}".</span>
@@ -436,7 +418,7 @@ onUnmounted(() => {
             title="Refresh queue"
             @click="refreshQueue"
           >
-            ↻
+            <UiIcon name="refresh" />
           </UiButton>
         </div>
       </div>

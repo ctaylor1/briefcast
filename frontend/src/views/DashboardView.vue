@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "../lib/toast";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AlternateFeedsDialog from "../components/dashboard/AlternateFeedsDialog.vue";
@@ -15,9 +16,7 @@ import type { Podcast } from "../types/api";
 const isLoading = ref(true);
 const {
   errorMessage,
-  successMessage: infoMessage,
   setError,
-  setSuccess,
   clearAll,
   clearError,
 } = useStatusMessage(5000);
@@ -91,10 +90,10 @@ async function runAction(id: string, action: () => Promise<void>, success: strin
   clearAll();
   try {
     await action();
-    setSuccess(success);
+    toast.success(success);
     await loadPodcasts();
   } catch (error) {
-    setError(getErrorMessage(error, "The action failed."));
+    toast.error(getErrorMessage(error, "The action failed."));
   } finally {
     activeId.value = null;
   }
@@ -159,7 +158,7 @@ async function openAlternateFeeds(podcast: Podcast): Promise<void> {
     feedsUrls.value = resp.urls ?? [];
   } catch (error) {
     // Do not open the editor with an empty list: saving it would delete the real feeds.
-    setError(getErrorMessage(error, "Could not load alternate feeds."));
+    toast.error(getErrorMessage(error, "Could not load alternate feeds."));
     return;
   }
   feedsPodcast.value = podcast;
@@ -178,7 +177,7 @@ async function saveAlternateFeeds(urls: string[]): Promise<void> {
     await podcastsApi.setAlternateFeeds(feedsPodcast.value.ID, urls);
     feedsPodcast.value = null;
     feedsError.value = "";
-    setSuccess("Alternate feeds saved. Resolving alternate download URLs in background.");
+    toast.success("Alternate feeds saved. Resolving alternate download URLs in background.");
   } catch (error) {
     feedsError.value = getErrorMessage(error, "Failed to save alternate feeds.");
   } finally {
@@ -203,9 +202,6 @@ onMounted(loadPodcasts);
       </div>
     </header>
 
-    <UiAlert v-if="infoMessage" tone="success">
-      {{ infoMessage }}
-    </UiAlert>
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
     </UiAlert>

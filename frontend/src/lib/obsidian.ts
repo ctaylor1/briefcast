@@ -1,3 +1,5 @@
+import { toast } from "./toast";
+
 export const DEFAULT_OBSIDIAN_FOLDER = "Clippings";
 export const DEFAULT_OBSIDIAN_VAULT = "Vault";
 
@@ -37,7 +39,7 @@ export function buildPodcastMarkdownObsidianUrl(input: PodcastMarkdownInput): st
 // from UI defaults, the current date, or the currently configured model.
 export function sendPodcastMarkdownToObsidian(input: PodcastMarkdownInput): void {
   if (!input.markdown) {
-    alert("Markdown export is unavailable. Reload the episode or check the server logs.");
+    toast.error("Markdown export is unavailable. Reload the episode or check the server logs.");
     return;
   }
   const url = buildPodcastMarkdownObsidianUrl(input);
@@ -48,7 +50,7 @@ export function sendPodcastMarkdownToObsidian(input: PodcastMarkdownInput): void
     link.download = input.fileName;
     link.click();
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    alert("This note is too large for an Obsidian link. The Markdown file has been downloaded; move it into your vault.");
+    toast.info("This note is too large for an Obsidian link, so the Markdown file was downloaded. Move it into your vault.");
     return;
   }
   window.location.href = url;

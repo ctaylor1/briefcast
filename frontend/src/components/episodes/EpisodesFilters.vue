@@ -2,6 +2,7 @@
 import type { EpisodeSorting, EpisodeTriState } from "../../types/api";
 import PodcastFilter, { type PodcastFilterOption } from "../ui/PodcastFilter.vue";
 import UiButton from "../ui/UiButton.vue";
+import UiIcon from "../ui/UiIcon.vue";
 import UiCard from "../ui/UiCard.vue";
 import UiInput from "../ui/UiInput.vue";
 import UiSelect from "../ui/UiSelect.vue";
@@ -109,9 +110,7 @@ function resetFilters(): void {
           :checked="props.favoritesOnly"
           @change="emit('update:favoritesOnly', !props.favoritesOnly)"
         />
-        <svg width="14" height="14" viewBox="0 0 24 24" :fill="props.favoritesOnly ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
+        <UiIcon :name="props.favoritesOnly ? 'star-filled' : 'star'" :size="14" />
         <span>Favorites only</span>
       </label>
       <UiButton size="sm" variant="ghost" @click="resetFilters">

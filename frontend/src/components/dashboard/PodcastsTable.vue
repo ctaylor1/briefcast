@@ -4,6 +4,7 @@ import { podcastImageUrl } from "../../lib/api/paths";
 import type { Podcast } from "../../types/api";
 import UiBadge from "../ui/UiBadge.vue";
 import UiCard from "../ui/UiCard.vue";
+import UiIcon from "../ui/UiIcon.vue";
 import UiIconButton from "../ui/UiIconButton.vue";
 
 defineProps<{
@@ -90,9 +91,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('play', podcast.ID)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="play" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -100,9 +99,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('download-all', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 4v10M8 10l4 4 4-4M5 20h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="download" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -112,24 +109,17 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('toggle-pause', podcast)"
                 >
-                  <svg v-if="!podcast.IsPaused" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M10 4H6v16h4V4zM18 4h-4v16h4V4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon :name="podcast.IsPaused ? 'download-resume' : 'pause-downloads'" />
                 </UiIconButton>
 
                 <UiIconButton
                   label="Keep all episodes"
-                  :tooltip="podcast.RetentionKeepAll ? 'Keeping all episodes' : 'Keep all episodes (now uses the global retention)'"
+                  :tooltip="podcast.RetentionKeepAll ? 'Keeping all episodes' : 'Keep all episodes (now: global retention setting)'"
                   :pressed="podcast.RetentionKeepAll"
                   :disabled="activeId === podcast.ID"
                   @click="emit('toggle-retention', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zM12 5v2M8 5v2M16 5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="archive" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -139,9 +129,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('toggle-sponsor-skip', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M17 8l4-4M17 16l4 4M3 12h14M7 8l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="skip-sponsor" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -151,9 +139,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('toggle-briefpoint', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 5l7 4v6l-7 4-7-4V9l7-4zM12 12v7M12 12L5 9M12 12l7-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="briefpoint" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -161,9 +147,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('edit-feeds', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M4 11a9 9 0 0 1 9-9M4 4a16 16 0 0 1 16 16M5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="feed" />
                 </UiIconButton>
 
                 <UiIconButton
@@ -172,9 +156,7 @@ function getPodcastImage(id: string): string {
                   :disabled="activeId === podcast.ID"
                   @click="emit('delete', podcast)"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M3 6h18M8 6V4h8v2M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <UiIcon name="trash" />
                 </UiIconButton>
               </div>
             </td>

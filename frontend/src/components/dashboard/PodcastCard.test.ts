@@ -56,3 +56,14 @@ describe("podcast action toolbars", () => {
     assert.deepEqual(labels, EXPECTED_LABELS);
   });
 });
+
+describe("podcast table actions", () => {
+  it("emit the podcast for every action", async () => {
+    const podcast = makePodcast();
+    const wrapper = mount(PodcastsTable, { props: { podcasts: [podcast], activeId: null } });
+    await wrapper.get('button[aria-label="Download all episodes"]').trigger("click");
+    await wrapper.get('button[aria-label="Pause downloads"]').trigger("click");
+    assert.deepEqual(wrapper.emitted("download-all")?.[0], [podcast]);
+    assert.deepEqual(wrapper.emitted("toggle-pause")?.[0], [podcast]);
+  });
+});

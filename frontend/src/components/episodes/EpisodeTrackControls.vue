@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { isEpisodeFavorited } from "../../lib/bookmarks";
 import { DownloadStatus } from "../../lib/episodeStatus";
 import type { PodcastItem } from "../../types/api";
+import UiIcon from "../ui/UiIcon.vue";
 import UiTooltip from "../ui/UiTooltip.vue";
 
 const props = defineProps<{
@@ -48,13 +49,8 @@ function queueDownload(): void {
 <template>
   <div class="episode-track-controls">
     <UiTooltip text="Play">
-      <button
-        type="button"
-        class="track-control"
-        aria-label="Play"
-        @click="emit('play', props.item)"
-      >
-        <span class="track-control__glyph" aria-hidden="true">▶</span>
+      <button type="button" class="track-control" aria-label="Play" @click="emit('play', props.item)">
+        <UiIcon name="play" :size="20" />
       </button>
     </UiTooltip>
 
@@ -67,32 +63,7 @@ function queueDownload(): void {
         :aria-pressed="isPlayed ? 'true' : 'false'"
         @click="emit('toggle-played', props.item)"
       >
-        <svg
-          v-if="isPlayed"
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <circle cx="12" cy="12" r="10" fill="currentColor" />
-          <path
-            d="M7 12.5L10.5 16L17 9.5"
-            fill="none"
-            stroke="var(--color-bg-primary)"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
-        </svg>
+        <UiIcon :name="isPlayed ? 'check-circle' : 'circle'" :size="20" />
       </button>
     </UiTooltip>
 
@@ -105,34 +76,7 @@ function queueDownload(): void {
         :aria-pressed="isBookmarked ? 'true' : 'false'"
         @click="emit('toggle-bookmark', props.item)"
       >
-        <svg
-          v-if="isBookmarked"
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-            fill="currentColor"
-          />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <UiIcon :name="isBookmarked ? 'star-filled' : 'star'" :size="20" />
       </button>
     </UiTooltip>
 
@@ -153,47 +97,9 @@ function queueDownload(): void {
           focusable="false"
         >
           <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="2.5" />
-          <path
-            d="M20 12a8 8 0 0 0-8-8"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-          />
+          <path d="M20 12a8 8 0 0 0-8-8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
         </svg>
-        <svg
-          v-else-if="isDownloaded"
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <circle cx="12" cy="12" r="10" fill="currentColor" />
-          <path
-            d="M7 12.5L10.5 16L17 9.5"
-            fill="none"
-            stroke="var(--color-bg-primary)"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          class="track-control__icon"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            d="M12 3v11m0 0l4-4m-4 4l-4-4M5 19h14"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <UiIcon v-else :name="isDownloaded ? 'check-circle' : 'download'" :size="20" />
       </button>
     </UiTooltip>
 
@@ -204,16 +110,7 @@ function queueDownload(): void {
         aria-label="Cancel download"
         @click="emit('cancel-download', props.item)"
       >
-        <svg viewBox="0 0 24 24" class="track-control__icon" aria-hidden="true" focusable="false">
-          <path
-            d="M6 6l12 12M18 6L6 18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <UiIcon name="close" :size="20" />
       </button>
     </UiTooltip>
   </div>
@@ -266,11 +163,6 @@ function queueDownload(): void {
   border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
   background: var(--color-accent-subtle);
   color: var(--color-accent-hover);
-}
-
-.track-control__glyph {
-  font-size: 18px;
-  line-height: 1;
 }
 
 .track-control__icon {

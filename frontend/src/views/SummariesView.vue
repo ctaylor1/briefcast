@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "../lib/toast";
 import { createLatest } from "../lib/latest";
 import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
@@ -7,6 +8,7 @@ import { sanitizeHtml } from "../lib/sanitize";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
 import PodcastFilter from "../components/ui/PodcastFilter.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
@@ -187,7 +189,7 @@ async function toggleFavorite(item: SummaryListItem, event: Event): Promise<void
       readerItem.value.isFavorited = item.isFavorited;
     }
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Failed to update favorite.");
+    toast.error(getErrorMessage(error, "Failed to update favorite."));
   }
 }
 
@@ -506,9 +508,7 @@ onBeforeUnmount(() => {
             aria-label="Previous summary"
             @click="moveReader(-1)"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
+            <UiIcon name="chevron-left" :size="20" />
           </button>
           <button
             type="button"
@@ -519,9 +519,7 @@ onBeforeUnmount(() => {
             aria-label="Next summary"
             @click="moveReader(1)"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <UiIcon name="chevron-right" :size="20" />
           </button>
         </div>
       </div>
@@ -589,9 +587,7 @@ onBeforeUnmount(() => {
                 :aria-pressed="readerItem.isFavorited ? 'true' : 'false'"
                 @click="toggleFavorite(readerItem, $event)"
               >
-                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
+                <UiIcon :name="readerItem.isFavorited ? 'star-filled' : 'star'" :size="18" />
               </button>
             </div>
           </header>
@@ -799,9 +795,7 @@ onBeforeUnmount(() => {
             :aria-pressed="item.isFavorited ? 'true' : 'false'"
             @click="toggleFavorite(item, $event)"
           >
-            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" :fill="item.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
+            <UiIcon :name="item.isFavorited ? 'star-filled' : 'star'" :size="16" />
           </button>
           <button
             type="button"

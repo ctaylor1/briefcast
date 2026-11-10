@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { toast } from "../lib/toast";
 import { createLatest } from "../lib/latest";
+import UiIcon from "../components/ui/UiIcon.vue";
 import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -27,7 +29,6 @@ const router = useRouter();
 
 const isLoading = ref(true);
 const errorMessage = ref("");
-const infoMessage = ref("");
 const items = ref<PodcastItem[]>([]);
 const podcastOptions = ref<Podcast[]>([]);
 
@@ -232,14 +233,12 @@ async function togglePlayed(item: PodcastItem): Promise<void> {
   const nextValue = !previousValue;
   item.IsPlayed = nextValue;
 
-  infoMessage.value = "";
-  errorMessage.value = "";
   try {
     await episodesApi.setPlayed(item.ID, nextValue);
-    infoMessage.value = nextValue ? "Episode marked played." : "Episode marked unplayed.";
+    toast.success(nextValue ? "Episode marked played." : "Episode marked unplayed.");
   } catch (error) {
     item.IsPlayed = previousValue;
-    errorMessage.value = getErrorMessage(error, "Could not update played status.");
+    toast.error(getErrorMessage(error, "Could not update played status."));
   }
 }
 
@@ -250,39 +249,33 @@ async function toggleBookmark(item: PodcastItem): Promise<void> {
   item.BookmarkDate = currentlyBookmarked ? UNBOOKMARKED_DATE : new Date().toISOString();
   item.IsSummaryFavorited = !currentlyBookmarked;
 
-  infoMessage.value = "";
-  errorMessage.value = "";
   try {
     await episodesApi.setBookmarked(item.ID, !currentlyBookmarked);
-    infoMessage.value = currentlyBookmarked ? "Favorite removed." : "Favorite saved.";
+    toast.success(currentlyBookmarked ? "Favorite removed." : "Favorite saved.");
   } catch (error) {
     item.BookmarkDate = previousValue;
     item.IsSummaryFavorited = previousSummaryFavorite;
-    errorMessage.value = getErrorMessage(error, "Could not update favorite.");
+    toast.error(getErrorMessage(error, "Could not update favorite."));
   }
 }
 
 async function queueDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  errorMessage.value = "";
   try {
     await episodesApi.queueDownload(item.ID);
-    infoMessage.value = "Episode download queued.";
+    toast.success("Episode download queued.");
     void fetchEpisodes();
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Could not queue download.");
+    toast.error(getErrorMessage(error, "Could not queue download."));
   }
 }
 
 async function cancelDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  errorMessage.value = "";
   try {
     await downloadsApi.cancelEpisode(item.ID);
-    infoMessage.value = "Download cancelled.";
+    toast.success("Download cancelled.");
     void fetchEpisodes();
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, "Could not cancel download.");
+    toast.error(getErrorMessage(error, "Could not cancel download."));
   }
 }
 
@@ -361,9 +354,6 @@ onMounted(() => {
       </p>
     </header>
 
-    <UiAlert v-if="infoMessage" tone="success">
-      {{ infoMessage }}
-    </UiAlert>
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
     </UiAlert>
@@ -469,9 +459,7 @@ onMounted(() => {
             :aria-pressed="drawerItemFavorited ? 'true' : 'false'"
             @click="toggleBookmark(drawerItem)"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" :fill="drawerItemFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
+            <UiIcon :name="drawerItemFavorited ? 'star-filled' : 'star'" :size="16" />
             <span>{{ drawerFavoriteLabel }}</span>
           </button>
         </div>

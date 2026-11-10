@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "../lib/toast";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
@@ -102,11 +103,9 @@ const promptHistoryVersions = ref<PromptVersion[]>([]);
 const promptHistoryLoading = ref(false);
 const {
   errorMessage,
-  successMessage,
   clearAll,
   clearError,
   setError,
-  setSuccess,
 } = useStatusMessage(5000);
 let workQueuePollTimer: number | undefined;
 let summaryJobPollTimer: number | undefined;
@@ -457,9 +456,9 @@ async function saveBackCatalogSettings(): Promise<void> {
       initialDownloadMonths: sanitizeNumber(backCatalogForm.value.initialDownloadMonths),
     });
     backCatalogForm.value = mapToBackCatalogForm(updated);
-    setSuccess("Back catalog settings updated.");
+    toast.success("Back catalog settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update back catalog settings."));
+    toast.error(getErrorMessage(error, "Failed to update back catalog settings."));
   } finally {
     isSavingBackCatalog.value = false;
   }
@@ -476,9 +475,9 @@ async function saveRetentionSettings(): Promise<void> {
       deleteOnlyPlayed: retentionForm.value.deleteOnlyPlayed,
     });
     retentionForm.value = mapToRetentionForm(updated);
-    setSuccess("Retention settings updated.");
+    toast.success("Retention settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update retention settings."));
+    toast.error(getErrorMessage(error, "Failed to update retention settings."));
   } finally {
     isSavingRetention.value = false;
   }
@@ -499,9 +498,9 @@ async function saveSummarizationSettings(): Promise<void> {
     defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
     summarizationForm.value = mapToSummarizationForm(updated);
-    setSuccess("Summarization settings updated.");
+    toast.success("Summarization settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update summarization settings."));
+    toast.error(getErrorMessage(error, "Failed to update summarization settings."));
   } finally {
     isSavingSummarization.value = false;
   }
@@ -527,9 +526,9 @@ async function restorePromptVersion(id: string): Promise<void> {
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
     summarizationForm.value = mapToSummarizationForm(updated);
     promptHistoryOpen.value = false;
-    setSuccess("Prompt restored successfully.");
+    toast.success("Prompt restored successfully.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to restore prompt version."));
+    toast.error(getErrorMessage(error, "Failed to restore prompt version."));
   }
 }
 
@@ -547,9 +546,9 @@ async function saveModelSettings(): Promise<void> {
     modelSettingsForm.value = {
       llmConcurrency: updated.llmConcurrency ?? 1,
     };
-    setSuccess("Model settings updated.");
+    toast.success("Model settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update model settings."));
+    toast.error(getErrorMessage(error, "Failed to update model settings."));
   } finally {
     isSavingModelSettings.value = false;
   }
@@ -564,9 +563,9 @@ async function saveObsidianSettings(): Promise<void> {
       obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
     });
     obsidianForm.value = mapToObsidianForm(updated);
-    setSuccess("Obsidian settings updated.");
+    toast.success("Obsidian settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update Obsidian settings."));
+    toast.error(getErrorMessage(error, "Failed to update Obsidian settings."));
   } finally {
     isSavingObsidian.value = false;
   }
@@ -595,9 +594,9 @@ async function saveBriefpointSettings(): Promise<void> {
       briefpointAPIKey: "",
     };
     briefpointAPIKeyConfigured.value = updated.briefpointAPIKeyConfigured ?? false;
-    setSuccess("Briefpoint settings updated.");
+    toast.success("Briefpoint settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update Briefpoint settings."));
+    toast.error(getErrorMessage(error, "Failed to update Briefpoint settings."));
   } finally {
     isSavingBriefpoint.value = false;
   }
@@ -647,9 +646,9 @@ async function saveAppearanceSettings(): Promise<void> {
       lightStartHour: lightStartHour.value,
       darkStartHour: darkStartHour.value,
     });
-    setSuccess("Appearance settings updated.");
+    toast.success("Appearance settings updated.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update appearance settings."));
+    toast.error(getErrorMessage(error, "Failed to update appearance settings."));
   } finally {
     isSavingAppearance.value = false;
   }
@@ -664,7 +663,7 @@ async function resummarizeDryRun(): Promise<void> {
     const result = await settingsApi.previewResummarize(filter as import("../types/api").ResummarizeFilter);
     resummarizeDryRunCount.value = result.total;
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to preview re-summarize."));
+    toast.error(getErrorMessage(error, "Failed to preview re-summarize."));
   }
 }
 
@@ -680,9 +679,9 @@ async function startResummarize(): Promise<void> {
     summaryJobStatus.value = result.status;
     summaryJobErrorMessage.value = "";
     scheduleSummaryJobPoll();
-    setSuccess("Re-summarize job started. Summaries will be regenerated in the background.");
+    toast.success("Re-summarize job started. Summaries will be regenerated in the background.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to start re-summarize."));
+    toast.error(getErrorMessage(error, "Failed to start re-summarize."));
   } finally {
     isResummarizing.value = false;
   }
@@ -707,9 +706,6 @@ onUnmounted(() => {
       </p>
     </header>
 
-    <UiAlert v-if="successMessage" tone="success">
-      {{ successMessage }}
-    </UiAlert>
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
     </UiAlert>
