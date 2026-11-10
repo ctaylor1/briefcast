@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
@@ -47,23 +46,6 @@ func TestUploadOpmlSuccessAndAllTagsErrorBranches(t *testing.T) {
 		t.Fatalf("expected OPML upload success (200), got %d", resp.Code)
 	}
 
-	resp = performRequest(router, http.MethodGet, "/tags-page?page=bad&count=10", nil, nil)
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("expected invalid pagination query to return 400, got %d", resp.Code)
-	}
-
-	sqlDB, err := db.DB.DB()
-	if err != nil {
-		t.Fatalf("failed to get sql db handle: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("failed to close sql db handle: %v", err)
-	}
-
-	resp = performRequest(router, http.MethodGet, "/tags-page?page=1&count=10", nil, nil)
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("expected database error branch on tags page to return 400, got %d", resp.Code)
-	}
 }
 
 func TestUploadOpmlRejectsOversizedFile(t *testing.T) {

@@ -410,23 +410,6 @@ func DeletePodcastEpisodesByID(c *gin.Context) {
 	}
 }
 
-// DeletePodcasDeleteOnlyPodcasttEpisodesByID handles the corresponding operation.
-func DeletePodcasDeleteOnlyPodcasttEpisodesByID(c *gin.Context) {
-	var searchByIDQuery SearchByIDQuery
-
-	if c.ShouldBindUri(&searchByIDQuery) == nil {
-
-		if err := service.DeletePodcastEpisodes(searchByIDQuery.ID); err != nil {
-			controllerLogger.Warnw("failed to delete podcast episodes", "podcast_id", searchByIDQuery.ID, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusNoContent, gin.H{})
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-	}
-}
-
 // GetPodcastItemsByPodcastID handles the corresponding operation.
 func GetPodcastItemsByPodcastID(c *gin.Context) {
 	var searchByIDQuery SearchByIDQuery

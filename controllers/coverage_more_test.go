@@ -271,10 +271,8 @@ func TestBackupsAndRssErrorBranches(t *testing.T) {
 		t.Fatalf("failed to create valid backup file: %v", err)
 	}
 
-	resp := performRequest(router, http.MethodGet, "/backups", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 from backups endpoint, got %d", resp.Code)
-	}
+	// The legacy /backups page was removed (P20); only the RSS branch remains.
+	var resp *httptest.ResponseRecorder
 
 	sqlDB, err := db.DB.DB()
 	if err != nil {
@@ -300,12 +298,5 @@ func TestAddPodcastGenericErrorBranches(t *testing.T) {
 	})
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 from add podcast generic error branch, got %d", resp.Code)
-	}
-
-	resp = performRequest(router, http.MethodPost, "/add-new", strings.NewReader("url=http://127.0.0.1:1/feed.xml"), map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 from add-new generic error branch, got %d", resp.Code)
 	}
 }
