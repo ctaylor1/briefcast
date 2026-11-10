@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 )
@@ -73,6 +74,14 @@ json.dump({"feed": {"title": "Test feed"}, "entries": [
 	if err := AddPodcastItems(&podcast, false); err != nil {
 		t.Fatalf("add episodes: %v", err)
 	}
+	// Summaries run in the summary backfill that AddPodcastItems starts, not inline.
+	var requestedModel string
+	select {
+	case requestedModel = <-models:
+	case <-time.After(30 * time.Second):
+		t.Fatal("expected a summarization request")
+	}
+	waitForSummaryJobIdle(t)
 	items := make([]db.PodcastItem, 0)
 	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &items); err != nil {
 		t.Fatalf("load episodes: %v", err)
@@ -97,13 +106,20 @@ json.dump({"feed": {"title": "Test feed"}, "entries": [
 			t.Fatalf("unexpected episode %q", item.GUID)
 		}
 	}
-	select {
-	case got := <-models:
-		if got != "settings-model" {
-			t.Fatalf("expected Settings model in request, got %q", got)
+	if requestedModel != "settings-model" {
+		t.Fatalf("expected Settings model in request, got %q", requestedModel)
+	}
+}
+
+// waitForSummaryJobIdle waits for a background summary job to finish.
+func waitForSummaryJobIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for GetSummaryBackfillRunning() {
+		if time.Now().After(deadline) {
+			t.Fatal("summary job did not finish")
 		}
-	default:
-		t.Fatal("expected a summarization request")
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

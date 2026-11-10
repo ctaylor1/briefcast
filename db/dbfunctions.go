@@ -837,7 +837,8 @@ func RefreshLockByID(id string, duration int) error {
 	if duration > 0 {
 		updates["duration"] = duration
 	}
-	return DB.Model(&JobLock{}).Where("id = ?", id).Updates(updates).Error
+	// duration > 0: a released lock is never brought back by a late renewal.
+	return DB.Model(&JobLock{}).Where("id = ? AND duration > 0", id).Updates(updates).Error
 }
 
 // Unlock releases all rows for a named lock.

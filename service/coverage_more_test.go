@@ -562,6 +562,8 @@ json.dump(payload, sys.stdout)
 	}
 
 	var items []db.PodcastItem
+	// Feed-transcript summaries run in the summary backfill after AddPodcastItems.
+	waitForSummaryJobIdle(t)
 	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &items); err != nil {
 		t.Fatalf("failed to load podcast items: %v", err)
 	}
@@ -602,7 +604,9 @@ json.dump(payload, sys.stdout)
 	if ep1.LLMSummary != "Executive summary from feed transcript" {
 		t.Fatalf("expected ep-1 LLM summary from stub response, got %q", ep1.LLMSummary)
 	}
-	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", dateSub, "2024-01-01-1-Episode 1.txt")
+	// The summary is exported by the backfill, after ep-2 (no date) exists, so the
+	// episode number in the name is recomputed; see exportEpisodeFileName.
+	summaryPath := filepath.Join(os.Getenv("DATA"), "summaries", "Coverage Feed", dateSub, exportEpisodeFileName(&ep1)+".txt")
 	expectedSummary := "Executive summary from feed transcript\n\n---\n\n## Show Notes\n\nEpisode one summary"
 	if got, err := os.ReadFile(summaryPath); err != nil || string(got) != expectedSummary {
 		t.Fatalf("expected summary export at %q, got content=%q err=%v", summaryPath, string(got), err)

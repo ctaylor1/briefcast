@@ -105,11 +105,36 @@ func StartSummaryBackfill() (SummaryBackfillStatus, error) {
 		return SummaryBackfillStatus{}, err
 	}
 	SafeGo("summary backfill", func() {
+		defer runRequestedSummaryBackfill()
 		_, _, _ = runSummaryJob(func() (int, int, error) {
 			return runSummaryBackfill(cfg, setSummaryJobStatus)
 		})
 	})
 	return GetSummaryJobStatus(), nil
+}
+
+// summaryBackfillRequested records a request that arrived while a summary job
+// was running. That job chose its episodes before the new ones existed, so it
+// runs again once it finishes.
+var summaryBackfillRequested atomic.Bool
+
+// RequestSummaryBackfill summarizes episodes that are waiting for a summary,
+// now or as soon as the running summary job finishes.
+func RequestSummaryBackfill() {
+	_, err := StartSummaryBackfill()
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrSummaryJobAlreadyRunning):
+		summaryBackfillRequested.Store(true)
+	default:
+		logging.Sugar().Warnw("summary backfill not started", "error", err)
+	}
+}
+
+func runRequestedSummaryBackfill() {
+	if summaryBackfillRequested.CompareAndSwap(true, false) {
+		RequestSummaryBackfill()
+	}
 }
 
 // StartResummarizeSummaries reserves the job before returning and reports
@@ -123,6 +148,7 @@ func StartResummarizeSummaries(filter ResummarizeFilter) (SummaryBackfillStatus,
 		return SummaryBackfillStatus{}, err
 	}
 	SafeGo("resummarize summaries", func() {
+		defer runRequestedSummaryBackfill()
 		_, _, _ = runSummaryJob(func() (int, int, error) {
 			result, err := runResummarizeSummaries(filter, cfg, setSummaryJobStatus)
 			return result.Succeeded, result.Failed, err

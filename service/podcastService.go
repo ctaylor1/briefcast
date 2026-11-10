@@ -333,13 +333,9 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	setting := db.GetOrCreateSetting()
 	llmCfg := LoadLLMConfig()
 	summarizationEnabled := llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != ""
-	summarizationPrompt := ""
-	summarizationUserPrompt := ""
-	if summarizationEnabled {
-		llmCfg.Model = ResolveSummarizationModel(setting, llmCfg)
-		summarizationPrompt = ResolveSummarizationPrompt(setting, llmCfg)
-		summarizationUserPrompt = ResolveSummarizationUserPrompt(setting, llmCfg)
-	}
+	// New episodes with a feed transcript are summarized by the summary backfill
+	// after this returns, not here: an LLM call per episode held up the refresh.
+	queuedForSummary := 0
 	initialDownloadMode := NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode)
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
@@ -493,14 +489,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				ExportTranscript(&podcastItem)
 			}
 			if summarizationEnabled && transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
-				if sumErr := SummarizeEpisode(&podcastItem, llmCfg, summarizationPrompt, summarizationUserPrompt); sumErr != nil {
-					Logger.Warnw(
-						"episode summarization failed for feed transcript",
-						"podcast_item_id", podcastItem.ID,
-						"episode_guid", guid,
-						"error", sumErr,
-					)
-				}
+				queuedForSummary++
 			}
 		}
 	}
@@ -517,8 +506,16 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			Logger.Warnw("failed to resolve alternate file URLs during refresh", "podcast_id", podcast.ID, "error", resolveErr)
 		}
 	}
+	if queuedForSummary > 0 {
+		RequestSummaryBackfill()
+	}
 	return firstItemErr
 }
+
+const (
+	refreshLockMinutes          = 120
+	refreshLockHeartbeatSeconds = 300
+)
 
 func shouldQueueInitialBackCatalogEpisode(setting *db.Setting, mode string, index int, pubDate time.Time, now time.Time) bool {
 	switch NormalizeInitialDownloadModeWithDefault(mode) {
@@ -1118,7 +1115,7 @@ func RefreshEpisodes() error {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+	jobLock, acquired, lockErr := db.TryLock(jobName, refreshLockMinutes)
 	if lockErr != nil {
 		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
 		return lockErr
@@ -1133,6 +1130,12 @@ func RefreshEpisodes() error {
 		return acquireErr
 	}
 	defer db.UnlockByID(jobLock.ID)
+	// Renew the 120-minute lease while feeds, chapters and transcripts are
+	// fetched, so a long refresh is never treated as abandoned.
+	stopHeartbeat := startJobLockHeartbeat(jobLock.ID, refreshLockMinutes, refreshLockHeartbeatSeconds, func(err error) {
+		jobLogger.Warnw("job_lock_refresh_failed", "error", err)
+	})
+	defer stopHeartbeat()
 
 	var data []db.Podcast
 	err := db.GetAllPodcasts(&data, "")

@@ -506,10 +506,12 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 	}
 
 	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
 	var stopOnce sync.Once
 	ticker := time.NewTicker(time.Duration(refreshSecs) * time.Second)
 
-	go func() {
+	SafeGo("job lock heartbeat", func() {
+		defer close(doneCh)
 		defer ticker.Stop()
 		for {
 			select {
@@ -521,10 +523,13 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 				}
 			}
 		}
-	}()
+	})
 
+	// Stop waits for the goroutine, so a renewal cannot land after the caller
+	// releases the lock.
 	return func() {
 		stopOnce.Do(func() { close(stopCh) })
+		<-doneCh
 	}
 }
 

@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - `RELEASE.ps1 deploy -Target app` now requires a restore point when it replaces a running app: pass the folder holding the backup with `-RecoveryDir`, or pass `-NoRestorePoint` to deploy without one. The rollback record notes which.
 - Episode image and audio requests, search, the retention job and the file-size job now read only the columns they use, not whole episode rows with transcripts. The settings row is no longer read on every request. The file-size job handles at most 200 episodes per run.
 - **API change:** handlers that used to answer an empty `200` on failure now send an error. Missing episodes, podcasts and tags get `404` on the image, file, RSS, tag, `PATCH /podcastitems/:id` and `DELETE /podcastitems/:id/delete` routes; other failures get `500`. A podcast RSS request for a missing podcast no longer carries on after its error. `DELETE /podcastitems/:id/delete` now answers after the file is deleted, with the outcome.
+- Feed refresh no longer calls the LLM. Episodes that arrive with a feed transcript are summarized by the summary backfill, which starts after the refresh adds them. If a summary job is already running, the backfill runs again when that job ends. The refresh job also renews its 2-hour lease while it runs, and a renewal can no longer revive a lock that was just released.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
