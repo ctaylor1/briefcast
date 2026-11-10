@@ -9,7 +9,7 @@ import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import MonitoringPanel from "../components/settings/MonitoringPanel.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
-import { useTheme } from "../composables/useTheme";
+import { type ThemeMode, useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
 import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
@@ -68,7 +68,6 @@ const settingsReady = computed(() => !isLoading.value && !loadFailed.value);
 const isSavingBackCatalog = ref(false);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
-const isSavingAppearance = ref(false);
 const isSavingModelSettings = ref(false);
 const isSavingObsidian = ref(false);
 const isSavingBriefpoint = ref(false);
@@ -629,29 +628,18 @@ const commonTimezones = [
   "Pacific/Auckland",
 ];
 
+const themeOptions: Array<{ value: ThemeMode; label: string; description: string }> = [
+  { value: "system", label: "System", description: "Follow this device's light or dark setting." },
+  { value: "light", label: "Light", description: "Always light." },
+  { value: "dark", label: "Dark", description: "Always dark." },
+  { value: "schedule", label: "Schedule", description: "Light and dark at set hours." },
+];
+
 function formatHour(hour: number): string {
   if (hour === 0) return "12:00 AM";
   if (hour === 12) return "12:00 PM";
   if (hour < 12) return `${hour}:00 AM`;
   return `${hour - 12}:00 PM`;
-}
-
-async function saveAppearanceSettings(): Promise<void> {
-  isSavingAppearance.value = true;
-  clearAll();
-  try {
-    await settingsApi.update({
-      themeMode: themeMode.value,
-      timezone: timezone.value,
-      lightStartHour: lightStartHour.value,
-      darkStartHour: darkStartHour.value,
-    });
-    toast.success("Appearance settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update appearance settings."));
-  } finally {
-    isSavingAppearance.value = false;
-  }
 }
 
 async function resummarizeDryRun(): Promise<void> {
@@ -770,78 +758,64 @@ onUnmounted(() => {
 
       <!-- Appearance settings -->
       <UiCard v-if="settingsReady" padding="lg" class="stack-4">
-      <div class="stack-2">
-        <h3 class="settings-section-title">Appearance</h3>
-        <p class="section-subtitle">
-          Control the theme and schedule automatic light/dark switching.
-        </p>
-      </div>
-
-      <div class="surface-grid surface-grid--3">
-        <div class="stack-1">
-          <label class="settings-label" for="settings-theme-mode">Theme</label>
-          <select
-            id="settings-theme-mode"
-            class="ui-select"
-            :value="themeMode"
-            @change="setThemeMode(($event.target as HTMLSelectElement).value as 'light' | 'dark' | 'auto')"
-          >
-            <option value="auto">Auto (schedule)</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+        <div class="stack-2">
+          <h3 class="settings-section-title">Appearance</h3>
+          <p class="section-subtitle">Changes apply and save immediately.</p>
         </div>
 
-        <div class="stack-1">
-          <label class="settings-label" for="settings-timezone">Timezone</label>
-          <select
-            id="settings-timezone"
-            class="ui-select"
-            :value="timezone"
-            @change="setTimezone(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
-          </select>
-        </div>
-      </div>
+        <fieldset class="settings-theme-modes">
+          <legend class="settings-label">Theme</legend>
+          <label v-for="option in themeOptions" :key="option.value" class="settings-theme-mode">
+            <input
+              type="radio"
+              name="settings-theme-mode"
+              :value="option.value"
+              :checked="themeMode === option.value"
+              @change="setThemeMode(option.value)"
+            />
+            <span>
+              <span class="settings-theme-mode__title">{{ option.label }}</span>
+              <span class="meta-text">{{ option.description }}</span>
+            </span>
+          </label>
+        </fieldset>
 
-      <div class="surface-grid surface-grid--3">
-        <div class="stack-1">
-          <label class="settings-label" for="settings-light-start">Light mode starts at</label>
-          <select
-            id="settings-light-start"
-            class="ui-select"
-            :disabled="themeMode !== 'auto'"
-            :value="lightStartHour"
-            @change="setLightStartHour(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-          </select>
+        <div v-if="themeMode === 'schedule'" class="surface-grid surface-grid--3">
+          <div class="stack-1">
+            <label class="settings-label" for="settings-timezone">Timezone</label>
+            <select
+              id="settings-timezone"
+              class="ui-select"
+              :value="timezone"
+              @change="setTimezone(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
+            </select>
+          </div>
+          <div class="stack-1">
+            <label class="settings-label" for="settings-light-start">Light from</label>
+            <select
+              id="settings-light-start"
+              class="ui-select"
+              :value="lightStartHour"
+              @change="setLightStartHour(Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+            </select>
+          </div>
+          <div class="stack-1">
+            <label class="settings-label" for="settings-dark-start">Dark from</label>
+            <select
+              id="settings-dark-start"
+              class="ui-select"
+              :value="darkStartHour"
+              @change="setDarkStartHour(Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+            </select>
+          </div>
         </div>
-
-        <div class="stack-1">
-          <label class="settings-label" for="settings-dark-start">Dark mode starts at</label>
-          <select
-            id="settings-dark-start"
-            class="ui-select"
-            :disabled="themeMode !== 'auto'"
-            :value="darkStartHour"
-            @change="setDarkStartHour(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="surface-row">
-        <UiButton :disabled="isSavingAppearance" @click="saveAppearanceSettings">
-          {{ isSavingAppearance ? "Saving..." : "Save appearance settings" }}
-        </UiButton>
-        <p class="meta-text">
-          In Auto mode, the app switches between light and dark at the configured times.
-        </p>
-      </div>
-    </UiCard>
+      </UiCard>
 
     <!-- Back catalog download settings -->
     <UiCard v-if="settingsReady" padding="lg" class="stack-4">
@@ -2123,6 +2097,52 @@ onUnmounted(() => {
   .settings-tab {
     flex: 1 1 0;
     padding-inline: var(--space-3);
+  }
+}
+
+.settings-theme-modes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-theme-modes legend {
+  margin-bottom: var(--space-2);
+}
+
+.settings-theme-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+
+.settings-theme-mode:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.settings-theme-mode input {
+  margin-top: 3px;
+  accent-color: var(--color-accent);
+}
+
+.settings-theme-mode > span {
+  display: grid;
+}
+
+.settings-theme-mode__title {
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .settings-theme-modes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 </style>
