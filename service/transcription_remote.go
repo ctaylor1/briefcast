@@ -376,8 +376,11 @@ func remoteQueueQuery(statuses []string, now time.Time) *gorm.DB {
 // slot. The decoded identity/digest are still validated before any ACK or
 // checkpoint clearing.
 //
-// The <> '' term changes no results, because both LIKE patterns need text. It must
-// stay, written literally: it is what lets idx_podcast_items_open_checkpoint apply.
+// The empty-string test below changes no results, because both LIKE patterns
+// need text. It must stay, written literally, because it is what lets
+// idx_podcast_items_open_checkpoint apply:
+//
+//	transcript_checkpoint_json <> ''
 func remoteReceiptQuery(now time.Time) *gorm.DB {
 	return db.DB.Where("transcript_status = 'available' AND transcript_json <> '' AND deleted_at IS NULL AND transcript_checkpoint_json <> ''").Where("transcript_checkpoint_json LIKE ? AND transcript_checkpoint_json LIKE ?", `%"backend":"http"%`, `%"receipt_result_sha256":"%`).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", now).Order("COALESCE(transcript_next_attempt, updated_at) ASC").Order("id ASC").Limit(100)
 }
