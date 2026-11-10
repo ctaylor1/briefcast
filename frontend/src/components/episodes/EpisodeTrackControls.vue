@@ -50,7 +50,6 @@ function queueDownload(): void {
       <button
         type="button"
         class="track-control"
-        title="Play"
         aria-label="Play"
         @click="emit('play', props.item)"
       >
@@ -63,7 +62,6 @@ function queueDownload(): void {
         type="button"
         class="track-control"
         :class="{ 'track-control--active': isPlayingTrack }"
-        title="Stop"
         aria-label="Stop"
         :disabled="!isPlayingTrack"
         @click="emit('stop-playback', props.item)"
@@ -77,9 +75,8 @@ function queueDownload(): void {
         type="button"
         class="track-control"
         :class="{ 'track-control--active': isPlayed }"
-        :title="playedLabel"
-        :aria-label="playedLabel"
-        :aria-pressed="isPlayed"
+        aria-label="Played"
+        :aria-pressed="isPlayed ? 'true' : 'false'"
         @click="emit('toggle-played', props.item)"
       >
         <svg
@@ -116,9 +113,8 @@ function queueDownload(): void {
         type="button"
         class="track-control"
         :class="{ 'track-control--active': isBookmarked }"
-        :title="bookmarkLabel"
-        :aria-label="bookmarkLabel"
-        :aria-pressed="isBookmarked"
+        aria-label="Favorite"
+        :aria-pressed="isBookmarked ? 'true' : 'false'"
         @click="emit('toggle-bookmark', props.item)"
       >
         <svg
@@ -157,7 +153,6 @@ function queueDownload(): void {
         type="button"
         class="track-control"
         :class="{ 'track-control--active': isDownloaded }"
-        :title="downloadLabel"
         :aria-label="downloadLabel"
         :disabled="isDownloading || isDownloaded"
         @click="queueDownload"
@@ -218,7 +213,6 @@ function queueDownload(): void {
       <button
         type="button"
         class="track-control"
-        title="Cancel download"
         aria-label="Cancel download"
         @click="emit('cancel-download', props.item)"
       >

@@ -468,8 +468,8 @@ onMounted(() => {
             class="drawer-favorite-button"
             :class="{ 'drawer-favorite-button--active': drawerItemFavorited }"
             :title="drawerFavoriteLabel"
-            :aria-label="drawerFavoriteLabel"
-            :aria-pressed="drawerItemFavorited"
+            aria-label="Favorite"
+            :aria-pressed="drawerItemFavorited ? 'true' : 'false'"
             @click="toggleBookmark(drawerItem)"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" :fill="drawerItemFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" aria-hidden="true">

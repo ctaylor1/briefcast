@@ -500,9 +500,10 @@ onBeforeUnmount(() => {
             :class="{ 'reader__toolbar-btn--disabled': !readerHasPrevious }"
             :disabled="!readerHasPrevious || readerLoadingSummary"
             title="Previous summary"
+            aria-label="Previous summary"
             @click="moveReader(-1)"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
@@ -512,9 +513,10 @@ onBeforeUnmount(() => {
             :class="{ 'reader__toolbar-btn--disabled': !readerHasNext }"
             :disabled="!readerHasNext || readerLoadingSummary"
             title="Next summary"
+            aria-label="Next summary"
             @click="moveReader(1)"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
@@ -580,9 +582,11 @@ onBeforeUnmount(() => {
                 class="reader__fav-btn"
                 :class="{ 'reader__fav-btn--active': readerItem.isFavorited }"
                 :title="readerItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'"
+                aria-label="Favorite summary"
+                :aria-pressed="readerItem.isFavorited ? 'true' : 'false'"
                 @click="toggleFavorite(readerItem, $event)"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" :fill="readerItem.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
               </button>
@@ -816,9 +820,11 @@ onBeforeUnmount(() => {
             class="summaries-list__fav-btn"
             :class="{ 'summaries-list__fav-btn--active': item.isFavorited }"
             :title="item.isFavorited ? 'Remove from favorites' : 'Add to favorites'"
+            :aria-label="`Favorite: ${item.episodeTitle}`"
+            :aria-pressed="item.isFavorited ? 'true' : 'false'"
             @click="toggleFavorite(item, $event)"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" :fill="item.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" :fill="item.isFavorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
           </button>
