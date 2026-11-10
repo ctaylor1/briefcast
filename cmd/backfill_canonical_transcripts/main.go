@@ -37,7 +37,10 @@ func main() {
 	if conn != nil {
 		db.DB = conn
 	}
-	db.Migrate()
+	if err := db.Migrate(); err != nil {
+		fmt.Fprintf(os.Stderr, "database migration failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	updated, err := service.BackfillCanonicalTranscripts(*batchSize, *targetVersion)
 	if err != nil {

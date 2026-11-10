@@ -46,7 +46,12 @@ func main() {
 		appLogger.Fatalw("database initialization failed", "error", err)
 		return
 	}
-	db.Migrate()
+	if err := db.Migrate(); err != nil {
+		// Serving on a half-migrated schema risks writes the next migration
+		// cannot repair. Restore from backup or fix the cause, then restart.
+		appLogger.Fatalw("database migration failed; not starting", "error", err)
+		return
+	}
 	telemetry.SetVersion(resolveRunningVersion())
 	service.RegisterPipelineMetrics()
 	r := buildRouter()

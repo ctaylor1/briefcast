@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -311,12 +312,14 @@ where id in (
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
 
 // RunMigrations handles the corresponding operation.
-func RunMigrations() {
+func RunMigrations() error {
 	for _, mig := range migrations {
 		if err := ExecuteAndSaveMigration(mig.Name, mig.Query); err != nil {
-			logging.Sugar().Errorw("database migration failed", "name", mig.Name, "error", err)
+			logging.Sugar().Errorw("database migration failed; later migrations were not run", "name", mig.Name, "error", err)
+			return fmt.Errorf("migration %s: %w", mig.Name, err)
 		}
 	}
+	return nil
 }
 
 // ExecuteAndSaveMigration handles the corresponding operation.

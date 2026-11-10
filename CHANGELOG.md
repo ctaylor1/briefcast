@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - `LOG_OUTPUT` now defaults to `stdout` in `docker-compose.yml`. The previous default, `both`, was not a keyword: logs went to a file named `both` inside the container and never reached `docker logs`.
 - The HTTP server now has a 10-second header read timeout and a 2-minute idle timeout, and shuts down cleanly on `SIGTERM` or Ctrl+C, giving in-flight requests up to 10 seconds. `docker stop` no longer waits for the kill timeout. Streams have no write timeout.
 - Request bodies are capped at 1 MiB, except OPML uploads, which keep their own limit. Larger bodies get `413`.
+- **Upgrade note:** the app now refuses to start when a database migration fails, and runs no later migrations. It used to log the failure and serve on a half-migrated schema. Before upgrading, check the last startup log for `database migration failed` lines; a migration that has been failing quietly will now stop startup.
+- `RELEASE.ps1 deploy -Target app` now requires a restore point when it replaces a running app: pass the folder holding the backup with `-RecoveryDir`, or pass `-NoRestorePoint` to deploy without one. The rollback record notes which.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
@@ -27,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - Transcription, summaries, alternate feed URLs and ID3 chapter updates now write only the columns they change. A long transcription or summary no longer undoes a "played" or bookmark change made while it ran, and an episode deleted during either job stays deleted instead of being recreated.
 - A summary is no longer generated from a transcript that failed to save.
 - Deleting a podcast now removes its episodes, their Markdown revisions and show-note links, its tag links and the podcast in one database transaction, before touching any files. A failure no longer leaves a podcast with some or all of its episodes gone. File removal happens afterwards on a best-effort basis; failures are logged.
+- Scheduled backups now archive a consistent `VACUUM INTO` snapshot of the configured SQLite database, wherever `DATABASE_URL` points. Previously they copied the live `$CONFIG/briefcast.db` file. Write and close errors are reported, a failed backup leaves no archive, and Postgres deployments no longer collect empty archives. Pruning keeps the newest five backup archives and leaves other files in the folder alone.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

@@ -66,13 +66,41 @@ func logSQLiteSettings(localDB *sql.DB, busyTimeoutMS int, maxOpenConns int) {
 	logging.Sugar().Infow("sqlite connection settings", "busy_timeout_ms", busyTimeoutMS, "max_open_conns", maxOpenConns, "journal_mode", journalMode)
 }
 
-// Migrate Database
-func Migrate() {
+// Migrate brings the schema up to date. It stops at the first failure and
+// returns it: later migrations can depend on earlier ones (a dedupe before a
+// unique index), and serving on a half-migrated schema risks bad writes.
+func Migrate() error {
 	if err := DB.AutoMigrate(&Podcast{}, &PodcastItem{}, &Setting{}, &Migration{}, &JobLock{}, &Tag{}, &ShowNoteLink{}, &LinkTarget{}, &PromptVersion{}, &MarkdownRevision{}); err != nil {
 		logging.Sugar().Errorw("database automigrate failed", "error", err)
-		return
+		return fmt.Errorf("automigrate: %w", err)
 	}
-	RunMigrations()
+	return RunMigrations()
+}
+
+// SQLiteSnapshot writes a consistent copy of the open SQLite database to
+// dest with VACUUM INTO. dest must not exist. It is an error on Postgres.
+func SQLiteSnapshot(dest string) error {
+	if activeDriver != DriverSQLite {
+		return fmt.Errorf("sqlite snapshot requested on %s", activeDriver)
+	}
+	return DB.Exec("VACUUM INTO ?", dest).Error
+}
+
+// SQLiteFilePath returns the file path of the configured SQLite database,
+// without a file: prefix or query options.
+func SQLiteFilePath() (string, error) {
+	config, err := ResolveDatabaseConfig()
+	if err != nil {
+		return "", err
+	}
+	if config.Driver != DriverSQLite {
+		return "", fmt.Errorf("database driver is %s, not sqlite", config.Driver)
+	}
+	source := strings.TrimPrefix(config.DataSource, "file:")
+	if i := strings.IndexByte(source, '?'); i >= 0 {
+		source = source[:i]
+	}
+	return source, nil
 }
 
 // GetDB handles the corresponding operation.

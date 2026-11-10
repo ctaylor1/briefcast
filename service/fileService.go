@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -404,18 +405,31 @@ func FileExists(filePath string) bool {
 
 }
 
-// GetAllBackupFiles handles the corresponding operation.
+// GetAllBackupFiles lists the scheduled backup archives, newest first. Other
+// files in the backups folder are ignored, so pruning never removes them.
 func GetAllBackupFiles() ([]string, error) {
 	var files []string
 	folder := createConfigFolderIfNotExists("backups")
 	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && isBackupArchiveName(info.Name()) {
 			files = append(files, path)
 		}
 		return nil
 	})
 	sort.Sort(sort.Reverse(sort.StringSlice(files)))
 	return files, err
+}
+
+const (
+	backupArchivePrefix = "briefcast_backup_"
+	backupArchiveSuffix = ".tar.gz"
+)
+
+func isBackupArchiveName(name string) bool {
+	return strings.HasPrefix(name, backupArchivePrefix) && strings.HasSuffix(name, backupArchiveSuffix)
 }
 
 // GetFileSize handles the corresponding operation.
@@ -471,39 +485,86 @@ func GetFileSizeFromURL(url string) (int64, error) {
 	return int64(size), nil
 }
 
-// CreateBackup handles the corresponding operation.
+// ErrBackupSkipped reports that the scheduled backup does not cover this database.
+var ErrBackupSkipped = errors.New("scheduled backup skipped")
+
+// CreateBackup writes a consistent snapshot of the SQLite database, taken with
+// VACUUM INTO, to a tar.gz under $CONFIG/backups and keeps the newest five.
+// On Postgres it does nothing: use pg_dump (see docs/backup-and-restore.md).
 func CreateBackup() (string, error) {
-	backupFileName := "briefcast_backup_" + backupNow().Format("2006.01.02_150405") + ".tar.gz"
+	if db.CurrentDriver() != db.DriverSQLite {
+		Logger.Infow("scheduled backup skipped: it covers SQLite only; back up Postgres with pg_dump", "driver", db.CurrentDriver())
+		return "", ErrBackupSkipped
+	}
+	dbPath, err := db.SQLiteFilePath()
+	if err != nil {
+		return "", err
+	}
+
+	backupFileName := backupArchivePrefix + backupNow().Format("2006.01.02_150405") + backupArchiveSuffix
 	folder := createConfigFolderIfNotExists("backups")
-	configPath := os.Getenv("CONFIG")
-	tarballFilePath := path.Join(folder, backupFileName)
-	// #nosec G304 -- backup destination is under configured app config directory.
-	file, err := os.Create(tarballFilePath)
-	if err != nil {
-		return "", fmt.Errorf("could not create tarball file %q: %w", tarballFilePath, err)
-	}
-	defer file.Close()
+	tarballFilePath := filepath.Join(folder, backupFileName)
+	snapshotPath := tarballFilePath + ".db.partial"
+	partialTarball := tarballFilePath + ".partial"
+	defer func() {
+		for _, leftover := range []string{snapshotPath, partialTarball} {
+			if removeErr := os.Remove(leftover); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+				Logger.Warnw("could not remove partial backup file", "path", leftover, "error", removeErr)
+			}
+		}
+	}()
 
-	dbPath := path.Join(configPath, "briefcast.db")
-	// #nosec G703 -- dbPath is rooted at configured app config directory.
-	_, err = os.Stat(dbPath)
-	if err != nil {
-		return "", fmt.Errorf("could not find db file %q: %w", dbPath, err)
+	started := time.Now()
+	if err := db.SQLiteSnapshot(snapshotPath); err != nil {
+		return "", fmt.Errorf("could not snapshot database: %w", err)
 	}
+	// The archive entry keeps the database's own path, as before.
+	if err := writeBackupTarball(partialTarball, snapshotPath, dbPath); err != nil {
+		return "", err
+	}
+	if err := os.Rename(partialTarball, tarballFilePath); err != nil {
+		return "", fmt.Errorf("could not finish backup %q: %w", tarballFilePath, err)
+	}
+	Logger.Infow("backup created", "file", backupFileName, "duration_ms", time.Since(started).Milliseconds())
+	deleteOldBackup()
+	return backupFileName, nil
+}
+
+// writeBackupTarball archives source under entryName, checking every close so a
+// truncated archive is reported instead of kept.
+func writeBackupTarball(destination, source, entryName string) (err error) {
+	// #nosec G304 -- destination is under the configured app config directory.
+	file, err := os.Create(destination)
+	if err != nil {
+		return fmt.Errorf("could not create tarball file %q: %w", destination, err)
+	}
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("could not close tarball file %q: %w", destination, closeErr)
+		}
+	}()
 	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
-
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
-
-	err = addFileToTarWriter(dbPath, tarWriter)
-	if err == nil {
-		deleteOldBackup()
+	if err := addFileToTarWriterAs(source, entryName, tarWriter); err != nil {
+		return err
 	}
-	return backupFileName, err
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("could not finish tar stream: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("could not finish gzip stream: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("could not flush tarball file %q: %w", destination, err)
+	}
+	return nil
 }
 
 func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
+	return addFileToTarWriterAs(filePath, filePath, tarWriter)
+}
+
+func addFileToTarWriterAs(filePath string, entryName string, tarWriter *tar.Writer) error {
 	// #nosec G304,G703 -- filePath is a generated internal backup input path.
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -517,7 +578,7 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 	}
 
 	header := &tar.Header{
-		Name:    filePath,
+		Name:    entryName,
 		Size:    stat.Size(),
 		Mode:    int64(stat.Mode()),
 		ModTime: stat.ModTime(),
