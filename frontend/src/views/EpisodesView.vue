@@ -1,78 +1,31 @@
 <script setup lang="ts">
+import { episodePath } from "../lib/routes";
 import { usePlayer } from "../composables/usePlayer";
 import { toast } from "../lib/toast";
 import { createLatest } from "../lib/latest";
-import UiIcon from "../components/ui/UiIcon.vue";
-import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
-import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
-import EpisodeLinksPanel from "../components/episodes/EpisodeLinksPanel.vue";
 import EpisodesFilters from "../components/episodes/EpisodesFilters.vue";
 import EpisodesListItem from "../components/episodes/EpisodesListItem.vue";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
 import EpisodesTable from "../components/episodes/EpisodesTable.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
-import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
-import UiDrawer from "../components/ui/UiDrawer.vue";
-import UiInput from "../components/ui/UiInput.vue";
 import { downloadsApi, episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
 import { isEpisodeFavorited, UNBOOKMARKED_DATE } from "../lib/bookmarks";
-import { formatDuration } from "../lib/format";
-import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
 
 const player = usePlayer();
 const route = useRoute();
+const router = useRouter();
 
 const isLoading = ref(true);
 const errorMessage = ref("");
 const items = ref<PodcastItem[]>([]);
 const podcastOptions = ref<Podcast[]>([]);
 
-const {
-  drawerOpen,
-  drawerItem,
-  drawerTab,
-  drawerChapters,
-  drawerTranscriptStatus,
-  drawerTranscriptSegments,
-  drawerTranscriptText,
-  drawerTranscriptAssets,
-  drawerLoadingChapters,
-  drawerLoadingTranscript,
-  drawerLinks,
-  drawerLoadingLinks,
-  drawerLoadError,
-  chaptersSearch,
-  transcriptSearch,
-  filteredChapters,
-  filteredTranscriptSegments,
-  transcriptLines,
-  filteredTranscriptLines,
-  transcriptDisplayText,
-  drawerCanonicalTranscript,
-  downloadCanonicalTranscript,
-  sendToChatGPT,
-  sendToClaude,
-  sendTranscriptToObsidian,
-  sendSummaryToObsidian,
-  drawerSummaryStatus,
-  drawerSummaryText,
-  drawerSummaryDate,
-  drawerSummaryModel,
-  drawerLoadingSummary,
-  openDrawer,
-  setDrawerTab,
-  closeDrawer,
-  drawerTranscriptSummary,
-  drawerChaptersSummary,
-  drawerSummarySummary,
-  drawerTabs,
-} = useEpisodeDrawer();
 
 const filter = reactive<{
   q: string;
@@ -115,14 +68,6 @@ const hasActiveFilters = computed(
 
 const sortedPodcastOptions = computed(() =>
   [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
-);
-
-const drawerItemFavorited = computed(() =>
-  drawerItem.value ? isEpisodeFavorited(drawerItem.value) : false,
-);
-
-const drawerFavoriteLabel = computed(() =>
-  drawerItemFavorited.value ? "Remove favorite" : "Favorite",
 );
 
 function parseQueryIdList(raw: unknown): string[] {
@@ -280,15 +225,16 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
   }
 }
 
+// Opens the episode page; the row's Chapters/Transcript buttons open that tab.
+function openDetails(item: PodcastItem, tab?: "overview" | "chapters" | "transcript"): void {
+  void router.push({ path: episodePath(item.ID), query: tab && tab !== "overview" ? { tab } : {} });
+}
+
 // Plays in the persistent player bar; the user stays on this page.
 function openPlayer(item: PodcastItem): void {
   void player.playEpisode(item);
 }
 
-function openPlayerAt(item: PodcastItem, startSeconds: number): void {
-  const normalizedStart = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
-  void player.playEpisodeAt(item, normalizedStart);
-}
 
 watch(
   () => [filter.count, filter.sorting, filter.isDownloaded, filter.isPlayed, filter.favoritesOnly, filter.podcastIds.join(",")],
@@ -402,7 +348,7 @@ onMounted(() => {
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"
           @cancel-download="cancelDownload"
-          @open-details="openDrawer"
+          @open-details="openDetails"
         />
       </div>
 
@@ -414,7 +360,7 @@ onMounted(() => {
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"
           @cancel-download="cancelDownload"
-          @open-details="openDrawer"
+          @open-details="openDetails"
         />
       </div>
     </div>
@@ -429,189 +375,6 @@ onMounted(() => {
       @previous="filter.page = filter.previousPage; void fetchEpisodes()"
       @next="filter.page = filter.nextPage; void fetchEpisodes()"
     />
-
-    <UiDrawer
-      :open="drawerOpen"
-      :title="drawerItem?.Title || 'Episode details'"
-      :description="drawerItem?.Podcast?.Title || ''"
-      @close="closeDrawer"
-    >
-      <div class="stack-4">
-        <div v-if="drawerItem" class="drawer-favorite-row">
-          <UiBadge :tone="drawerItemFavorited ? 'info' : 'neutral'">
-            {{ drawerItemFavorited ? "Favorited" : "No favorite" }}
-          </UiBadge>
-          <button
-            type="button"
-            class="drawer-favorite-button"
-            :class="{ 'drawer-favorite-button--active': drawerItemFavorited }"
-            :title="drawerFavoriteLabel"
-            aria-label="Favorite"
-            :aria-pressed="drawerItemFavorited ? 'true' : 'false'"
-            @click="toggleBookmark(drawerItem)"
-          >
-            <UiIcon :name="drawerItemFavorited ? 'star-filled' : 'star'" :size="16" />
-            <span>{{ drawerFavoriteLabel }}</span>
-          </button>
-        </div>
-
-        <div class="drawer-tabs">
-          <UiButton
-            v-for="tab in drawerTabs"
-            :key="tab.id"
-            size="sm"
-            :variant="drawerTab === tab.id ? 'primary' : 'ghost'"
-            @click="setDrawerTab(tab.id)"
-          >
-            {{ tab.label }}
-          </UiButton>
-        </div>
-
-        <UiAlert v-if="drawerLoadError" tone="danger">
-          {{ drawerLoadError }}
-        </UiAlert>
-
-        <div v-if="drawerTab === 'overview'" class="stack-3">
-          <div>
-            <p class="meta-text">Summary</p>
-            <p class="drawer-body-copy">{{ drawerItem?.Summary || "No summary available." }}</p>
-          </div>
-          <div class="drawer-summary-grid">
-            <UiCard padding="sm" tone="subtle">
-              <p class="meta-text">Transcript</p>
-              <p class="drawer-body-copy">{{ drawerTranscriptSummary() }}</p>
-            </UiCard>
-            <UiCard padding="sm" tone="subtle">
-              <p class="meta-text">Chapters</p>
-              <p class="drawer-body-copy">{{ drawerChaptersSummary() }}</p>
-            </UiCard>
-          </div>
-        </div>
-
-        <div v-else-if="drawerTab === 'chapters'" class="stack-3">
-          <div class="surface-row drawer-search-row">
-            <UiInput v-model="chaptersSearch" placeholder="Search chapters" />
-            <span v-if="drawerChapters.length > 0" class="meta-text">
-              Showing {{ filteredChapters.length }} of {{ drawerChapters.length }}
-            </span>
-          </div>
-          <p v-if="drawerLoadingChapters" class="meta-text">Loading chapters...</p>
-          <p v-else-if="drawerChapters.length === 0" class="meta-text">No chapters available for this episode.</p>
-          <p v-else-if="filteredChapters.length === 0" class="meta-text">No chapters match “{{ chaptersSearch }}”.</p>
-          <ul v-else class="drawer-list">
-            <li
-              v-for="chapter in filteredChapters"
-              :key="`${chapter.title}-${chapter.startSeconds}`"
-              class="drawer-list__row"
-            >
-              <div class="drawer-list__meta">
-                <div class="surface-row">
-                  <p class="drawer-list__title">{{ chapter.title }}</p>
-                  <UiBadge v-if="isSponsorChapter(chapter.title)" tone="info">Sponsor</UiBadge>
-                </div>
-                <p class="meta-text">Starts at {{ formatDuration(Math.floor(chapter.startSeconds)) }}</p>
-              </div>
-              <UiButton
-                size="sm"
-                variant="outline"
-                class="drawer-list__play-button"
-                @click="drawerItem && openPlayerAt(drawerItem, chapter.startSeconds)"
-              >
-                Play from here
-              </UiButton>
-            </li>
-          </ul>
-        </div>
-
-        <div v-else-if="drawerTab === 'transcript'" class="stack-3">
-          <div class="surface-row drawer-search-row">
-            <UiInput v-model="transcriptSearch" placeholder="Search transcript" />
-            <span v-if="drawerTranscriptSegments.length > 0" class="meta-text">
-              Showing {{ filteredTranscriptSegments.length }} of {{ drawerTranscriptSegments.length }}
-            </span>
-            <span v-else-if="drawerTranscriptText" class="meta-text">
-              Showing {{ filteredTranscriptLines.length }} of {{ transcriptLines.length }} lines
-            </span>
-          </div>
-          <div v-if="drawerCanonicalTranscript && drawerTranscriptStatus === 'available'" class="drawer-transcript-actions">
-            <button type="button" class="drawer-action-link" @click="downloadCanonicalTranscript">
-              Download .txt
-            </button>
-            <button type="button" class="drawer-action-link" @click="sendToChatGPT">
-              Open in ChatGPT
-            </button>
-            <button type="button" class="drawer-action-link" @click="sendToClaude">
-              Open in Claude
-            </button>
-            <a v-if="drawerItem" class="drawer-action-link" :href="episodeMarkdownPackageUrl(drawerItem.ID, 'transcript')">Download Markdown package</a>
-            <button type="button" class="drawer-action-link" @click="sendTranscriptToObsidian">
-              Send to Obsidian
-            </button>
-          </div>
-          <p v-if="drawerLoadingTranscript" class="meta-text">Loading transcript...</p>
-          <p v-else-if="drawerTranscriptStatus !== 'available'" class="meta-text">{{ drawerTranscriptSummary() }}</p>
-          <div v-else-if="drawerTranscriptSegments.length > 0" class="drawer-list">
-            <p v-if="filteredTranscriptSegments.length === 0" class="meta-text">
-              No transcript segments match “{{ transcriptSearch }}”.
-            </p>
-            <button
-              v-for="segment in filteredTranscriptSegments"
-              :key="`${segment.start}-${segment.text}`"
-              type="button"
-              class="drawer-transcript-row"
-              @click="drawerItem && openPlayerAt(drawerItem, segment.start)"
-            >
-              <div>
-                <p class="meta-text">
-                  {{ formatDuration(Math.floor(segment.start)) }}
-                  <span v-if="segment.speaker"> • {{ segment.speaker }}</span>
-                </p>
-                <p class="drawer-body-copy">{{ segment.text }}</p>
-              </div>
-              <span class="meta-text">Play</span>
-            </button>
-          </div>
-          <div v-else-if="drawerTranscriptText" class="drawer-transcript-raw">
-            <pre>{{ transcriptDisplayText }}</pre>
-          </div>
-          <div v-else class="stack-2">
-            <p class="meta-text">Transcript is available but could not be rendered.</p>
-            <ul v-if="drawerTranscriptAssets.length > 0" class="meta-text">
-              <li v-for="asset in drawerTranscriptAssets" :key="asset.url || asset.type">
-                {{ asset.language || "unknown" }} {{ asset.type || "text" }}
-                <span v-if="asset.url">(downloadable)</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <EpisodeLinksPanel
-          v-else-if="drawerTab === 'links'"
-          :links="drawerLinks"
-          :loading="drawerLoadingLinks"
-        />
-
-        <div v-else-if="drawerTab === 'summary'" class="stack-3">
-          <p v-if="drawerLoadingSummary" class="meta-text">Loading summary...</p>
-          <p v-else-if="drawerSummaryStatus !== 'available'" class="meta-text">{{ drawerSummarySummary() }}</p>
-          <div v-else class="stack-3">
-            <div class="drawer-transcript-actions">
-              <a v-if="drawerItem" class="drawer-action-link" :href="episodeMarkdownPackageUrl(drawerItem.ID, 'summary')">Download Markdown package</a>
-            <button type="button" class="drawer-action-link" @click="sendSummaryToObsidian">
-                Send to Obsidian
-              </button>
-            </div>
-            <div class="drawer-summary-raw">
-              <pre>{{ drawerSummaryText }}</pre>
-            </div>
-            <div v-if="drawerSummaryModel || drawerSummaryDate" class="meta-text drawer-summary-lineage">
-              <span v-if="drawerSummaryModel">Model: {{ drawerSummaryModel }}</span>
-              <span v-if="drawerSummaryDate"> · Generated: {{ new Date(drawerSummaryDate).toLocaleDateString() }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </UiDrawer>
   </section>
 </template>
 
@@ -639,185 +402,29 @@ onMounted(() => {
   display: none;
 }
 
-.drawer-favorite-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
 
-.drawer-favorite-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-primary);
-  color: var(--color-text-secondary);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease-enter),
-    border-color var(--duration-fast) var(--ease-enter),
-    color var(--duration-fast) var(--ease-enter);
-}
 
-.drawer-favorite-button:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-}
 
-.drawer-favorite-button--active {
-  border-color: color-mix(in srgb, var(--color-warning, #e5a00d) 45%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning, #e5a00d) 12%, var(--color-bg-primary));
-  color: var(--color-warning, #e5a00d);
-}
 
-.drawer-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
 
-.drawer-body-copy {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-secondary);
-}
 
-.drawer-summary-grid {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: 1fr;
-}
 
-.drawer-search-row {
-  margin-bottom: var(--space-3);
-}
 
-.drawer-search-row :deep(.ui-field) {
-  flex: 0 0 57.5%;
-}
 
-.drawer-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--space-2);
-}
 
-.drawer-list__row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
-}
 
-.drawer-list__meta {
-  min-width: 0;
-  flex: 1;
-}
 
-.drawer-list__title {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-card-title-size);
-  line-height: var(--font-card-title-line-height);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
 
-.drawer-list__play-button {
-  width: 132px;
-  min-width: 132px;
-  align-self: center;
-}
 
-.drawer-transcript-row {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  color: inherit;
-  text-align: left;
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  cursor: pointer;
-}
 
-.drawer-transcript-row:hover {
-  background: var(--color-hover);
-}
 
-.drawer-transcript-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
 
-.drawer-action-link {
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  padding: var(--space-1) var(--space-3);
-  color: var(--color-text-primary);
-  font-size: var(--font-caption-size);
-  cursor: pointer;
-  text-decoration: none;
-}
 
-.drawer-action-link:hover {
-  background: var(--color-hover);
-}
 
-.drawer-transcript-raw {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
-}
 
-.drawer-transcript-raw pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--color-text-secondary);
-  font-family: var(--font-family);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
 
-.drawer-summary-raw {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
-}
 
-.drawer-summary-raw pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--color-text-secondary);
-  font-family: var(--font-family);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
 
-.drawer-summary-lineage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
 
 .empty-state__title {
   margin: 0;
@@ -832,11 +439,6 @@ onMounted(() => {
   max-width: 46ch;
 }
 
-@media (min-width: 768px) {
-  .drawer-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 @media (min-width: 1200px) {
   .episodes-list-mobile {

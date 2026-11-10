@@ -3,6 +3,7 @@ import AddPodcastView from "../views/AddPodcastView.vue";
 import AboutView from "../views/AboutView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DownloadsView from "../views/DownloadsView.vue";
+import EpisodeDetailView from "../views/EpisodeDetailView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
 import LinksView from "../views/LinksView.vue";
 import PlayerView from "../views/PlayerView.vue";
@@ -30,6 +31,12 @@ const router = createRouter({
       name: "episodes",
       component: EpisodesView,
       meta: { title: "Episodes" },
+    },
+    {
+      path: "/episodes/:id",
+      name: "episode",
+      component: EpisodeDetailView,
+      meta: { title: "Episode" },
     },
     {
       path: "/summaries",

@@ -15,6 +15,7 @@ import { getErrorMessage, podcastsApi } from "../lib/api";
 import { podcastImageUrl } from "../lib/api/paths";
 import { formatDate, formatDuration } from "../lib/format";
 import { createLatest } from "../lib/latest";
+import { episodePath } from "../lib/routes";
 import type { Podcast, PodcastItem } from "../types/api";
 
 const RECENT_EPISODES = 25;
@@ -193,7 +194,7 @@ watch(
             <UiIconButton size="sm" :label="`Play ${episode.Title}`" tooltip="Play" @click="player.playEpisode(episode)">
               <UiIcon name="play" :size="16" />
             </UiIconButton>
-            <span class="podcast-page__episode-title">{{ episode.Title }}</span>
+            <RouterLink :to="episodePath(episode.ID)" class="podcast-page__episode-title">{{ episode.Title }}</RouterLink>
             <span class="podcast-page__episode-meta">
               {{ formatDate(episode.PubDate) }} · {{ formatDuration(episode.Duration) }}<template v-if="episode.IsPlayed"> · played</template>
             </span>

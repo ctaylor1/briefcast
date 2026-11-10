@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { podcastPath } from "../lib/routes";
+import { episodePath, podcastPath } from "../lib/routes";
 import {
   Combobox,
   ComboboxInput,
@@ -283,6 +283,15 @@ function localResultLabel(result: LocalSearchResult): string {
 function localResultRoute(result: LocalSearchResult): { path: string; query?: Record<string, string> } {
   if (result.type === "podcast" && result.podcastId) {
     return { path: podcastPath(result.podcastId) };
+  }
+
+  if (result.episodeId) {
+    const tab =
+      result.type === "transcript" ? "transcript"
+      : result.type === "chapter" ? "chapters"
+      : result.type === "summary" ? "summary"
+      : undefined;
+    return { path: episodePath(result.episodeId), query: tab ? { tab } : undefined };
   }
 
   const q = ((): string => {
