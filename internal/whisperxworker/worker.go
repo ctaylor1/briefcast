@@ -261,13 +261,22 @@ func (w *Worker) Submit(ctx context.Context, id string, raw []byte) (transcripti
 		if (old.Status.State != "failed" && old.Status.State != "cancelled") || old.Request.DeploymentID != request.DeploymentID || old.Request.EpisodeID != request.EpisodeID || old.Request.GenerationID != request.GenerationID || old.Request.Input.SHA256 != request.Input.SHA256 || old.Request.Input.SizeBytes != request.Input.SizeBytes || old.Status.EffectiveConfig.OptionsSHA256 != r.Status.EffectiveConfig.OptionsSHA256 || old.Status.EffectiveConfig.EngineProfile != request.EngineProfile || old.PipelineVersion != transcription.PipelineVersion || old.Checkpoint == nil {
 			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume source is incompatible", false)
 		}
-		if _, err = w.readCheckpoint(old); err != nil {
+		verified, err := w.readCheckpoint(old)
+		if err != nil {
+			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume data failed verification", false)
+		}
+		var cp checkpointPayload
+		if err = json.Unmarshal(verified, &cp); err != nil {
 			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume data failed verification", false)
 		}
 		ref := *old.Checkpoint
 		r.Checkpoint = &ref
 		r.Status.Checkpoint.CompletedSeconds = ref.CompletedSeconds
 		r.Status.Checkpoint.SegmentCount = ref.SegmentCount
+		// Status reports the checkpoint's completed seconds before the script
+		// reports a total. Seed the total from the verified checkpoint so a
+		// resumed job never shows completed > total, which clients reject.
+		r.Status.TotalSeconds = max(old.Status.TotalSeconds, cp.TotalSeconds)
 	}
 	if err = os.MkdirAll(w.store.jobDir(id), 0700); err != nil {
 		return r.Status, false, err

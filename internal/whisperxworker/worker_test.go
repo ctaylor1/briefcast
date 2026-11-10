@@ -342,6 +342,61 @@ func TestVerifiedCheckpointResumeAndFingerprintMismatch(t *testing.T) {
 	}
 }
 
+// A resumed job reports the checkpoint's completed seconds from its first
+// status. Clients reject completed > total, so the total must be known before
+// the script reports one (its first progress tick carries total 0).
+func TestResumedJobNeverReportsCompletedAboveTotal(t *testing.T) {
+	cfg, request, output := workerFixture(t)
+	var calls atomic.Int32
+	ticked, release := make(chan struct{}), make(chan struct{})
+	runner := fakeRunner{run: func(ctx context.Context, s RunSpec, p func(transcription.ProgressUpdate) error) error {
+		if calls.Add(1) == 1 {
+			if err := durableWrite(filepath.Join(s.Directory, "segments.json"), checkpointBytes(s, 120)); err != nil {
+				return err
+			}
+			if err := p(transcription.ProgressUpdate{Percent: 50, Stage: "transcribing", TotalSeconds: 240}); err != nil {
+				return err
+			}
+			return errors.New("synthetic failure")
+		}
+		if err := p(transcription.ProgressUpdate{Percent: 1, Stage: "loading", TotalSeconds: 0}); err != nil {
+			return err
+		}
+		close(ticked)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return durableWrite(filepath.Join(s.Directory, "stdout.json"), output)
+	}}
+	w := openTestWorker(t, cfg, runner)
+	id := uuid.NewString()
+	submitTest(t, w, id, request)
+	waitState(t, w, id, "failed")
+	retry := request
+	retry.ResumeFromJobID = &id
+	retry.Attempt = 2
+	second := uuid.NewString()
+	accepted := submitTest(t, w, second, retry)
+	if accepted.TotalSeconds < accepted.CompletedSeconds || accepted.TotalSeconds != 240 {
+		t.Fatalf("accepted resume status: completed=%v total=%v", accepted.CompletedSeconds, accepted.TotalSeconds)
+	}
+	<-ticked
+	status, err := w.Status(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.CompletedSeconds != 120 || status.TotalSeconds < status.CompletedSeconds {
+		t.Fatalf("first resumed tick: completed=%v total=%v", status.CompletedSeconds, status.TotalSeconds)
+	}
+	close(release)
+	final := waitState(t, w, second, "succeeded")
+	if final.TotalSeconds < final.CompletedSeconds {
+		t.Fatalf("final: completed=%v total=%v", final.CompletedSeconds, final.TotalSeconds)
+	}
+}
+
 func TestRejectMaliciousMediaAndChangedInputWithoutDeletingAudio(t *testing.T) {
 	cfg, request, output := workerFixture(t)
 	w := openTestWorker(t, cfg, successRunner(output))
