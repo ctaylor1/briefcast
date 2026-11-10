@@ -108,12 +108,14 @@ func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 	}
 }
 
-func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
+// The GET aliases for these mutations were removed: a link, prefetch or
+// embedded image must not be able to delete or queue content.
+func TestStateChangingGETAliasesAreNotRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	registerRoutes(&engine.RouterGroup)
 
-	deprecatedGETs := []string{
+	removedGETs := []string{
 		"/podcasts/:id/download",
 		"/podcasts/:id/pause",
 		"/podcasts/:id/unpause",
@@ -132,9 +134,9 @@ func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
 		}
 	}
 
-	for _, path := range deprecatedGETs {
-		if !registered[path] {
-			t.Fatalf("expected deprecated GET %s to still be registered", path)
+	for _, path := range removedGETs {
+		if registered[path] {
+			t.Fatalf("state-changing GET %s must not be registered", path)
 		}
 	}
 }

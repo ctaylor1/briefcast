@@ -21,6 +21,9 @@ All notable changes to this project will be documented in this file.
 - `cmd/migrate_to_pg` now copies `show_note_links`, `link_targets` and `prompt_versions`, which it used to leave behind while reporting success. It also runs in one transaction, refuses a target that already has data, skips orphaned tag links, and stops before writing if episodes or Markdown revisions are orphaned.
 - Local transcription (`WHISPERX_BACKEND=local`) no longer deletes audio when an error message mentions a missing file or unreadable audio; a missing model or ffmpeg produced the same text. An episode is reset for re-download only when its audio file is confirmed missing, and other failures, including unexpected stat errors, schedule a retry.
 
+### Removed
+- **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
+
 ## [1.9.4] - 2026-07-11
 
 ### Added
