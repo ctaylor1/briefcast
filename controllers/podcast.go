@@ -439,18 +439,25 @@ func DownloadAllEpisodesByPodcastID(c *gin.Context) {
 
 	if c.ShouldBindUri(&searchByIDQuery) == nil {
 
-		err := service.SetAllEpisodesToDownload(searchByIDQuery.ID)
-		if err != nil {
-			controllerLogger.Warnw("failed to queue all episodes for download", "podcast_id", searchByIDQuery.ID, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		podcastID := searchByIDQuery.ID
+		var podcast db.Podcast
+		if err := db.GetPodcastByID(podcastID, &podcast); err != nil {
+			respondLookupError(c, err, "podcast", "podcast_id", podcastID)
 			return
 		}
-		service.SafeGo("refresh after queue all", func() {
+		// Queuing re-reads the feed (and fetches chapters and transcripts for new
+		// episodes), which can take minutes on a slow host, so it runs after the
+		// response instead of holding the request open.
+		service.SafeGo("queue all episodes", func() {
+			if err := service.SetAllEpisodesToDownload(podcastID); err != nil {
+				controllerLogger.Warnw("failed to queue all episodes for download", "podcast_id", podcastID, "error", err)
+				return
+			}
 			if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
-				controllerLogger.Warnw("background refresh after queue-all failed", "podcast_id", searchByIDQuery.ID, "error", refreshErr)
+				controllerLogger.Warnw("background refresh after queue-all failed", "podcast_id", podcastID, "error", refreshErr)
 			}
 		})
-		c.JSON(200, gin.H{})
+		c.JSON(http.StatusAccepted, gin.H{})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 	}

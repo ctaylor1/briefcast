@@ -272,8 +272,8 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("GET /podcasts/:id/items expected 200, got %d", resp.Code)
 	}
 	resp = performRequest(router, http.MethodGet, "/podcasts/missing/download", nil, nil)
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("GET /podcasts/missing/download expected 400, got %d", resp.Code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("GET /podcasts/missing/download expected 404, got %d", resp.Code)
 	}
 
 	resp = performRequest(router, http.MethodGet, "/podcastitems", nil, nil)
@@ -520,7 +520,7 @@ func TestControllerMissingIDErrorBranches(t *testing.T) {
 		{method: http.MethodDelete, path: "/podcasts/missing/podcast", status: http.StatusBadRequest},
 		{method: http.MethodDelete, path: "/podcasts/missing/items", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcasts/missing/items", status: http.StatusOK},
-		{method: http.MethodGet, path: "/podcasts/missing/download", status: http.StatusBadRequest},
+		{method: http.MethodGet, path: "/podcasts/missing/download", status: http.StatusNotFound},
 		{method: http.MethodGet, path: "/podcastitems/missing", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcastitems/missing/markUnplayed", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcastitems/missing/markPlayed", status: http.StatusBadRequest},

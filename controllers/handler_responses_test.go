@@ -65,3 +65,18 @@ func TestPatchPodcastItemCanClearValues(t *testing.T) {
 		t.Fatalf("title was not cleared: %q", got.Title)
 	}
 }
+
+// Queuing every episode re-reads the feed; the request must not wait for it.
+func TestDownloadAllEpisodesAnswersBeforeFetchingTheFeed(t *testing.T) {
+	setupControllersTestDB(t)
+	router := makeExpandedRouter(t)
+	podcast, _ := createControllerPodcastAndItem(t)
+	// An unroutable feed URL: fetching it inside the request would fail or hang.
+	if err := db.DB.Model(&db.Podcast{}).Where("id = ?", podcast.ID).Update("url", "http://127.0.0.1:1/feed.xml").Error; err != nil {
+		t.Fatal(err)
+	}
+	resp := performRequest(router, http.MethodGet, "/podcasts/"+podcast.ID+"/download", nil, nil)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", resp.Code, resp.Body.String())
+	}
+}
