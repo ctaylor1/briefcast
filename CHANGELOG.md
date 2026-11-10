@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - Startup clears stale job locks before it starts the monitoring stats warmup. The warmup's long read used to hold SQLite past the busy timeout, so clearing the locks failed with `database is locked`.
 - The show-note link backfill pauses for 250 ms after every 20 episodes it writes. On SQLite, the per-minute transcription job could not get the lock for the whole of a backfill (about 8 minutes on 5,000 episodes).
 - WebSocket messages over 64 KiB now close the connection instead of being buffered without limit.
+- Summarizing an episode that was deleted after it was loaded no longer writes an orphaned Markdown revision on SQLite, or fails on a foreign key on Postgres.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

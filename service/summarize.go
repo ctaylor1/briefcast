@@ -15,6 +15,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/logging"
 	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const defaultSummarizationPrompt = `You are an expert podcast content analyst. Your job is to read podcast transcripts and extract the most important information with precision, discipline, and clear prioritization.
@@ -373,6 +374,14 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return missingTranscriptErr
 	}
 
+	// Capturing the source writes a Markdown revision for the episode; an episode
+	// deleted since it was loaded must not get one (an orphan on SQLite, a
+	// foreign key error on Postgres).
+	if exists, existsErr := db.PodcastItemExists(item.ID); existsErr != nil {
+		return existsErr
+	} else if !exists {
+		return gorm.ErrRecordNotFound
+	}
 	transcript, prompt, report, err := prepareSummarySource(item, prompt, userPrompt)
 	if err != nil {
 		return err

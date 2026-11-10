@@ -133,4 +133,11 @@ func TestSummarizeEpisodeDoesNotRecreateDeletedEpisode(t *testing.T) {
 	if err := db.GetPodcastItemByID(item.ID, &got); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("deleted episode came back: %v", err)
 	}
+	var revisions int64
+	if err := db.DB.Model(&db.MarkdownRevision{}).Where("episode_id = ?", item.ID).Count(&revisions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if revisions != 0 {
+		t.Fatalf("a deleted episode got %d Markdown revisions", revisions)
+	}
 }
