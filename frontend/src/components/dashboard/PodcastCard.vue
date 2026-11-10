@@ -67,19 +67,22 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+/* No overflow: hidden on the tile: it would clip the actions menu, which is wider than
+   the tile. The cover rounds its own top corners instead. */
 .podcast-tile {
   display: grid;
   grid-template-rows: auto 1fr;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3);
   background: var(--color-bg-primary);
-  overflow: hidden;
 }
 
 .podcast-tile__cover {
   display: block;
   aspect-ratio: 1 / 1;
   background: var(--color-hover);
+  border-radius: calc(var(--radius-3) - 1px) calc(var(--radius-3) - 1px) 0 0;
+  overflow: hidden;
 }
 
 .podcast-tile__cover img {
@@ -93,6 +96,7 @@ const emit = defineEmits<{
   display: grid;
   align-content: start;
   gap: var(--space-1);
+  min-width: 0;
   padding: var(--space-3);
 }
 
