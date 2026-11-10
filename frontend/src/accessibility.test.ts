@@ -80,4 +80,28 @@ describe("component templates", () => {
     }
     assert.deepEqual(problems, []);
   });
+
+  // An unimported component only fails at runtime ("Failed to resolve component"), and
+  // the type check does not catch it.
+  it("import every component they use", () => {
+    const GLOBALS = new Set(["RouterLink", "RouterView", "Transition", "TransitionGroup", "KeepAlive", "Teleport", "Suspense", "Component"]);
+    const problems: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      const script = source.slice(0, source.indexOf("</script>"));
+      const imported = new Set<string>();
+      for (const m of script.matchAll(/import\s+(?:type\s+)?([^;]*?)\s+from\s/g)) {
+        for (const name of m[1]!.replace(/[{}]/g, " ").split(/[\s,]+/)) {
+          if (name && name !== "type" && name !== "as") imported.add(name);
+        }
+      }
+      for (const m of template(source).matchAll(/<([A-Z][A-Za-z0-9]+)[\s/>]/g)) {
+        const tag = m[1]!;
+        if (!GLOBALS.has(tag) && !imported.has(tag)) {
+          problems.push(`${relative(srcDir, file)}: <${tag}> is not imported`);
+        }
+      }
+    }
+    assert.deepEqual([...new Set(problems)], []);
+  });
 });

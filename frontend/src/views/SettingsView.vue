@@ -9,13 +9,14 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
+import UiSelect from "../components/ui/UiSelect.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
 import { type ThemeMode, useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
 import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
 import { userAgentSourceLabel } from "../lib/userAgent";
-import type { AppSettings, OpenRouterModelsResponse, PromptVersion, SummaryJobStatus } from "../types/api";
+import type { AppSettings, AppSettingsUpdate, OpenRouterModelsResponse, PromptVersion, SummaryJobStatus } from "../types/api";
 
 
 type RetentionForm = {
@@ -66,12 +67,6 @@ const route = useRoute();
 const isLoading = ref(true);
 const loadFailed = ref(false);
 const settingsReady = computed(() => !isLoading.value && !loadFailed.value);
-const isSavingBackCatalog = ref(false);
-const isSavingRetention = ref(false);
-const isSavingSummarization = ref(false);
-const isSavingModelSettings = ref(false);
-const isSavingObsidian = ref(false);
-const isSavingBriefpoint = ref(false);
 const briefpointAPIKeyConfigured = ref(false);
 const outboundUserAgent = ref("");
 const outboundUserAgentSource = ref("");
@@ -237,6 +232,8 @@ async function loadSettings(): Promise<void> {
     defaultProvider.value = settings.defaultProvider ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
+    lastLoadedSettings.value = settings;
+    markSaved();
     if (isOpenRouterProvider.value) void loadOpenRouterModels();
     try {
       const { models } = await settingsApi.getSummaryModels();
@@ -292,65 +289,147 @@ async function loadSummaryJobStatus(): Promise<void> {
   }
 }
 
-async function saveBackCatalogSettings(): Promise<void> {
-  isSavingBackCatalog.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
+// ---- One save model: every section's changes go out in one PATCH from the save bar.
+// Appearance applies and saves at once (see useTheme); everything else waits for Save.
+const isSaving = ref(false);
+const baseline = ref("");
+
+const sectionLinks = [
+  { id: "appearance", label: "Appearance" },
+  { id: "downloads", label: "New episodes" },
+  { id: "retention", label: "Retention" },
+  { id: "summaries", label: "AI summaries" },
+  { id: "obsidian", label: "Obsidian" },
+  { id: "briefpoint", label: "Briefpoint" },
+  { id: "about", label: "About" },
+];
+
+function goToSection(id: string): void {
+  document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function formSnapshot(): Record<string, string> {
+  return {
+    downloads: JSON.stringify(backCatalogForm.value),
+    retention: JSON.stringify(retentionForm.value),
+    summaries: JSON.stringify([summarizationForm.value, modelSettingsForm.value]),
+    obsidian: JSON.stringify(obsidianForm.value),
+    briefpoint: JSON.stringify(briefpointForm.value),
+  };
+}
+
+const savedSnapshot = computed<Record<string, string>>(() => (baseline.value ? JSON.parse(baseline.value) : {}));
+const dirtySections = computed(() => {
+  const now = formSnapshot();
+  return Object.keys(now).filter((key) => savedSnapshot.value[key] !== undefined && now[key] !== savedSnapshot.value[key]);
+});
+const isDirty = computed(() => dirtySections.value.length > 0);
+const dirtySectionLabels = computed(() =>
+  dirtySections.value.map((key) => sectionLinks.find((section) => section.id === key)?.label ?? key).join(", "),
+);
+
+function markSaved(): void {
+  baseline.value = JSON.stringify(formSnapshot());
+}
+
+function buildPatch(): AppSettingsUpdate {
+  const dirty = new Set(dirtySections.value);
+  const patch: AppSettingsUpdate = {};
+  if (dirty.has("downloads")) {
+    Object.assign(patch, {
       autoDownload: backCatalogForm.value.autoDownload,
       downloadOnAdd: backCatalogForm.value.downloadOnAdd,
       initialDownloadMode: backCatalogForm.value.initialDownloadMode,
       initialDownloadCount: sanitizeNumber(backCatalogForm.value.initialDownloadCount),
       initialDownloadMonths: sanitizeNumber(backCatalogForm.value.initialDownloadMonths),
     });
-    backCatalogForm.value = mapToBackCatalogForm(updated);
-    toast.success("Back catalog settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update back catalog settings."));
-  } finally {
-    isSavingBackCatalog.value = false;
   }
-}
-
-async function saveRetentionSettings(): Promise<void> {
-  isSavingRetention.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
+  if (dirty.has("retention")) {
+    Object.assign(patch, {
       keepAllEpisodes: retentionForm.value.keepAllEpisodes,
       keepLatestEpisodes: sanitizeNumber(retentionForm.value.keepLatestEpisodes),
       deleteAfterDays: sanitizeNumber(retentionForm.value.deleteAfterDays),
       deleteOnlyPlayed: retentionForm.value.deleteOnlyPlayed,
     });
-    retentionForm.value = mapToRetentionForm(updated);
-    toast.success("Retention settings updated.");
+  }
+  if (dirty.has("summaries")) {
+    const systemPrompt = summarizationForm.value.summarizationPrompt.trim();
+    const userPrompt = summarizationForm.value.summarizationUserPrompt.trim();
+    Object.assign(patch, {
+      summarizationEnabled: summarizationForm.value.summarizationEnabled,
+      summarizationModel: summarizationForm.value.summarizationModel,
+      // An unchanged default prompt is stored as "use the default".
+      summarizationPrompt: systemPrompt === defaultSystemPrompt.value ? "" : systemPrompt,
+      summarizationUserPrompt: userPrompt === defaultUserPrompt.value ? "" : userPrompt,
+      llmConcurrency: modelSettingsForm.value.llmConcurrency,
+    });
+  }
+  if (dirty.has("obsidian")) {
+    Object.assign(patch, {
+      obsidianVault: obsidianForm.value.obsidianVault.trim() || DEFAULT_OBSIDIAN_VAULT,
+      obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
+    });
+  }
+  if (dirty.has("briefpoint")) {
+    Object.assign(patch, {
+      briefpointEnabled: briefpointForm.value.briefpointEnabled,
+      briefpointServerURL: briefpointForm.value.briefpointServerURL,
+    });
+    // A blank key field means "keep the stored key".
+    const key = briefpointForm.value.briefpointAPIKey.trim();
+    if (key) {
+      patch.briefpointAPIKey = key;
+    }
+  }
+  return patch;
+}
+
+function applySettings(settings: AppSettings): void {
+  retentionForm.value = mapToRetentionForm(settings);
+  backCatalogForm.value = mapToBackCatalogForm(settings);
+  summarizationForm.value = mapToSummarizationForm(settings);
+  modelSettingsForm.value = { llmConcurrency: settings.llmConcurrency ?? 1 };
+  obsidianForm.value = mapToObsidianForm(settings);
+  briefpointForm.value = {
+    briefpointEnabled: settings.briefpointEnabled ?? false,
+    briefpointServerURL: settings.briefpointServerURL ?? "",
+    briefpointAPIKey: "",
+  };
+  briefpointAPIKeyConfigured.value = settings.briefpointAPIKeyConfigured ?? false;
+  defaultSystemPrompt.value = settings.defaultSystemPrompt ?? defaultSystemPrompt.value;
+  defaultUserPrompt.value = settings.defaultUserPrompt ?? defaultUserPrompt.value;
+  lastLoadedSettings.value = settings;
+  markSaved();
+}
+
+async function saveChanges(): Promise<void> {
+  if (!isDirty.value || isSaving.value) {
+    return;
+  }
+  isSaving.value = true;
+  clearAll();
+  try {
+    applySettings(await settingsApi.update(buildPatch()));
+    toast.success("Settings saved.");
   } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update retention settings."));
+    toast.error(getErrorMessage(error, "Failed to save settings."));
   } finally {
-    isSavingRetention.value = false;
+    isSaving.value = false;
   }
 }
 
-async function saveSummarizationSettings(): Promise<void> {
-  isSavingSummarization.value = true;
-  clearAll();
-  try {
-    const sysPrompt = summarizationForm.value.summarizationPrompt.trim();
-    const usrPrompt = summarizationForm.value.summarizationUserPrompt.trim();
-    const updated = await settingsApi.update({
-      summarizationEnabled: summarizationForm.value.summarizationEnabled,
-      summarizationModel: summarizationForm.value.summarizationModel,
-      summarizationPrompt: sysPrompt === defaultSystemPrompt.value ? "" : sysPrompt,
-      summarizationUserPrompt: usrPrompt === defaultUserPrompt.value ? "" : usrPrompt,
-    });
-    defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
-    defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
-    summarizationForm.value = mapToSummarizationForm(updated);
-    toast.success("Summarization settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update summarization settings."));
-  } finally {
-    isSavingSummarization.value = false;
+function discardChanges(): void {
+  if (lastLoadedSettings.value) {
+    applySettings(lastLoadedSettings.value);
+  }
+}
+
+const lastLoadedSettings = ref<AppSettings | null>(null);
+
+// The browser asks before closing the tab with unsaved changes.
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (isDirty.value) {
+    event.preventDefault();
   }
 }
 
@@ -373,6 +452,8 @@ async function restorePromptVersion(id: string): Promise<void> {
     defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
     summarizationForm.value = mapToSummarizationForm(updated);
+    lastLoadedSettings.value = updated;
+    markSaved();
     promptHistoryOpen.value = false;
     toast.success("Prompt restored successfully.");
   } catch (error) {
@@ -382,72 +463,6 @@ async function restorePromptVersion(id: string): Promise<void> {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString();
-}
-
-async function saveModelSettings(): Promise<void> {
-  isSavingModelSettings.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
-      llmConcurrency: modelSettingsForm.value.llmConcurrency,
-    });
-    modelSettingsForm.value = {
-      llmConcurrency: updated.llmConcurrency ?? 1,
-    };
-    toast.success("Model settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update model settings."));
-  } finally {
-    isSavingModelSettings.value = false;
-  }
-}
-
-async function saveObsidianSettings(): Promise<void> {
-  isSavingObsidian.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
-      obsidianVault: obsidianForm.value.obsidianVault.trim() || DEFAULT_OBSIDIAN_VAULT,
-      obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
-    });
-    obsidianForm.value = mapToObsidianForm(updated);
-    toast.success("Obsidian settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update Obsidian settings."));
-  } finally {
-    isSavingObsidian.value = false;
-  }
-}
-
-async function saveBriefpointSettings(): Promise<void> {
-  isSavingBriefpoint.value = true;
-  clearAll();
-  try {
-    const payload = {
-      briefpointEnabled: briefpointForm.value.briefpointEnabled,
-      briefpointServerURL: briefpointForm.value.briefpointServerURL,
-    };
-    const nextAPIKey = briefpointForm.value.briefpointAPIKey.trim();
-    const updated = await settingsApi.update(
-      nextAPIKey
-        ? {
-            ...payload,
-            briefpointAPIKey: nextAPIKey,
-          }
-        : payload,
-    );
-    briefpointForm.value = {
-      briefpointEnabled: updated.briefpointEnabled ?? false,
-      briefpointServerURL: updated.briefpointServerURL ?? "",
-      briefpointAPIKey: "",
-    };
-    briefpointAPIKeyConfigured.value = updated.briefpointAPIKeyConfigured ?? false;
-    toast.success("Briefpoint settings updated.");
-  } catch (error) {
-    toast.error(getErrorMessage(error, "Failed to update Briefpoint settings."));
-  } finally {
-    isSavingBriefpoint.value = false;
-  }
 }
 
 const commonTimezones = [
@@ -525,16 +540,18 @@ async function startResummarize(): Promise<void> {
 }
 
 onMounted(async () => {
+  window.addEventListener("beforeunload", warnBeforeUnload);
   void loadSummaryJobStatus();
   await loadSettings();
   // /about and the palette's About entry land here.
   if (route.query.section === "about") {
     await nextTick();
-    document.getElementById("settings-about")?.scrollIntoView({ block: "start" });
+    goToSection("about");
   }
 });
 onUnmounted(() => {
   clearSummaryJobPoll();
+  window.removeEventListener("beforeunload", warnBeforeUnload);
 });
 </script>
 
@@ -546,6 +563,12 @@ onUnmounted(() => {
         Configure retention, summarization, and other application behavior.
       </p>
     </header>
+
+    <nav v-if="settingsReady" class="settings-nav" aria-label="Settings sections">
+      <button v-for="section in sectionLinks" :key="section.id" type="button" class="settings-nav__link" @click="goToSection(section.id)">
+        {{ section.label }}
+      </button>
+    </nav>
 
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
@@ -566,7 +589,7 @@ onUnmounted(() => {
       </UiCard>
 
       <!-- Appearance settings -->
-      <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+      <UiCard id="settings-appearance" v-if="settingsReady" padding="lg" class="stack-4">
         <div class="stack-2">
           <h3 class="settings-section-title">Appearance</h3>
           <p class="section-subtitle">Changes apply and save immediately.</p>
@@ -591,45 +614,42 @@ onUnmounted(() => {
 
         <div v-if="themeMode === 'schedule'" class="surface-grid surface-grid--3">
           <div class="stack-1">
-            <label class="settings-label" for="settings-timezone">Timezone</label>
-            <select
+            <UiSelect
               id="settings-timezone"
-              class="ui-select"
-              :value="timezone"
-              @change="setTimezone(($event.target as HTMLSelectElement).value)"
+              label="Timezone"
+              :model-value="timezone"
+              @update:model-value="setTimezone($event)"
             >
               <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
-            </select>
+            </UiSelect>
           </div>
           <div class="stack-1">
-            <label class="settings-label" for="settings-light-start">Light from</label>
-            <select
+            <UiSelect
               id="settings-light-start"
-              class="ui-select"
-              :value="lightStartHour"
-              @change="setLightStartHour(Number(($event.target as HTMLSelectElement).value))"
+              label="Light from"
+              :model-value="lightStartHour"
+              @update:model-value="setLightStartHour(Number($event))"
             >
               <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-            </select>
+            </UiSelect>
           </div>
           <div class="stack-1">
-            <label class="settings-label" for="settings-dark-start">Dark from</label>
-            <select
+            <UiSelect
               id="settings-dark-start"
-              class="ui-select"
-              :value="darkStartHour"
-              @change="setDarkStartHour(Number(($event.target as HTMLSelectElement).value))"
+              label="Dark from"
+              :model-value="darkStartHour"
+              @update:model-value="setDarkStartHour(Number($event))"
             >
               <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-            </select>
+            </UiSelect>
           </div>
         </div>
       </UiCard>
 
     <!-- Back catalog download settings -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+    <UiCard id="settings-downloads" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Back Catalog Downloads</h3>
+        <h3 class="settings-section-title">New episodes</h3>
         <p class="section-subtitle">
           Choose which episodes are queued when a podcast is first added. Feed entries are still saved when the provider exposes them.
         </p>
@@ -661,18 +681,15 @@ onUnmounted(() => {
       </label>
 
       <div class="surface-grid surface-grid--3">
-        <label class="stack-1">
-          <span class="ui-label">Initial back catalog</span>
-          <select
-            v-model="backCatalogForm.initialDownloadMode"
-            class="ui-input"
-            :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd"
-          >
+        <UiSelect
+          label="Initial back catalog"
+          v-model="backCatalogForm.initialDownloadMode"
+          :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd"
+        >
             <option value="count">Latest episode count</option>
             <option value="months">Past N months</option>
             <option value="all">All feed episodes</option>
-          </select>
-        </label>
+        </UiSelect>
 
         <UiInput
           v-model="backCatalogForm.initialDownloadCount"
@@ -694,9 +711,6 @@ onUnmounted(() => {
       </div>
 
       <div class="surface-row">
-        <UiButton :disabled="isSavingBackCatalog" @click="saveBackCatalogSettings">
-          {{ isSavingBackCatalog ? "Saving..." : "Save back catalog settings" }}
-        </UiButton>
         <p class="meta-text">
           Set count or months to 0 to queue all episodes returned by the feed.
         </p>
@@ -704,7 +718,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Retention settings -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+    <UiCard id="settings-retention" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Retention</h3>
         <p class="section-subtitle">
@@ -772,9 +786,6 @@ onUnmounted(() => {
       </label>
 
       <div class="surface-row">
-        <UiButton :disabled="isSavingRetention" @click="saveRetentionSettings">
-          {{ isSavingRetention ? "Saving..." : "Save retention settings" }}
-        </UiButton>
         <p class="meta-text">
           Retention cleanup runs daily. Use podcast-level overrides to keep everything for specific feeds.
         </p>
@@ -782,9 +793,9 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- AI Summarization settings -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+    <UiCard id="settings-summaries" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">AI Summarization</h3>
+        <h3 class="settings-section-title">AI summaries</h3>
         <p class="section-subtitle">
           Automatically generate a summary for each episode after transcription completes.
           Requires an LLM API key configured via environment variables.
@@ -806,11 +817,10 @@ onUnmounted(() => {
       </label>
 
       <div class="stack-1">
-        <label class="settings-label" for="summarization-model">Model</label>
-        <select
+        <UiSelect
           id="summarization-model"
+          label="Model"
           v-model="summarizationForm.summarizationModel"
-          class="ui-select"
           :disabled="!summarizationForm.summarizationEnabled"
         >
           <option value="">Default{{ defaultModel ? ` (${defaultModel})` : '' }}</option>
@@ -822,7 +832,7 @@ onUnmounted(() => {
           <optgroup v-if="modelOptions.length" label="Configured and previously used">
             <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
           </optgroup>
-        </select>
+        </UiSelect>
         <p class="meta-text">
           The LLM model to use for summarization. "Default" uses the model from your .env configuration.
         </p>
@@ -866,11 +876,6 @@ onUnmounted(() => {
         Changes to prompts only apply to future summarizations. Existing summaries are not affected.
       </UiAlert>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingSummarization" @click="saveSummarizationSettings">
-          {{ isSavingSummarization ? "Saving..." : "Save summarization settings" }}
-        </UiButton>
-      </div>
 
       <hr class="settings-divider" />
 
@@ -884,16 +889,15 @@ onUnmounted(() => {
 
       <div class="surface-grid surface-grid--2">
         <div class="stack-1">
-          <label class="settings-label" for="resummarize-model">Generated by model</label>
-          <select
+          <UiSelect
             id="resummarize-model"
+            label="Generated by model"
             v-model="resummarizeModelFilter"
-            class="ui-select"
             :disabled="!summarizationForm.summarizationEnabled"
           >
             <option value="">All models</option>
             <option v-for="m in usedModels" :key="m" :value="m">{{ m }}</option>
-          </select>
+          </UiSelect>
         </div>
 
         <div class="stack-1">
@@ -936,16 +940,8 @@ onUnmounted(() => {
         Last summary job: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
         {{ summaryJobStatus.failed }} failed.
       </p>
-    </UiCard>
 
-    <!-- Model Settings -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
-      <div class="stack-2">
-        <h3 class="settings-section-title">Model Settings</h3>
-        <p class="section-subtitle">
-          Configure how the LLM is used during batch summarization jobs.
-        </p>
-      </div>
+      <h4 class="settings-section-subtitle">Model</h4>
 
       <div class="stack-2">
         <div class="surface-row surface-row--between">
@@ -1012,35 +1008,29 @@ onUnmounted(() => {
           No recommended models are currently available from OpenRouter.
         </p>
         <p v-if="openRouterModels.length" class="meta-text">
-          Choose a model here, then save summarization settings above to apply it to future summaries.
+          Pick one in the Model list above; it applies to future summaries once you save.
         </p>
       </div>
 
       <div class="surface-grid surface-grid--3">
         <div class="stack-1">
-          <label class="settings-label" for="settings-llm-concurrency">Concurrency</label>
-          <select
+          <UiSelect
             id="settings-llm-concurrency"
+            label="Concurrency"
             v-model.number="modelSettingsForm.llmConcurrency"
-            class="ui-select"
           >
             <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
-          </select>
+          </UiSelect>
           <p class="meta-text">
             Number of parallel requests sent to the LLM provider during backfill and re-summarize jobs. Higher values speed up batch processing but may hit rate limits.
           </p>
         </div>
       </div>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingModelSettings" @click="saveModelSettings">
-          {{ isSavingModelSettings ? "Saving..." : "Save model settings" }}
-        </UiButton>
-      </div>
     </UiCard>
 
     <!-- Obsidian Integration -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+    <UiCard id="settings-obsidian" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Obsidian</h3>
         <p class="section-subtitle">
@@ -1065,17 +1055,12 @@ onUnmounted(() => {
         />
       </div>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingObsidian" @click="saveObsidianSettings">
-          {{ isSavingObsidian ? "Saving..." : "Save Obsidian settings" }}
-        </UiButton>
-      </div>
     </UiCard>
 
     <!-- Network identity (read-only; configured in .env) -->
-    <UiCard v-if="!isLoading && outboundUserAgent" padding="lg" class="stack-4">
+    <UiCard id="settings-network" v-if="!isLoading && outboundUserAgent" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Network Identity</h3>
+        <h3 class="settings-section-title">Network identity</h3>
         <p class="section-subtitle">
           The User-Agent Briefcast sends when it fetches feeds, audio, artwork and charts.
           Podcast hosts use it to count downloads by app.
@@ -1089,9 +1074,9 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Briefpoint Integration -->
-    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
+    <UiCard id="settings-briefpoint" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Briefpoint Integration</h3>
+        <h3 class="settings-section-title">Briefpoint</h3>
         <p class="section-subtitle">
           Send completed episodes (transcripts and summaries) to Briefpoint for scoring and surfacing.
           Enable per-podcast sync from the dashboard.
@@ -1135,12 +1120,15 @@ onUnmounted(() => {
         Store it securely. If lost, rotate the key from the Briefpoint admin UI.
       </UiAlert>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingBriefpoint" @click="saveBriefpointSettings">
-          {{ isSavingBriefpoint ? "Saving..." : "Save Briefpoint settings" }}
-        </UiButton>
-      </div>
       </UiCard>
+
+    <div v-if="settingsReady && isDirty" class="settings-savebar" role="region" aria-label="Unsaved changes">
+      <p class="settings-savebar__text">You have unsaved changes{{ dirtySectionLabels ? ` in ${dirtySectionLabels}` : "" }}.</p>
+      <div class="settings-savebar__actions">
+        <UiButton variant="ghost" size="sm" :disabled="isSaving" @click="discardChanges">Discard</UiButton>
+        <UiButton size="sm" :disabled="isSaving" @click="saveChanges">{{ isSaving ? "Saving..." : "Save changes" }}</UiButton>
+      </div>
+    </div>
 
     <!-- About (moved here from its own page). -->
     <section id="settings-about" class="stack-3">
@@ -1388,6 +1376,71 @@ onUnmounted(() => {
 @media (min-width: 768px) {
   .settings-theme-modes {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.settings-nav {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 10;
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: var(--space-2) 0;
+  background: var(--color-bg-secondary);
+}
+
+.settings-nav__link {
+  flex: 0 0 auto;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+}
+
+.settings-nav__link:hover {
+  background: var(--color-hover);
+}
+
+[id^="settings-"] {
+  scroll-margin-top: calc(var(--topbar-height) + 56px);
+}
+
+.settings-savebar {
+  position: sticky;
+  bottom: calc(var(--space-3) + var(--player-bar-height));
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-3);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-popover);
+}
+
+.settings-savebar__text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.settings-savebar__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 767px) {
+  .settings-savebar {
+    bottom: calc(var(--space-2) + var(--player-bar-height) + var(--bottom-tabs-height));
   }
 }
 </style>

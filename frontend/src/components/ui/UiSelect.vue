@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, useAttrs } from "vue";
+import { computed, useAttrs, useId } from "vue";
 import { cn } from "../../lib/cn";
 
-let nextUiSelectId = 0;
 
 const props = withDefaults(
   defineProps<{
@@ -30,7 +29,8 @@ const emit = defineEmits<{
 
 const attrs = useAttrs();
 
-const generatedId = `ui-select-${++nextUiSelectId}`;
+// Unique per instance (a counter in <script setup> restarts for every instance).
+const generatedId = `ui-select-${useId()}`;
 
 const controlId = computed(() => {
   if (props.id && props.id.trim().length > 0) {
