@@ -284,13 +284,16 @@ print(json.dumps({"provider":"whisperx", "segments_pre_align":segments,
 func TestCharacterize_TranscriptLocalErrorClassification(t *testing.T) {
 	for _, tc := range []struct {
 		name, message string
+		removeAudio   bool
 		redownload    bool
 	}{
-		{"inference", "synthetic inference failure", false},
-		{"audio", "Failed to load audio", true},
-		// Known defect: local string matching also treats a missing model path
-		// as corrupt audio. HTTP mode must use typed errors and preserve media.
-		{"missing-model-path", "No such file or directory: model.cache", true},
+		{"inference", "synthetic inference failure", false, false},
+		// Error text alone never deletes media or rearms downloading.
+		{"audio", "Failed to load audio", false, false},
+		{"missing-model-path", "No such file or directory: model.cache", false, false},
+		{"missing-ffmpeg", "ffmpeg: No such file or directory", false, false},
+		// Only a stat that proves the audio is gone resets the episode.
+		{"audio-gone", "Failed to load audio", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, item := seedCharacterizationPodcastItem(t, func(item *db.PodcastItem, dir string) {
@@ -303,17 +306,22 @@ func TestCharacterize_TranscriptLocalErrorClassification(t *testing.T) {
 				item.TranscriptNextAttempt = nil
 				item.TranscriptRetryCount = 0
 			})
-			configureCharacterizationWhisperX(t, "import sys\nprint("+fmt.Sprintf("%q", tc.message)+", file=sys.stderr)\nsys.exit(2)\n")
+			script := "import os, sys\n"
+			if tc.removeAudio {
+				script += "os.remove(sys.argv[1])\n"
+			}
+			script += "print(" + fmt.Sprintf("%q", tc.message) + ", file=sys.stderr)\nsys.exit(2)\n"
+			configureCharacterizationWhisperX(t, script)
 			if err := TranscribePendingEpisodes(); err == nil {
 				t.Fatal("expected subprocess failure")
 			}
 			got := loadCharacterizationPodcastItem(t, item.ID)
 			if tc.redownload {
-				if FileExists(item.DownloadPath) || got.DownloadPath != "" || got.DownloadStatus != db.NotDownloaded || got.TranscriptStatus != "pending_whisperx" || got.TranscriptProgressStage != "waiting_for_download" {
-					t.Fatalf("local audio-error redownload behavior changed: %+v", got)
+				if got.DownloadPath != "" || got.DownloadStatus != db.NotDownloaded || got.TranscriptStatus != "pending_whisperx" || got.TranscriptProgressStage != "waiting_for_download" {
+					t.Fatalf("missing audio must rearm downloading: %+v", got)
 				}
-			} else if !FileExists(item.DownloadPath) || got.DownloadStatus != db.Downloaded || got.TranscriptStatus != "failed" || got.TranscriptRetryCount != 1 {
-				t.Fatalf("generic error must retain media and schedule a retry: %+v", got)
+			} else if !FileExists(item.DownloadPath) || got.DownloadStatus != db.Downloaded || got.DownloadPath != item.DownloadPath || got.TranscriptStatus != "failed" || got.TranscriptRetryCount != 1 || got.TranscriptNextAttempt == nil {
+				t.Fatalf("error text must retain media and schedule a retry: %+v", got)
 			}
 		})
 	}
