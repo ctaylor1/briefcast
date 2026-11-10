@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - **Upgrade note:** the app now refuses to start when a database migration fails, and runs no later migrations. It used to log the failure and serve on a half-migrated schema. Before upgrading, check the last startup log for `database migration failed` lines; a migration that has been failing quietly will now stop startup.
 - `RELEASE.ps1 deploy -Target app` now requires a restore point when it replaces a running app: pass the folder holding the backup with `-RecoveryDir`, or pass `-NoRestorePoint` to deploy without one. The rollback record notes which.
 - Episode image and audio requests, search, the retention job and the file-size job now read only the columns they use, not whole episode rows with transcripts. The settings row is no longer read on every request. The file-size job handles at most 200 episodes per run.
+- **API change:** handlers that used to answer an empty `200` on failure now send an error. Missing episodes, podcasts and tags get `404` on the image, file, RSS, tag, `PATCH /podcastitems/:id` and `DELETE /podcastitems/:id/delete` routes; other failures get `500`. A podcast RSS request for a missing podcast no longer carries on after its error. `DELETE /podcastitems/:id/delete` now answers after the file is deleted, with the outcome.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
@@ -38,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Requesting a download of an episode that is already downloading no longer starts a second download or resets the first one's state.
 - Episode and cover images: a failed or non-2xx response is no longer saved as an image, downloads over 20 MB are refused, response bodies are always closed, and an image already on disk is not fetched again.
 - Outbound requests stop after 10 redirects; the custom redirect checks had removed Go's default limit. Each outbound purpose now shares one connection pool instead of building a new transport per request.
+- `PATCH /podcastitems/:id` can now set `isPlayed` to false and `title` to an empty string, changes only the fields sent, and reports a failed update.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

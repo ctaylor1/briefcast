@@ -639,8 +639,8 @@ func TestControllerMissingIDErrorBranches(t *testing.T) {
 	resp = performRequest(router, http.MethodPatch, "/podcastitems/missing", strings.NewReader(`{"title":"x"}`), map[string]string{
 		"Content-Type": "application/json",
 	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("PATCH /podcastitems/missing expected 400, got %d", resp.Code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("PATCH /podcastitems/missing expected 404, got %d", resp.Code)
 	}
 }
 

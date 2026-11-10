@@ -358,8 +358,9 @@ func Search(c *gin.Context) {
 			pod.AlreadySaved = ok
 		}
 		c.JSON(200, data)
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 	}
-
 }
 
 // GetOPML handles the corresponding operation.
