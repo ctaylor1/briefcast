@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ctaylor1/briefcast/internal/logging"
@@ -49,6 +50,7 @@ func Init() (*gorm.DB, error) {
 	if err == nil {
 		maxOpenConns := applyConnectionPool(localDB, config.Driver)
 		if config.Driver == DriverSQLite {
+			applySQLiteJournalMode(localDB)
 			logSQLiteSettings(localDB, sqliteBusyTimeoutMS, maxOpenConns)
 		}
 	}
@@ -56,6 +58,42 @@ func Init() (*gorm.DB, error) {
 	DB = db
 	activeDriver = config.Driver
 	return DB, nil
+}
+
+// sqliteJournalModeEnv opts a SQLite database into a journal mode. The mode is
+// stored in the database file, so it persists until changed. Unset leaves the
+// database as it is.
+const sqliteJournalModeEnv = "SQLITE_JOURNAL_MODE"
+
+// configuredSQLiteJournalMode returns "wal", "delete" or "" (leave unchanged).
+func configuredSQLiteJournalMode() string {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(sqliteJournalModeEnv)))
+	switch raw {
+	case "", "wal", "delete":
+		return raw
+	default:
+		logging.Sugar().Warnw("ignoring unsupported "+sqliteJournalModeEnv, "value", raw, "supported", "wal, delete")
+		return ""
+	}
+}
+
+// applySQLiteJournalMode sets the requested journal mode. WAL lets readers and
+// a writer work at the same time, but needs a local disk (not NFS or SMB). If
+// SQLite does not apply the mode, the database keeps its current one.
+func applySQLiteJournalMode(localDB *sql.DB) {
+	mode := configuredSQLiteJournalMode()
+	if mode == "" {
+		return
+	}
+	var applied string
+	// mode is one of two fixed values, so building the PRAGMA is safe.
+	if err := localDB.QueryRow("PRAGMA journal_mode=" + mode).Scan(&applied); err != nil {
+		logging.Sugar().Errorw("could not set sqlite journal mode", "requested", mode, "error", err)
+		return
+	}
+	if !strings.EqualFold(applied, mode) {
+		logging.Sugar().Warnw("sqlite did not apply the requested journal mode", "requested", mode, "journal_mode", applied)
+	}
 }
 
 func logSQLiteSettings(localDB *sql.DB, busyTimeoutMS int, maxOpenConns int) {

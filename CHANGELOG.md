@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
+- `SQLITE_JOURNAL_MODE=wal` opts a SQLite database into WAL mode, so reads no longer block writes. It is off by default; see the README for the disk and backup caveats.
 
 ### Fixed
 - The missing-file check no longer resets episodes when storage is unavailable. It skips the pass when the data directory cannot be read, treats only "file does not exist" as missing, and changes nothing when more than half of a library of 20 or more episodes looks missing (`MISSING_FILES_MAX_PERCENT`).
