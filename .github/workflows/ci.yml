@@ -87,9 +87,66 @@ jobs:
         run: just ci-python
 
       # The dev environment audit above does not cover what the images ship.
-      - name: Audit shipped Python lock files
+      - name: Audit the app image lock file
+        run: uv run pip-audit --disable-pip --require-hashes -r docker/app/requirements.lock
+
+      # Report only. The worker locks keep the WhisperX baseline, whose advisories
+      # need an engine upgrade and a GPU acceptance run (see "Worker image
+      # advisories" in docs/refactor-assessment/2026-11-05/STATUS.md). Advisories
+      # become a warning and a job summary table. An audit that cannot run, or
+      # fails without reporting advisories, still fails the step.
+      - name: Audit the worker image lock files (report only)
         run: |
-          for lock in docker/app/requirements.lock docker/whisperx/requirements-cpu.lock docker/whisperx/requirements-cu128.lock; do
+          status=0
+          for lock in docker/whisperx/requirements-cpu.lock docker/whisperx/requirements-cu128.lock; do
             echo "Auditing $lock"
-            uv run pip-audit --disable-pip --require-hashes -r "$lock"
+            report="$RUNNER_TEMP/$(basename "$lock").json"
+            rm -f "$report"
+            rc=0
+            uv run pip-audit --disable-pip --require-hashes -r "$lock" --format json --output "$report" || rc=$?
+            uv run python - "$lock" "$report" "$rc" <<'PY' || status=1
+          import json
+          import os
+          import sys
+
+          lock, report, rc = sys.argv[1], sys.argv[2], int(sys.argv[3])
+          try:
+              with open(report, encoding="utf-8") as f:
+                  deps = json.load(f)["dependencies"]
+          except (OSError, ValueError, KeyError, TypeError) as exc:
+              print(f"::error::pip-audit wrote no usable report for {lock} (exit {rc}): {exc}")
+              sys.exit(1)
+          hit = sorted((d for d in deps if d.get("vulns")), key=lambda d: d["name"])
+          skipped = sorted(d["name"] for d in deps if d.get("skip_reason"))
+          if rc and not hit:
+              print(f"::error::pip-audit failed on {lock} (exit {rc}) without reporting advisories")
+              sys.exit(1)
+          lines = [f"### `{lock}`", ""]
+          if hit:
+              total = sum(len(d["vulns"]) for d in hit)
+              print(
+                  f"::warning title=Worker lock advisories (report only)::{lock}: "
+                  f"{total} advisories in {len(hit)} packages. See the job summary."
+              )
+              lines += [
+                  f"{total} advisories in {len(hit)} packages (report only).",
+                  "",
+                  "| Package | Version | Advisories | Without a fixed release |",
+                  "| --- | --- | --- | --- |",
+              ]
+              for d in hit:
+                  no_fix = sum(1 for v in d["vulns"] if not v.get("fix_versions"))
+                  lines.append(f"| {d['name']} | {d['version']} | {len(d['vulns'])} | {no_fix} |")
+          else:
+              lines.append("No known advisories.")
+          if skipped:
+              lines += ["", "Not audited: " + ", ".join(skipped)]
+          text = "\n".join(lines) + "\n\n"
+          print(text)
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write(text)
+          PY
           done
+          exit "$status"
