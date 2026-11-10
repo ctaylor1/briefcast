@@ -430,10 +430,10 @@ onUnmounted(() => {
             :disabled="queueCounts.queued === 0 && queueCounts.downloading === 0"
             @click="pauseAllDownloads"
           >
-            Pause All Downloads
+            Pause all downloads
           </UiButton>
           <UiButton size="sm" variant="success" :disabled="queueCounts.paused === 0" @click="resumeAllDownloads">
-            Resume All Downloads
+            Resume all downloads
           </UiButton>
           <UiButton
             size="sm"
@@ -480,19 +480,22 @@ onUnmounted(() => {
 
     <UiCard v-else padding="none">
       <div class="table-wrap visually-scrollable">
-        <table class="data-table downloads-table">
-          <thead>
-            <tr>
-              <th>Episode</th>
-              <th>Podcast</th>
-              <th>Download Date</th>
-              <th>Status</th>
-              <th>Progress</th>
-              <th>Actions</th>
+        <!-- Below 768px the rows restyle as cards. Explicit roles keep the table semantics
+             that some browsers drop when the display type changes. -->
+        <table class="data-table downloads-table" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader" scope="col">Episode</th>
+              <th role="columnheader" scope="col">Podcast</th>
+              <th role="columnheader" scope="col">Download date</th>
+              <th role="columnheader" scope="col">Status</th>
+              <th role="columnheader" scope="col">Progress</th>
+              <th role="columnheader" scope="col">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             <tr
+              role="row"
               v-for="item in sortedQueueItems"
               :key="item.ID"
               :class="{
@@ -500,14 +503,14 @@ onUnmounted(() => {
                 'downloads-table__row--paused': isPaused(item),
               }"
             >
-              <td>
+              <td role="cell" class="downloads-table__cell--episode">
                 <div class="downloads-table__episode">
                   <p class="downloads-table__title">{{ item.Title }}</p>
                 </div>
               </td>
-              <td class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
-              <td class="meta-text">{{ downloadDateLabel(item) }}</td>
-              <td>
+              <td role="cell" class="meta-text" data-label="Podcast">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
+              <td role="cell" class="meta-text" data-label="Download date">{{ downloadDateLabel(item) }}</td>
+              <td role="cell" data-label="Status">
                 <div class="downloads-table__badges">
                   <UiBadge :tone="queueStatusTone(item)">
                     {{ queueStatusLabel(item) }}
@@ -520,7 +523,7 @@ onUnmounted(() => {
                   </UiBadge>
                 </div>
               </td>
-              <td>
+              <td role="cell" data-label="Progress">
                 <div v-if="!isPaused(item) && !isDownloaded(item)" class="downloads-table__progress">
                   <div
                     class="downloads-table__progress-track"
@@ -543,7 +546,7 @@ onUnmounted(() => {
                 <p v-else-if="isDownloaded(item)" class="downloads-table__completed-note">Download completed.</p>
                 <p v-else class="downloads-table__paused-note">Paused. Resume downloads to continue.</p>
               </td>
-              <td>
+              <td role="cell" class="downloads-table__cell--actions">
                 <div class="downloads-table__actions">
                   <UiButton
                     v-if="isPaused(item)"
@@ -551,7 +554,7 @@ onUnmounted(() => {
                     variant="success"
                     @click="resumeDownload(item)"
                   >
-                    Resume Download
+                    Resume download
                   </UiButton>
                   <UiButton size="sm" variant="outline" @click="openPlayer(item)">
                     Play
@@ -666,7 +669,7 @@ onUnmounted(() => {
 }
 
 .downloads-table__episode {
-  min-width: 280px;
+  min-width: 200px;
 }
 
 .downloads-table__title {
@@ -687,11 +690,11 @@ onUnmounted(() => {
 }
 
 .downloads-table__actions {
-  min-width: 180px;
+  min-width: 0;
 }
 
 .downloads-table__progress {
-  min-width: 140px;
+  min-width: 120px;
 }
 
 .downloads-table__progress-track {
@@ -756,6 +759,69 @@ onUnmounted(() => {
 @media (min-width: 768px) {
   .downloads-filters__row {
     grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+/* Below the wide desktop layout (the same 1200px switch the Episodes list uses), each row
+   becomes a card with the column name above each value. */
+@media (max-width: 1199px) {
+  .downloads-table,
+  .downloads-table tbody,
+  .downloads-table tr,
+  .downloads-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .downloads-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .downloads-table tbody {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .downloads-table tr {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-primary);
+  }
+
+  .downloads-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .downloads-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--color-text-secondary);
+    font-size: var(--font-caption-size);
+    line-height: var(--font-caption-line-height);
+    font-weight: 600;
+  }
+
+  .downloads-table__episode,
+  .downloads-table__actions,
+  .downloads-table__progress {
+    min-width: 0;
+  }
+
+  .downloads-table__progress-track {
+    max-width: none;
+  }
+
+  .downloads-table__cell--actions {
+    padding-top: var(--space-1);
   }
 }
 </style>
