@@ -151,6 +151,9 @@ async function loadItems(): Promise<void> {
     activeIndex.value = 0;
     pendingStart.value = parseStartSeconds();
     lastAutoSkipStart.value = null;
+    // Render the player first: <audio> only exists once loading is over, and seeking to
+    // the requested start needs the element.
+    isLoading.value = false;
     await nextTick();
     await playAt(0, pendingStart.value ?? undefined);
   } catch (error) {
@@ -203,14 +206,21 @@ async function seekTo(seconds: number): Promise<void> {
     applySeek();
     return;
   }
-  await new Promise<void>((resolve) => {
-    const handle = () => {
-      audio.removeEventListener("loadedmetadata", handle);
-      resolve();
+  // Wait for metadata. If the file fails to load, give up instead of waiting forever.
+  const loaded = await new Promise<boolean>((resolve) => {
+    const done = (ok: boolean) => () => {
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("error", onError);
+      resolve(ok);
     };
-    audio.addEventListener("loadedmetadata", handle);
+    const onLoaded = done(true);
+    const onError = done(false);
+    audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("error", onError);
   });
-  applySeek();
+  if (loaded) {
+    applySeek();
+  }
 }
 
 function playNext(): void {

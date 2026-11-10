@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createLatest } from "../lib/latest";
 import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -174,11 +175,14 @@ async function loadPodcastOptions(): Promise<void> {
   }
 }
 
+const episodesRequest = createLatest();
+
 async function fetchEpisodes(): Promise<void> {
   isLoading.value = true;
   errorMessage.value = "";
+  let stale = false;
   try {
-    const response = await episodesApi.list({
+    const result = await episodesRequest.run(() => episodesApi.list({
       page: filter.page,
       count: filter.count,
       sorting: filter.sorting,
@@ -187,7 +191,12 @@ async function fetchEpisodes(): Promise<void> {
       isPlayed: filter.isPlayed !== "nil" ? filter.isPlayed : undefined,
       isBookmarked: filter.favoritesOnly ? "true" : undefined,
       podcastIds: filter.podcastIds.length > 0 ? filter.podcastIds : undefined,
-    });
+    }));
+    stale = result.stale;
+    if (stale) {
+      return;
+    }
+    const response = result.value;
 
     items.value = response.podcastItems;
     const next = response.filter;
@@ -200,7 +209,9 @@ async function fetchEpisodes(): Promise<void> {
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load episodes.");
   } finally {
-    isLoading.value = false;
+    if (!stale) {
+      isLoading.value = false;
+    }
   }
 }
 

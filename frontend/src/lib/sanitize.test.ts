@@ -1,16 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { JSDOM } from "jsdom";
 import DOMPurify from "dompurify";
-
-const window = new JSDOM("").window;
-const purify = DOMPurify(window as unknown as Window);
-
-function sanitizeHtml(dirty: string): string {
-  return purify.sanitize(dirty);
-}
+// The production function, not a copy. The test runner provides a jsdom window.
+import { sanitizeHtml } from "./sanitize.ts";
 
 describe("sanitizeHtml", () => {
+  it("runs a working DOMPurify, not a pass-through", () => {
+    assert.equal(DOMPurify.isSupported, true);
+  });
+
   it("strips <script> tags", () => {
     const dirty = '<p>Hello</p><script>alert("xss")</script>';
     const result = sanitizeHtml(dirty);

@@ -172,15 +172,26 @@ export function useEpisodeDrawer() {
     }
   }
 
+  // Responses for an episode that is no longer open are dropped (latest wins).
+  function isCurrent(id: string): boolean {
+    return drawerItem.value?.ID === id;
+  }
+
   async function fetchChapters(id: string): Promise<void> {
     drawerLoadingChapters.value = true;
     try {
       const response = await episodesApi.getChapters(id);
-      applyChaptersResponse(response);
+      if (isCurrent(id)) {
+        applyChaptersResponse(response);
+      }
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load chapters.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load chapters.");
+      }
     } finally {
-      drawerLoadingChapters.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingChapters.value = false;
+      }
     }
   }
 
@@ -193,11 +204,17 @@ export function useEpisodeDrawer() {
     drawerLoadingTranscript.value = true;
     try {
       const response = await episodesApi.getTranscript(id);
-      applyTranscriptResponse(response);
+      if (isCurrent(id)) {
+        applyTranscriptResponse(response);
+      }
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load transcript.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load transcript.");
+      }
     } finally {
-      drawerLoadingTranscript.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingTranscript.value = false;
+      }
     }
   }
 
@@ -257,6 +274,9 @@ export function useEpisodeDrawer() {
     drawerSummaryModel.value = "";
     try {
       const response: SummaryResponse = await episodesApi.getSummary(id);
+      if (!isCurrent(id)) {
+        return;
+      }
       drawerSummaryStatus.value = response.status || "not_attempted";
       if (typeof response.isFavorited === "boolean" && drawerItem.value) {
         drawerItem.value.IsSummaryFavorited = response.isFavorited;
@@ -267,9 +287,13 @@ export function useEpisodeDrawer() {
       drawerSummaryDate.value = response.generatedAt ?? "";
       drawerSummaryModel.value = response.model ?? "";
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
+      }
     } finally {
-      drawerLoadingSummary.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingSummary.value = false;
+      }
     }
   }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createLatest } from "../lib/latest";
 import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { marked } from "marked";
@@ -123,18 +124,27 @@ async function loadObsidianSettings(): Promise<void> {
   }
 }
 
+const summariesRequest = createLatest();
+const readerRequest = createLatest();
+
 async function fetchSummaries(): Promise<void> {
   isLoading.value = true;
   errorMessage.value = "";
+  let stale = false;
   try {
-    const response = await summariesApi.list({
+    const result = await summariesRequest.run(() => summariesApi.list({
       page: filter.page,
       count: filter.count,
       sorting: filter.sorting,
       q: filter.q.trim() || undefined,
       podcastIds: filter.podcastIds.length > 0 ? filter.podcastIds : undefined,
       favoritesOnly: filter.favoritesOnly || undefined,
-    });
+    }));
+    stale = result.stale;
+    if (stale) {
+      return;
+    }
+    const response = result.value;
 
     items.value = response.summaries;
     const next = response.filter;
@@ -147,7 +157,9 @@ async function fetchSummaries(): Promise<void> {
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load summaries.");
   } finally {
-    isLoading.value = false;
+    if (!stale) {
+      isLoading.value = false;
+    }
   }
 }
 
@@ -194,8 +206,14 @@ async function openReader(item: SummaryListItem): Promise<void> {
   readerTranscriptStatus.value = "";
   scrollProgress.value = 0;
 
+  let stale = false;
   try {
-    const response = await episodesApi.getSummary(item.id);
+    const result = await readerRequest.run(() => episodesApi.getSummary(item.id));
+    stale = result.stale;
+    if (stale) {
+      return;
+    }
+    const response = result.value;
     summaryMarkdown.value = response.markdown || "";
     summaryMarkdownFile.value = response.markdownFileName || "summary.md";
     if (typeof response.isFavorited === "boolean") {
@@ -208,7 +226,12 @@ async function openReader(item: SummaryListItem): Promise<void> {
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load summary.");
   } finally {
-    readerLoadingSummary.value = false;
+    if (!stale) {
+      readerLoadingSummary.value = false;
+    }
+  }
+  if (stale) {
+    return;
   }
 
   await nextTick();

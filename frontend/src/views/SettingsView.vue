@@ -62,6 +62,8 @@ const {
 } = useTheme();
 
 const isLoading = ref(true);
+const loadFailed = ref(false);
+const settingsReady = computed(() => !isLoading.value && !loadFailed.value);
 const isSavingBackCatalog = ref(false);
 const isSavingRetention = ref(false);
 const isSavingSummarization = ref(false);
@@ -230,6 +232,7 @@ function sanitizeNumber(value: string): number {
 
 async function loadSettings(): Promise<void> {
   isLoading.value = true;
+  loadFailed.value = false;
   clearError();
   try {
     const settings = await settingsApi.get();
@@ -260,6 +263,8 @@ async function loadSettings(): Promise<void> {
       usedModels.value = [];
     }
   } catch (error) {
+    // Keep the forms hidden: saving them now would overwrite real settings with blanks.
+    loadFailed.value = true;
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
     isLoading.value = false;
@@ -760,8 +765,15 @@ onUnmounted(() => {
         <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
       </UiCard>
 
+      <UiCard v-if="!isLoading && loadFailed" padding="lg" class="stack-3 settings-load-failed">
+        <p>Settings could not be loaded, so they are hidden to avoid saving blanks over them.</p>
+        <div>
+          <UiButton variant="secondary" size="sm" @click="loadSettings">Try again</UiButton>
+        </div>
+      </UiCard>
+
       <!-- Appearance settings -->
-      <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+      <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Appearance</h3>
         <p class="section-subtitle">
@@ -836,7 +848,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Back catalog download settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Back Catalog Downloads</h3>
         <p class="section-subtitle">
@@ -913,7 +925,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Retention settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Retention</h3>
         <p class="section-subtitle">
@@ -991,7 +1003,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- AI Summarization settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">AI Summarization</h3>
         <p class="section-subtitle">
@@ -1148,7 +1160,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Model Settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Model Settings</h3>
         <p class="section-subtitle">
@@ -1249,7 +1261,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Obsidian Integration -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Obsidian</h3>
         <p class="section-subtitle">
@@ -1298,7 +1310,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Briefpoint Integration -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Briefpoint Integration</h3>
         <p class="section-subtitle">

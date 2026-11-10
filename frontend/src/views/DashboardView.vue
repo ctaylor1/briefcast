@@ -156,9 +156,11 @@ async function openAlternateFeeds(podcast: Podcast): Promise<void> {
   feedsUrls.value = [];
   try {
     const resp = await podcastsApi.getAlternateFeeds(podcast.ID);
-    feedsUrls.value = resp.urls;
-  } catch {
-    feedsUrls.value = [];
+    feedsUrls.value = resp.urls ?? [];
+  } catch (error) {
+    // Do not open the editor with an empty list: saving it would delete the real feeds.
+    setError(getErrorMessage(error, "Could not load alternate feeds."));
+    return;
   }
   feedsPodcast.value = podcast;
 }
