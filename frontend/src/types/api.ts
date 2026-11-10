@@ -64,6 +64,8 @@ export interface PodcastItem {
   LLMSummaryStatus: string;
   IsSummaryFavorited?: boolean;
   IsPlayed: boolean;
+  // Where the web player stopped; null until played there, 0 once finished.
+  PlaybackPositionSeconds?: number | null;
   BookmarkDate: string;
 }
 

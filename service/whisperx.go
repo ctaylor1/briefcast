@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -305,7 +306,8 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 			resetItemForRedownload(&item, "no download path set", jobLogger)
 			return
 		}
-		if !FileExists(item.DownloadPath) {
+		missing, statErr := localAudioMissing(item.DownloadPath)
+		if missing {
 			jobLogger.Warnw(
 				"skipping transcription: audio file not found on disk",
 				"podcast_item_id", item.ID,
@@ -315,16 +317,14 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 			resetItemForRedownload(&item, "audio file not found on disk", jobLogger)
 			return
 		}
+		if statErr != nil {
+			// Only proven absence rearms downloading; any other stat error is unknown.
+			markLocalTranscriptRetry(&item, cfg, fmt.Errorf("unable to check audio file: %w", statErr), jobLogger)
+			return
+		}
 		fileSize, sizeErr := GetFileSize(item.DownloadPath)
 		if sizeErr != nil {
-			jobLogger.Warnw(
-				"skipping transcription: unable to read audio file",
-				"podcast_item_id", item.ID,
-				"episode", item.Title,
-				"path", item.DownloadPath,
-				"error", sizeErr,
-			)
-			resetItemForRedownload(&item, fmt.Sprintf("unable to read audio file: %v", sizeErr), jobLogger)
+			markLocalTranscriptRetry(&item, cfg, fmt.Errorf("unable to read audio file: %w", sizeErr), jobLogger)
 			return
 		}
 		const minAudioFileBytes = 1024
@@ -368,7 +368,16 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 			item.TranscriptProgressPct = 1
 			item.TranscriptProgressStage = "starting"
 		}
-		if err := db.UpdatePodcastItem(&item); err != nil {
+		if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"transcript_status":         item.TranscriptStatus,
+			"transcript_next_attempt":   item.TranscriptNextAttempt,
+			"transcript_progress_pct":   item.TranscriptProgressPct,
+			"transcript_progress_stage": item.TranscriptProgressStage,
+		}); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				jobLogger.Infow("skipping transcription: episode was deleted", "podcast_item_id", item.ID)
+				return
+			}
 			jobLogger.Warnw("failed to mark transcript processing", "podcast_item_id", item.ID, "error", err)
 		}
 
@@ -380,7 +389,11 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 				if !applyWhisperXProgressUpdate(&item, progress) {
 					return
 				}
-				if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
+				if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+					"transcript_progress_stage":  item.TranscriptProgressStage,
+					"transcript_progress_pct":    item.TranscriptProgressPct,
+					"transcript_checkpoint_json": item.TranscriptCheckpointJSON,
+				}); updateErr != nil {
 					jobLogger.Warnw(
 						"failed to persist transcript progress",
 						"podcast_item_id",
@@ -396,39 +409,22 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 			},
 		)
 		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "Failed to load audio") || strings.Contains(errMsg, "No such file or directory") {
+			// Error text never authorizes deleting media: a missing model or ffmpeg
+			// also says "No such file or directory". Only a stat that proves the
+			// audio is gone rearms downloading; everything else retries.
+			if gone, _ := localAudioMissing(item.DownloadPath); gone {
 				jobLogger.Errorw(
-					"whisperx transcription failed: audio file is unreadable or corrupted, resetting for re-download",
+					"whisperx transcription failed and the audio file is gone, resetting for re-download",
 					"podcast_item_id", item.ID,
 					"episode", item.Title,
 					"path", item.DownloadPath,
 					"error", err,
 				)
-				if removeErr := os.Remove(item.DownloadPath); removeErr != nil && !os.IsNotExist(removeErr) {
-					jobLogger.Warnw("failed to remove corrupted audio file", "path", item.DownloadPath, "error", removeErr)
-				}
-				resetItemForRedownload(&item, fmt.Sprintf("audio file unreadable: %s", trimToLength(errMsg, 200)), jobLogger)
+				resetItemForRedownload(&item, fmt.Sprintf("audio file missing: %s", trimToLength(err.Error(), 200)), jobLogger)
 				setError(err)
 				return
 			}
-
-			scheduleTranscriptRetry(&item, cfg, err)
-			item.TranscriptProgressStage = "failed"
-			if item.TranscriptProgressPct >= 100 {
-				item.TranscriptProgressPct = 99
-			}
-			jobLogger.Warnw(
-				"whisperx transcription failed",
-				"podcast_item_id", item.ID,
-				"episode", item.Title,
-				"error", err,
-				"retry_count", item.TranscriptRetryCount,
-				"next_attempt", item.TranscriptNextAttempt,
-			)
-			if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
-				jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", updateErr)
-			}
+			markLocalTranscriptRetry(&item, cfg, err, jobLogger)
 			setError(err)
 			return
 		}
@@ -447,12 +443,36 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 		item.TranscriptCheckpointJSON = ""
 		// Lineage: record which WhisperX model produced this transcript.
 		item.TranscriptModel = transcriptResultModel(output, cfg.Model)
-		if err := db.UpdatePodcastItem(&item); err != nil {
-			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
-			setError(err)
+		saveErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"transcript_json":              item.TranscriptJSON,
+			"canonical_transcript":         item.CanonicalTranscript,
+			"canonical_transcript_version": item.CanonicalTranscriptVersion,
+			"canonical_updated_at":         item.CanonicalUpdatedAt,
+			"transcript_status":            item.TranscriptStatus,
+			"transcript_retry_count":       item.TranscriptRetryCount,
+			"transcript_next_attempt":      item.TranscriptNextAttempt,
+			"transcript_last_error":        item.TranscriptLastError,
+			"transcript_progress_pct":      item.TranscriptProgressPct,
+			"transcript_progress_stage":    item.TranscriptProgressStage,
+			"transcript_checkpoint_json":   item.TranscriptCheckpointJSON,
+			"transcript_model":             item.TranscriptModel,
+		})
+		if saveErr != nil {
+			if errors.Is(saveErr, gorm.ErrRecordNotFound) {
+				// The episode was deleted while it was transcribing. Saving the
+				// whole row used to recreate it; now the transcript is dropped.
+				jobLogger.Infow("discarding transcript: episode was deleted during transcription", "podcast_item_id", item.ID)
+				return
+			}
+			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", saveErr)
+			setError(saveErr)
 		}
 
 		ExportTranscript(&item)
+		if saveErr != nil {
+			// A summary must only ever read a committed transcript.
+			return
+		}
 
 		// Summarize the transcript if LLM summarization is enabled.
 		llmCfg := LoadLLMConfig()
@@ -486,10 +506,12 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 	}
 
 	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
 	var stopOnce sync.Once
 	ticker := time.NewTicker(time.Duration(refreshSecs) * time.Second)
 
-	go func() {
+	SafeGo("job lock heartbeat", func() {
+		defer close(doneCh)
 		defer ticker.Stop()
 		for {
 			select {
@@ -501,10 +523,13 @@ func startJobLockHeartbeat(lockID string, durationMins int, refreshSecs int, onE
 				}
 			}
 		}
-	}()
+	})
 
+	// Stop waits for the goroutine, so a renewal cannot land after the caller
+	// releases the lock.
 	return func() {
 		stopOnce.Do(func() { close(stopCh) })
+		<-doneCh
 	}
 }
 
@@ -631,8 +656,61 @@ func resetItemForRedownload(item *db.PodcastItem, reason string, jobLogger *zap.
 	item.TranscriptRetryCount = 0
 	item.TranscriptNextAttempt = nil
 	item.TranscriptLastError = reason
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"download_status":            item.DownloadStatus,
+		"download_path":              item.DownloadPath,
+		"downloaded_bytes":           item.DownloadedBytes,
+		"download_total_bytes":       item.DownloadTotalBytes,
+		"transcript_status":          item.TranscriptStatus,
+		"transcript_progress_pct":    item.TranscriptProgressPct,
+		"transcript_progress_stage":  item.TranscriptProgressStage,
+		"transcript_checkpoint_json": item.TranscriptCheckpointJSON,
+		"transcript_retry_count":     item.TranscriptRetryCount,
+		"transcript_next_attempt":    item.TranscriptNextAttempt,
+		"transcript_last_error":      item.TranscriptLastError,
+	}); err != nil {
 		jobLogger.Warnw("failed to reset item for re-download", "podcast_item_id", item.ID, "error", err)
+	}
+}
+
+// localAudioMissing reports whether stat proves the audio file is absent. Any
+// other stat failure is returned as an error and must not be treated as missing.
+func localAudioMissing(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return true, nil
+	}
+	return false, err
+}
+
+// markLocalTranscriptRetry records a failed local attempt and schedules a retry,
+// keeping the audio file and download state as they are.
+func markLocalTranscriptRetry(item *db.PodcastItem, cfg WhisperXConfig, transcriptionErr error, jobLogger *zap.SugaredLogger) {
+	scheduleTranscriptRetry(item, cfg, transcriptionErr)
+	item.TranscriptProgressStage = "failed"
+	if item.TranscriptProgressPct >= 100 {
+		item.TranscriptProgressPct = 99
+	}
+	jobLogger.Warnw(
+		"whisperx transcription failed",
+		"podcast_item_id", item.ID,
+		"episode", item.Title,
+		"error", transcriptionErr,
+		"retry_count", item.TranscriptRetryCount,
+		"next_attempt", item.TranscriptNextAttempt,
+	)
+	if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"transcript_status":         item.TranscriptStatus,
+		"transcript_retry_count":    item.TranscriptRetryCount,
+		"transcript_last_error":     item.TranscriptLastError,
+		"transcript_next_attempt":   item.TranscriptNextAttempt,
+		"transcript_progress_stage": item.TranscriptProgressStage,
+		"transcript_progress_pct":   item.TranscriptProgressPct,
+	}); updateErr != nil {
+		jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", updateErr)
 	}
 }
 

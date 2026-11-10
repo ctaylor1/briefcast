@@ -331,6 +331,7 @@ For Docker Compose end users, most deployments only need `.env` values for:
 - `CONFIG`: config directory inside the container or local runtime
 - `DATA`: assets directory inside the container or local runtime
 - `CHECK_FREQUENCY`: base scheduler interval in minutes; invalid values fall back to `30`
+- `MISSING_FILES_MAX_PERCENT`: the missing-file check changes nothing when more than this share of at least 20 downloaded episodes look missing, because that usually means the storage is unavailable; default `50`, `100` turns the limit off
 - `HOST_BIND`: host address Compose publishes the app on; default `127.0.0.1`. Set `0.0.0.0` for LAN access
 - `HOST_PORT`: host port number Compose publishes the app on; default `8080`
 - `PASSWORD`: optional basic auth password; username is always `briefcast`. When empty, authentication is off and a warning is logged at startup
@@ -345,6 +346,10 @@ For Docker Compose end users, most deployments only need `.env` values for:
 - `DB_MAX_IDLE_CONNS`: default `10`
 - `DB_MAX_OPEN_CONNS`: default `25`, or `4` for SQLite
 - `SQLITE_BUSY_TIMEOUT_MS`: how long a SQLite connection waits for a lock before failing; default `5000`. A timeout in `DATABASE_URL` takes precedence
+- `SQLITE_JOURNAL_MODE`: opt-in `wal` or `delete`. Unset leaves the database's stored mode alone (new databases use `delete`). WAL lets reads run alongside a write, which cuts `database is locked` errors, but:
+  - the database must be on a local disk, not NFS or SMB;
+  - a file copy of the database must include the `-wal` and `-shm` files, or be taken with the app stopped (the scheduled backup uses `VACUUM INTO` and is unaffected);
+  - to switch back, set `SQLITE_JOURNAL_MODE=delete` and restart once.
 - `DB_CONN_MAX_LIFETIME_MINUTES`: default `0`
 
 SQLite:

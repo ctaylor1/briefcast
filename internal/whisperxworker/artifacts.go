@@ -277,11 +277,12 @@ var errGone = transcription.Error("INTERNAL", "Acknowledged result has been prun
 
 // PruneAcknowledged retains identities and checkpoints referenced by another
 // attempt. Failed/cancelled source checkpoints remain available for resume.
-// Persisting the tombstone first makes a crash during deletion safe to repeat.
+// Persisting the tombstone first makes a crash during deletion safe to repeat;
+// prune_complete is written last, so only fully cleaned tombstones are skipped.
 func (w *Worker) PruneAcknowledged(now time.Time) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	records, err := w.store.list("WHERE state='succeeded' AND acknowledged=1")
+	records, err := w.store.list("WHERE state='succeeded' AND acknowledged=1 AND COALESCE(json_extract(data,'$.prune_complete'),0)=0")
 	if err != nil {
 		return err
 	}
@@ -324,6 +325,13 @@ func (w *Worker) PruneAcknowledged(now time.Time) error {
 			}
 		}
 		if err = syncDirectory(w.store.jobDir(r.Status.JobID)); err != nil {
+			return err
+		}
+		// The (now empty) job directory is kept: older workers fail GC on a
+		// missing one, so removing it would make a rollback stop pruning.
+		r.PruneComplete = true
+		if err = w.store.save(r, false); err != nil {
+			w.unavailable(err)
 			return err
 		}
 	}

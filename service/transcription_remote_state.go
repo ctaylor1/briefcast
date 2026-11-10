@@ -148,7 +148,21 @@ func fingerprintRemoteMedia(ctx context.Context, rootPath, audioPath string) (tr
 	return transcription.MediaInput{RelativePath: slash, SizeBytes: n, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
+// manualResetReason is recorded when a manual retry abandons a submission whose
+// audio or engine profile no longer matches; that request could never be
+// accepted again, so retrying it would only block the episode again.
+const manualResetReason = "Audio or engine profile changed since the last attempt; manual retry restarts from zero"
+
+func (b *httpTranscriptionBackend) currentEngineProfile() string {
+	if b.cfg.EngineProfile != "" {
+		return b.cfg.EngineProfile
+	}
+	return b.caps.EngineProfile
+}
+
 func (b *httpTranscriptionBackend) prepare(ctx context.Context, item db.PodcastItem) (*remoteEnvelope, error) {
+	var reset *remoteEnvelope
+	var input transcription.MediaInput
 	if strings.TrimSpace(item.TranscriptCheckpointJSON) != "" {
 		var marker map[string]json.RawMessage
 		if json.Unmarshal([]byte(item.TranscriptCheckpointJSON), &marker) != nil {
@@ -162,57 +176,72 @@ func (b *httpTranscriptionBackend) prepare(ctx context.Context, item db.PodcastI
 			if e.EpisodeID != item.ID || e.DeploymentID != b.deployment {
 				return nil, remoteProblem("INVALID_CONFIG", "Checkpoint identity differs from episode or deployment", false)
 			}
-			if e.TerminalState == "" {
-				return e, nil
-			}
 			manual := item.TranscriptProgressStage == "queued_for_retry" && item.TranscriptStatus == "pending_whisperx"
-			if (!e.TerminalRetryable || !b.cfg.RetryFailed) && !manual {
-				return nil, remoteProblem("INVALID_CONFIG", "Terminal attempt requires explicit repair", false)
-			}
 			r, _, _ := transcription.DecodeRequest([]byte(e.RequestJSON))
-			input, err := fingerprintRemoteMedia(ctx, getEnvString("DATA", "/assets"), item.DownloadPath)
-			if err != nil {
-				return nil, err
+			if manual {
+				// A manual retry is the operator's repair action. If the audio or
+				// the engine profile changed, the persisted request can never be
+				// accepted again; start a new generation instead of re-blocking.
+				if input, err = fingerprintRemoteMedia(ctx, getEnvString("DATA", "/assets"), item.DownloadPath); err != nil {
+					return nil, err
+				}
+				if input != r.Input || e.EngineProfile != b.currentEngineProfile() {
+					reset = e
+				}
 			}
-			if input != r.Input {
-				return nil, remoteProblem("INPUT_CHANGED", "Local audio differs from persisted submission", false)
+			if reset == nil {
+				if e.TerminalState == "" {
+					return e, nil
+				}
+				if (!e.TerminalRetryable || !b.cfg.RetryFailed) && !manual {
+					return nil, remoteProblem("INVALID_CONFIG", "Terminal attempt requires explicit repair", false)
+				}
+				if !manual {
+					if input, err = fingerprintRemoteMedia(ctx, getEnvString("DATA", "/assets"), item.DownloadPath); err != nil {
+						return nil, err
+					}
+				}
+				if input != r.Input {
+					return nil, remoteProblem("INPUT_CHANGED", "Local audio differs from persisted submission", false)
+				}
+				r.Attempt++
+				r.ResumeFromJobID = nil
+				if e.Checkpoint.Compatible && e.Checkpoint.CompletedSeconds > 0 && e.Checkpoint.Format == transcription.CheckpointFormat && e.EngineProfile == b.caps.EngineProfile {
+					id := e.JobID
+					r.ResumeFromJobID = &id
+				} else {
+					e.RestartReason = "No verified compatible worker checkpoint; retry starts from zero"
+				}
+				// Preserve the accepted options even if environment settings changed.
+				prepared, err := makeRemoteEnvelope(r, e.Expected, e.LegacyImport, e.RestartReason)
+				if prepared != nil {
+					prepared.PreparedWorkerInstanceID = b.caps.WorkerInstanceID
+				}
+				return prepared, err
 			}
-			r.Attempt++
-			r.ResumeFromJobID = nil
-			if e.Checkpoint.Compatible && e.Checkpoint.CompletedSeconds > 0 && e.Checkpoint.Format == transcription.CheckpointFormat && e.EngineProfile == b.caps.EngineProfile {
-				id := e.JobID
-				r.ResumeFromJobID = &id
-			} else {
-				e.RestartReason = "No verified compatible worker checkpoint; retry starts from zero"
-			}
-			// Preserve the accepted options even if environment settings changed.
-			prepared, err := makeRemoteEnvelope(r, e.Expected, e.LegacyImport, e.RestartReason)
-			if prepared != nil {
-				prepared.PreparedWorkerInstanceID = b.caps.WorkerInstanceID
-			}
-			return prepared, err
 		}
 	}
-	input, err := fingerprintRemoteMedia(ctx, getEnvString("DATA", "/assets"), item.DownloadPath)
-	if err != nil {
-		return nil, err
+	if reset == nil {
+		var err error
+		if input, err = fingerprintRemoteMedia(ctx, getEnvString("DATA", "/assets"), item.DownloadPath); err != nil {
+			return nil, err
+		}
 	}
-	profile := b.cfg.EngineProfile
-	if profile == "" {
-		profile = b.caps.EngineProfile
-	}
+	profile := b.currentEngineProfile()
 	expected := transcription.EffectiveConfig{EngineProfile: profile, Device: b.cfg.Device, ComputeType: b.cfg.ComputeType, BatchSize: b.cfg.BatchSize, ExecutionTimeoutSeconds: getEnvInt(whisperxTimeoutEnv, defaultWhisperXTimeoutSeconds)}
 	r := transcription.JobRequest{ContractVersion: 1, DeploymentID: b.deployment, EpisodeID: item.ID, GenerationID: uuid.NewString(), Attempt: 1, Input: input, EngineProfile: profile, Options: remoteOptions(b.cfg)}
-	if err = b.checkOptions(r.Options, profile, expected); err != nil {
+	if err := b.checkOptions(r.Options, profile, expected); err != nil {
 		return nil, err
 	}
 	var legacy json.RawMessage
 	reason := ""
-	if strings.TrimSpace(item.TranscriptCheckpointJSON) != "" {
+	if reset != nil {
+		legacy, reason = reset.LegacyImport, manualResetReason
+	} else if strings.TrimSpace(item.TranscriptCheckpointJSON) != "" {
 		// Legacy sidecars lack option/input provenance. Preserve the original;
 		// trusted rollout import requires evidence supplied by Stage G tooling.
 		var old transcription.LegacyCheckpoint
-		if _, err = transcription.CanonicalJSON([]byte(item.TranscriptCheckpointJSON)); err != nil || json.Unmarshal([]byte(item.TranscriptCheckpointJSON), &old) != nil {
+		if _, err := transcription.CanonicalJSON([]byte(item.TranscriptCheckpointJSON)); err != nil || json.Unmarshal([]byte(item.TranscriptCheckpointJSON), &old) != nil {
 			return nil, remoteProblem("INVALID_CONFIG", "Corrupt legacy checkpoint", false)
 		}
 		reason = "Legacy checkpoint has no verified input/options provenance; restarted from zero"

@@ -1,3 +1,5 @@
+import { toast } from "../lib/toast";
+import { parseTranscript, type TranscriptAsset, type TranscriptSegment } from "../lib/transcript";
 import { computed, ref } from "vue";
 import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
@@ -8,8 +10,6 @@ import {
 import type { Chapter, ChaptersResponse, PodcastItem, ShowNoteLink, SummaryResponse, TranscriptResponse } from "../types/api";
 
 type DrawerTab = "overview" | "chapters" | "transcript" | "summary" | "links";
-type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
-type TranscriptAsset = { url?: string; type?: string; language?: string };
 
 export function useEpisodeDrawer() {
   const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
@@ -172,15 +172,26 @@ export function useEpisodeDrawer() {
     }
   }
 
+  // Responses for an episode that is no longer open are dropped (latest wins).
+  function isCurrent(id: string): boolean {
+    return drawerItem.value?.ID === id;
+  }
+
   async function fetchChapters(id: string): Promise<void> {
     drawerLoadingChapters.value = true;
     try {
       const response = await episodesApi.getChapters(id);
-      applyChaptersResponse(response);
+      if (isCurrent(id)) {
+        applyChaptersResponse(response);
+      }
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load chapters.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load chapters.");
+      }
     } finally {
-      drawerLoadingChapters.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingChapters.value = false;
+      }
     }
   }
 
@@ -193,11 +204,17 @@ export function useEpisodeDrawer() {
     drawerLoadingTranscript.value = true;
     try {
       const response = await episodesApi.getTranscript(id);
-      applyTranscriptResponse(response);
+      if (isCurrent(id)) {
+        applyTranscriptResponse(response);
+      }
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load transcript.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load transcript.");
+      }
     } finally {
-      drawerLoadingTranscript.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingTranscript.value = false;
+      }
     }
   }
 
@@ -209,44 +226,10 @@ export function useEpisodeDrawer() {
       drawerItem.value.IsSummaryFavorited = response.isFavorited;
     }
     drawerCanonicalTranscript.value = response.canonicalTranscript ?? "";
-    const transcript = response.transcript;
-    if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
-      const maybeSegments = (transcript as { segments?: Array<Record<string, unknown>> }).segments;
-      if (Array.isArray(maybeSegments)) {
-        drawerTranscriptSegments.value = maybeSegments
-          .map((segment) => ({
-            start: Number(segment.start ?? segment.start_time ?? 0),
-            end: Number(segment.end ?? segment.end_time ?? 0),
-            text: String(segment.text ?? segment.transcript ?? "").trim(),
-            speaker: typeof segment.speaker === "string" ? segment.speaker : undefined,
-          }))
-          .filter((segment) => segment.text.length > 0);
-        return;
-      }
-    }
-
-    if (Array.isArray(transcript)) {
-      const assets = transcript
-        .filter((asset) => asset && typeof asset === "object")
-        .map((asset) => asset as Record<string, unknown>);
-      const contentAsset = assets.find((asset) => typeof asset.content === "string" && asset.content.trim().length > 0);
-      if (contentAsset && typeof contentAsset.content === "string") {
-        drawerTranscriptText.value = contentAsset.content;
-      }
-      drawerTranscriptAssets.value = assets.map((asset) => ({
-        url: typeof asset.url === "string" ? asset.url : undefined,
-        type: typeof asset.type === "string" ? asset.type : undefined,
-        language: typeof asset.language === "string" ? asset.language : undefined,
-      }));
-      return;
-    }
-
-    if (typeof transcript === "string") {
-      drawerTranscriptText.value = transcript;
-    }
-    if (!drawerTranscriptText.value && drawerCanonicalTranscript.value) {
-      drawerTranscriptText.value = drawerCanonicalTranscript.value;
-    }
+    const parsed = parseTranscript(response);
+    drawerTranscriptSegments.value = parsed.segments;
+    drawerTranscriptAssets.value = parsed.assets;
+    drawerTranscriptText.value = parsed.text;
   }
 
   async function fetchSummary(id: string): Promise<void> {
@@ -257,6 +240,9 @@ export function useEpisodeDrawer() {
     drawerSummaryModel.value = "";
     try {
       const response: SummaryResponse = await episodesApi.getSummary(id);
+      if (!isCurrent(id)) {
+        return;
+      }
       drawerSummaryStatus.value = response.status || "not_attempted";
       if (typeof response.isFavorited === "boolean" && drawerItem.value) {
         drawerItem.value.IsSummaryFavorited = response.isFavorited;
@@ -267,9 +253,13 @@ export function useEpisodeDrawer() {
       drawerSummaryDate.value = response.generatedAt ?? "";
       drawerSummaryModel.value = response.model ?? "";
     } catch (error) {
-      drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
+      if (isCurrent(id)) {
+        drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
+      }
     } finally {
-      drawerLoadingSummary.value = false;
+      if (isCurrent(id)) {
+        drawerLoadingSummary.value = false;
+      }
     }
   }
 
@@ -333,13 +323,13 @@ export function useEpisodeDrawer() {
     const url = `${scheme}`;
     const w = window.open(url, "_blank");
     if (!w) {
-      alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+      toast.error(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
     } else {
       setTimeout(() => {
         try {
           if (w.closed) return;
           w.close();
-          alert(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
+          toast.error(`Could not open ${appName}. Make sure the ${appName} desktop app is installed.`);
         } catch {
           // cross-origin — app likely opened
         }
@@ -353,7 +343,7 @@ export function useEpisodeDrawer() {
     const maxURLLen = 8000;
     if (encoded.length > maxURLLen) {
       downloadCanonicalTranscript();
-      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to ChatGPT manually.");
+      toast.info("The transcript is too large to send directly, so it was downloaded as a file. Upload it to ChatGPT yourself.");
       return;
     }
     void sendToApp(`chatgpt://chat?prompt=${encoded}`, "ChatGPT");
@@ -365,7 +355,7 @@ export function useEpisodeDrawer() {
     const maxURLLen = 8000;
     if (encoded.length > maxURLLen) {
       downloadCanonicalTranscript();
-      alert("The transcript is too large to send directly. It has been downloaded as a file — please upload it to Claude manually.");
+      toast.info("The transcript is too large to send directly, so it was downloaded as a file. Upload it to Claude yourself.");
       return;
     }
     void sendToApp(`claude://chat?prompt=${encoded}`, "Claude");

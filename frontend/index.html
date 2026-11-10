@@ -4,7 +4,43 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="color-scheme" content="light dark" />
+    <title>Briefcast</title>
+    <!-- Sets the theme before the first paint, so dark-mode users never see a light flash.
+         Mirrors resolveTheme() in src/lib/theme.ts; src/lib/theme.test.ts runs this script. -->
+    <script id="theme-boot">
+      (function () {
+        var root = document.documentElement;
+        function read(key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (e) {
+            return null;
+          }
+        }
+        function hourSetting(key, fallback) {
+          var value = Number(read(key));
+          return read(key) !== null && Math.floor(value) === value && value >= 0 && value < 24 ? value : fallback;
+        }
+        var mode = read("briefcast-theme");
+        if (mode === "auto" || ["system", "light", "dark", "schedule"].indexOf(mode) < 0) mode = "system";
+        var dark;
+        if (mode === "light" || mode === "dark") {
+          dark = mode === "dark";
+        } else if (mode === "schedule") {
+          var hour = new Date().getHours();
+          try {
+            hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: read("briefcast-timezone") || "America/New_York", hour: "numeric", hour12: false }).format(new Date())) % 24;
+          } catch (e) {}
+          var light = hourSetting("briefcast-light-start", 6);
+          var darkAt = hourSetting("briefcast-dark-start", 20);
+          dark = light <= darkAt ? !(hour >= light && hour < darkAt) : !(hour >= light || hour < darkAt);
+        } else {
+          dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        }
+        root.setAttribute("data-theme", dark ? "dark" : "light");
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

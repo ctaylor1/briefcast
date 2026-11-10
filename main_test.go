@@ -19,6 +19,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestMainPackageIsOneFile guards the image build. The Dockerfile, the legacy
+// Dockerfile and the install docs build the app with `go build ./main.go`,
+// which compiles that one file. Code in another non-test file of this package
+// passes `go build ./...` but breaks the image.
+func TestMainPackageIsOneFile(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if name != "main.go" {
+			t.Errorf("%s: put package main code in main.go; `go build ./main.go` does not compile other files", name)
+		}
+	}
+}
+
 // TestAuthRouterGroup handles the corresponding operation.
 func TestAuthRouterGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -93,6 +113,7 @@ func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 		{"PATCH", "/podcastitems/:id/unbookmark"},
 		{"POST", "/podcastitems/:id/download"},
 		{"DELETE", "/podcastitems/:id/delete"},
+		{"PATCH", "/podcastitems/:id/position"},
 	}
 
 	registered := make(map[string]bool)
@@ -108,12 +129,14 @@ func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 	}
 }
 
-func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
+// The GET aliases for these mutations were removed: a link, prefetch or
+// embedded image must not be able to delete or queue content.
+func TestStateChangingGETAliasesAreNotRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	registerRoutes(&engine.RouterGroup)
 
-	deprecatedGETs := []string{
+	removedGETs := []string{
 		"/podcasts/:id/download",
 		"/podcasts/:id/pause",
 		"/podcasts/:id/unpause",
@@ -132,9 +155,9 @@ func TestDeprecatedGETWrappersStillRegistered(t *testing.T) {
 		}
 	}
 
-	for _, path := range deprecatedGETs {
-		if !registered[path] {
-			t.Fatalf("expected deprecated GET %s to still be registered", path)
+	for _, path := range removedGETs {
+		if registered[path] {
+			t.Fatalf("state-changing GET %s must not be registered", path)
 		}
 	}
 }

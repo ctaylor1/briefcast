@@ -9,7 +9,7 @@ param(
     [string]$BuildDir = 'builds', [string]$Remote = 'origin',
     [string]$RecoveryDir = '', [string]$ProjectName = '',
     [switch]$SkipTests, [switch]$SkipSmoke, [switch]$SkipVerify,
-    [switch]$NoCache, [switch]$NoPush, [switch]$Force
+    [switch]$NoCache, [switch]$NoPush, [switch]$Force, [switch]$NoRestorePoint
 )
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'scripts/ReleasePackaging.ps1') @PSBoundParameters

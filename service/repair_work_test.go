@@ -28,7 +28,7 @@ func TestBuildWorkQueueSnapshotCountsAndItems(t *testing.T) {
 	completeTranscript := createServicePodcastItem(t, podcast, "complete transcript", db.Downloaded)
 	completeTranscript.TranscriptStatus = "available"
 	completeTranscript.TranscriptJSON = `{"segments":[{"text":"done"}]}`
-	if err := db.UpdatePodcastItem(&completeTranscript); err != nil {
+	if err := savePodcastItemFixture(&completeTranscript); err != nil {
 		t.Fatalf("update complete transcript failed: %v", err)
 	}
 
@@ -37,7 +37,7 @@ func TestBuildWorkQueueSnapshotCountsAndItems(t *testing.T) {
 	processingTranscript.TranscriptStatus = "processing"
 	processingTranscript.TranscriptProgressPct = 42
 	processingTranscript.TranscriptProgressStage = "transcribing"
-	if err := db.UpdatePodcastItem(&processingTranscript); err != nil {
+	if err := savePodcastItemFixture(&processingTranscript); err != nil {
 		t.Fatalf("update processing transcript failed: %v", err)
 	}
 
@@ -48,20 +48,20 @@ func TestBuildWorkQueueSnapshotCountsAndItems(t *testing.T) {
 	futureAttempt := now.Add(time.Hour)
 	failedTranscript.TranscriptNextAttempt = &futureAttempt
 	failedTranscript.TranscriptLastError = "timeout"
-	if err := db.UpdatePodcastItem(&failedTranscript); err != nil {
+	if err := savePodcastItemFixture(&failedTranscript); err != nil {
 		t.Fatalf("update failed transcript failed: %v", err)
 	}
 
 	blockedTranscript := createServicePodcastItem(t, podcast, "blocked transcript", db.NotDownloaded)
 	blockedTranscript.TranscriptStatus = "pending_whisperx"
-	if err := db.UpdatePodcastItem(&blockedTranscript); err != nil {
+	if err := savePodcastItemFixture(&blockedTranscript); err != nil {
 		t.Fatalf("update blocked transcript failed: %v", err)
 	}
 
 	missingSummary := createServicePodcastItem(t, podcast, "missing summary", db.Downloaded)
 	missingSummary.CanonicalTranscript = "ready transcript"
 	missingSummary.LLMSummaryStatus = ""
-	if err := db.UpdatePodcastItem(&missingSummary); err != nil {
+	if err := savePodcastItemFixture(&missingSummary); err != nil {
 		t.Fatalf("update missing summary failed: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestBuildWorkQueueSnapshotCountsAndItems(t *testing.T) {
 	failedSummary.CanonicalTranscript = "ready transcript"
 	failedSummary.LLMSummaryStatus = "failed"
 	failedSummary.LLMSummaryError = "rate limited"
-	if err := db.UpdatePodcastItem(&failedSummary); err != nil {
+	if err := savePodcastItemFixture(&failedSummary); err != nil {
 		t.Fatalf("update failed summary failed: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestStartRepairWorkForcesFailedTranscriptRetries(t *testing.T) {
 	futureAttempt := time.Now().UTC().Add(2 * time.Hour)
 	failedTranscript.TranscriptNextAttempt = &futureAttempt
 	failedTranscript.TranscriptLastError = "temporary failure"
-	if err := db.UpdatePodcastItem(&failedTranscript); err != nil {
+	if err := savePodcastItemFixture(&failedTranscript); err != nil {
 		t.Fatalf("update failed transcript failed: %v", err)
 	}
 

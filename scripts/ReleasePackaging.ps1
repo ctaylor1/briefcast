@@ -9,7 +9,7 @@ param(
     [string]$BuildDir = $env:BUILD_DIR, [string]$Remote = 'origin',
     [string]$RecoveryDir = '', [string]$ProjectName = '',
     [switch]$SkipTests, [switch]$SkipSmoke, [switch]$SkipVerify,
-    [switch]$NoCache, [switch]$NoPush, [switch]$Force
+    [switch]$NoCache, [switch]$NoPush, [switch]$Force, [switch]$NoRestorePoint
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -183,6 +183,19 @@ function Save-WorkerState {
     & (Join-Path $PSScriptRoot 'WorkerRecovery.ps1') -Operation snapshot -SnapshotDir $snapshot -StateDir $statePath -Image $ImageId
     return $snapshot
 }
+function Assert-AppRestorePoint {
+    # Replacing the app runs forward-only database migrations at startup, and
+    # rollback only reselects the old image. Require a restore point first.
+    if ($NoRestorePoint) {
+        Write-Warning 'Deploying the app without a restore point (-NoRestorePoint). Rollback can only reselect the old image; it cannot undo migrations.'
+        return $null
+    }
+    if (-not $RecoveryDir) { throw 'Replacing the app requires a restore point. Back up the database and pass its folder with -RecoveryDir, or pass -NoRestorePoint to deploy without one.' }
+    $recoveryRoot = [IO.Path]::GetFullPath($RecoveryDir)
+    if (-not (Test-Path -LiteralPath $recoveryRoot -PathType Container) -or $recoveryRoot -eq $root -or $recoveryRoot.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'The -RecoveryDir restore point must be an existing private directory outside the repository.' }
+    if (-not (Get-ChildItem -LiteralPath $recoveryRoot -File -Recurse -ErrorAction Stop | Select-Object -First 1)) { throw 'The -RecoveryDir restore point is empty. Put the backup taken for this deploy in it.' }
+    return $recoveryRoot
+}
 function Invoke-Deploy {
     $artifact = Read-Artifact
     $archive = Join-Path $BuildDir $artifact.archive
@@ -194,13 +207,15 @@ function Invoke-Deploy {
     $container = Invoke-Docker ($compose + @('ps','-q',$image.service)) -Capture
     $oldId = $null
     $snapshot = $null
+    $restorePoint = $null
     if ($container) {
         if (@($container).Count -ne 1) { throw 'Expected one target container.' }
         $oldId = (Invoke-Docker @('inspect','--format','{{.Image}}',$container) -Capture).Trim()
         Assert-WorkerQuiescent $compose
         if ($Target -eq 'worker') { $snapshot = Save-WorkerState $compose $container $oldId }
+        else { $restorePoint = Assert-AppRestorePoint }
     }
-    [ordered]@{target=$Target; runtime=$Runtime; compose=$compose; image_id=$oldId; service=$image.service; version=$Version; snapshot=$snapshot} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rollbackPath
+    [ordered]@{target=$Target; runtime=$Runtime; compose=$compose; image_id=$oldId; service=$image.service; version=$Version; snapshot=$snapshot; restore_point=$restorePoint} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rollbackPath
     Invoke-Docker @('image','load','--input',$archive)
     Invoke-Docker @('image','inspect','--format','{{.Id}}',$artifact.image_id) | Out-Host
     Set-ImageOverride $artifact.image_id

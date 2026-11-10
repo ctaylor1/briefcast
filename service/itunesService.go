@@ -3,9 +3,11 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/TheHippo/podcastindex"
 	"github.com/ctaylor1/briefcast/model"
@@ -67,7 +69,7 @@ func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultMo
 		return toReturn
 	}
 
-	c := podcastindex.NewClient(key, secret)
+	c := newPodcastIndexClient(key, secret)
 	podcasts, err := c.Search(q)
 	if err != nil {
 		Logger.Warnw("podcastindex search failed", "error", err)
@@ -79,4 +81,20 @@ func (service PodcastIndexService) Query(q string) []*model.CommonSearchResultMo
 	}
 
 	return toReturn
+}
+
+// podcastIndexSearchTimeout bounds a Podcast Index search; the library's
+// default client has no timeout, so a stalled upstream hung the request.
+var podcastIndexSearchTimeout = 15 * time.Second
+
+// podcastIndexBaseURL is a seam for tests.
+var podcastIndexBaseURL = podcastindex.BaseURL
+
+func newPodcastIndexClient(key, secret string) *podcastindex.Client {
+	config := *podcastindex.DefaultConfig
+	config.BaseURL = podcastIndexBaseURL
+	return podcastindex.NewClientWithConfig(key, secret, config, &http.Client{
+		Timeout:   podcastIndexSearchTimeout,
+		Transport: outboundHTTPTransport(outboundPurposeHTTP),
+	})
 }

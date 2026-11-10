@@ -103,6 +103,10 @@ func TestDownloadRetriesFromScratchAfterRange416(t *testing.T) {
 	if err := os.WriteFile(targetPath, []byte("stale-partial"), 0o644); err != nil {
 		t.Fatalf("failed to seed partial file: %v", err)
 	}
+	// The partial belongs to this download, as its sidecar records.
+	if err := writeDownloadSidecar(targetPath+downloadSidecarSuffix, downloadSidecar{URL: link}); err != nil {
+		t.Fatalf("failed to seed sidecar: %v", err)
+	}
 
 	downloadPath, err := Download("", link, episodeName, podcastName, "")
 	if err != nil {

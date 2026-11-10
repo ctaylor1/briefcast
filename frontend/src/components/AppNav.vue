@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { episodePath, podcastPath } from "../lib/routes";
 import {
   Combobox,
   ComboboxInput,
@@ -15,9 +16,10 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useGlobalSearch } from "../composables/useGlobalSearch";
 import { useTheme } from "../composables/useTheme";
-import { groupNavSections, primaryNavItems, routeNavItems, type NavIcon } from "../lib/navigation";
+import { activeNavItem, commandNavItems, librarySubItems, primaryNavItems } from "../lib/navigation";
 import type { LocalSearchResult } from "../types/api";
-import UiDropdown from "./ui/UiDropdown.vue";
+import UiIcon from "./ui/UiIcon.vue";
+import UiIconButton from "./ui/UiIconButton.vue";
 import briefcastLogo from "../assets/briefcast-logo.svg";
 
 interface CommandRouteItem {
@@ -42,9 +44,8 @@ type CommandItem = CommandRouteItem | CommandLocalItem;
 
 const route = useRoute();
 const router = useRouter();
-const { cycleTheme, themeModeLabel, initTheme } = useTheme();
+const { cycleTheme, themeModeLabel, initTheme, themeMode } = useTheme();
 
-const navSections = groupNavSections(routeNavItems);
 
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const sidebarExpanded = ref(false);
@@ -67,6 +68,7 @@ const isDesktop = computed(() => viewportWidth.value >= 1024);
 const showSidebar = computed(() => viewportWidth.value >= 768);
 const sidebarExpandedState = computed(() => isDesktop.value || sidebarExpanded.value);
 
+// The page heading for screen readers; each page shows its own visible title.
 const topTitle = computed(() => {
   if (typeof route.meta.title === "string" && route.meta.title.trim()) {
     return route.meta.title.trim();
@@ -74,31 +76,18 @@ const topTitle = computed(() => {
   return "Briefcast";
 });
 
-const topDescription = computed(() => {
-  const active = routeNavItems.find((item) => isActive(item.to));
-  return active?.meta ?? "Podcast workflows without clutter.";
-});
-
-const breadcrumbs = computed(() => {
-  const active = routeNavItems.find((item) => isActive(item.to));
-  if (!active || active.to === "/") {
-    return ["Home"];
-  }
-  return ["Home", active.section, active.label];
-});
-
 const routeCommandItems = computed<CommandRouteItem[]>(() => {
   const query = commandQuery.value.trim().toLowerCase();
-  return routeNavItems
+  return commandNavItems
     .filter((item) => {
-      const haystack = `${item.label} ${item.section} ${item.keywords}`.toLowerCase();
+      const haystack = `${item.label} ${item.meta} ${item.keywords}`.toLowerCase();
       return !query || haystack.includes(query);
     })
     .map((item) => ({
       kind: "route",
       key: `route:${item.to}`,
       label: item.label,
-      section: item.section,
+      section: "Go to",
       meta: item.meta,
       to: item.to,
     }));
@@ -123,6 +112,8 @@ const commandItems = computed<CommandItem[]>(() => {
   return [...routeCommandItems.value, ...localCommandItems.value];
 });
 
+const themeIcon = computed(() => (themeMode.value === "dark" ? "moon" : themeMode.value === "light" ? "sun" : "monitor"));
+
 const commandHint = computed(() => (isMac() ? "Cmd+K" : "Ctrl+K"));
 const bottomTabsStyle = computed(() => ({
   "--app-bottom-tabs-count": String(primaryNavItems.length),
@@ -136,41 +127,7 @@ function isMac(): boolean {
 }
 
 function isActive(target: string): boolean {
-  if (target === "/") {
-    return route.path === "/";
-  }
-  return route.path === target || route.path.startsWith(`${target}/`);
-}
-
-function iconStrokes(name: NavIcon | "search" | "user" | "panel"): string[] {
-  switch (name) {
-    case "podcasts":
-      return ["M4 6h16", "M4 12h16", "M4 18h10"];
-    case "episodes":
-      return ["M5 5h14v14H5z", "M10 9l5 3-5 3z"];
-    case "summaries":
-      return ["M6 3h8l4 4v14H6z", "M14 3v4h4", "M9 13h6", "M9 17h4"];
-    case "links":
-      return ["M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1", "M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"];
-    case "downloads":
-      return ["M12 4v10", "M8 10l4 4 4-4", "M5 20h14"];
-    case "add":
-      return ["M12 5v14", "M5 12h14", "M12 21a9 9 0 1 1 0-18a9 9 0 0 1 0 18z"];
-    case "player":
-      return ["M9 7v10l8-5z", "M5 5h14v14H5z"];
-    case "settings":
-      return ["M4 7h16", "M4 17h16", "M9 5v4", "M15 15v4"];
-    case "about":
-      return ["M12 16v-5", "M12 8h.01", "M12 21a9 9 0 1 1 0-18a9 9 0 0 1 0 18z"];
-    case "search":
-      return ["M20 20l-4.2-4.2", "M11 18a7 7 0 1 1 0-14a7 7 0 0 1 0 14z"];
-    case "user":
-      return ["M18 20a6 6 0 0 0-12 0", "M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8"];
-    case "panel":
-      return ["M4 6h16", "M4 12h10", "M4 18h16"];
-    default:
-      return [];
-  }
+  return activeNavItem(route.path)?.to === target;
 }
 
 function refreshViewport(): void {
@@ -281,10 +238,16 @@ function localResultLabel(result: LocalSearchResult): string {
 
 function localResultRoute(result: LocalSearchResult): { path: string; query?: Record<string, string> } {
   if (result.type === "podcast" && result.podcastId) {
-    return {
-      path: "/episodes",
-      query: { podcastIds: result.podcastId },
-    };
+    return { path: podcastPath(result.podcastId) };
+  }
+
+  if (result.episodeId) {
+    const tab =
+      result.type === "transcript" ? "transcript"
+      : result.type === "chapter" ? "chapters"
+      : result.type === "summary" ? "summary"
+      : undefined;
+    return { path: episodePath(result.episodeId), query: tab ? { tab } : undefined };
   }
 
   const q = ((): string => {
@@ -372,18 +335,6 @@ function handleWindowKeydown(event: KeyboardEvent): void {
   }
 }
 
-function goToSettings(): void {
-  void router.push("/settings");
-}
-
-function goToPlayer(): void {
-  void router.push("/player");
-}
-
-function goToAbout(): void {
-  void router.push("/about");
-}
-
 watch(sidebarExpanded, (value) => {
   persistSidebarPreference(value);
 });
@@ -443,33 +394,31 @@ onBeforeUnmount(() => {
         <img class="app-sidebar__logo" :src="briefcastLogo" alt="Briefcast logo" />
       </div>
 
-      <nav class="app-nav" aria-label="Sidebar navigation">
-        <section v-for="section in navSections" :key="section.title">
-          <p class="app-nav__section-title">{{ section.title }}</p>
+      <nav class="app-nav" aria-label="Main">
+        <template v-for="item in primaryNavItems" :key="item.to">
           <RouterLink
-            v-for="item in section.items"
-            :key="item.to"
             :to="item.to"
             class="app-nav__link"
             :aria-current="isActive(item.to) ? 'page' : undefined"
+            :title="sidebarExpandedState ? undefined : item.label"
           >
-            <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                v-for="stroke in iconStrokes(item.icon)"
-                :key="stroke"
-                :d="stroke"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <span class="app-nav__text">
-              <span class="app-nav__label">{{ item.label }}</span>
-              <span class="app-nav__meta meta-text">{{ item.meta }}</span>
-            </span>
+            <UiIcon :name="item.icon" class="app-nav__icon" />
+            <span class="app-nav__label">{{ item.label }}</span>
           </RouterLink>
-        </section>
+          <template v-if="item.to === '/'">
+            <RouterLink
+              v-for="sub in librarySubItems"
+              :key="sub.to"
+              :to="sub.to"
+              class="app-nav__link app-nav__link--sub"
+              :aria-current="isActive(sub.to) ? 'page' : undefined"
+              :title="sidebarExpandedState ? undefined : sub.label"
+            >
+              <UiIcon :name="sub.icon" class="app-nav__icon" />
+              <span class="app-nav__label">{{ sub.label }}</span>
+            </RouterLink>
+          </template>
+        </template>
       </nav>
 
       <button
@@ -478,17 +427,7 @@ onBeforeUnmount(() => {
         class="app-sidebar__toggle"
         @click="toggleSidebar"
       >
-        <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            v-for="stroke in iconStrokes('panel')"
-            :key="stroke"
-            :d="stroke"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <UiIcon name="menu" class="app-nav__icon" />
         <span class="app-nav__label">{{ sidebarExpandedState ? "Collapse" : "Expand" }}</span>
       </button>
     </aside>
@@ -496,80 +435,28 @@ onBeforeUnmount(() => {
     <div class="app-main-wrap">
       <header class="app-topbar">
         <div class="app-topbar__left">
-          <h1 class="app-topbar__title">{{ topTitle }}</h1>
-          <p class="breadcrumbs">
-            <span v-for="crumb in breadcrumbs" :key="crumb">{{ crumb }}</span>
-          </p>
+          <h1 class="sr-only">{{ topTitle }}</h1>
+          <img v-if="!showSidebar" class="app-topbar__logo" :src="briefcastLogo" alt="Briefcast" />
         </div>
         <div class="app-topbar__actions">
           <button
             ref="commandTriggerRef"
             type="button"
             class="command-kbd app-command-trigger"
-            :aria-label="`Open command palette (${commandHint})`"
+            :aria-label="`Search and go to (${commandHint})`"
             @click="openCommandPalette($event.currentTarget)"
           >
-            <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                v-for="stroke in iconStrokes('search')"
-                :key="stroke"
-                :d="stroke"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <UiIcon name="search" class="app-nav__icon" />
             <span>Search</span>
             <span class="meta-text">{{ commandHint }}</span>
           </button>
-
-          <UiDropdown align="end">
-            <template #trigger>
-              <button type="button" class="ui-button ui-button--ghost ui-button--sm app-user-trigger">
-                <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    v-for="stroke in iconStrokes('user')"
-                    :key="stroke"
-                    :d="stroke"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <span class="app-user-label">Menu</span>
-              </button>
-            </template>
-            <nav class="app-user-menu" aria-label="User menu">
-              <p class="app-user-menu__heading">Quick actions</p>
-              <button type="button" class="app-user-menu__item app-user-menu__theme-btn" @click="cycleTheme">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="5" />
-                  <line x1="12" y1="1" x2="12" y2="3" />
-                  <line x1="12" y1="21" x2="12" y2="23" />
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                  <line x1="1" y1="12" x2="3" y2="12" />
-                  <line x1="21" y1="12" x2="23" y2="12" />
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                </svg>
-                <span>Theme: {{ themeModeLabel() }}</span>
-              </button>
-              <button type="button" class="app-user-menu__item" @click="goToSettings">Open settings</button>
-              <button type="button" class="app-user-menu__item" @click="goToPlayer">Open player</button>
-              <button type="button" class="app-user-menu__item" @click="goToAbout">About</button>
-              <button
-                type="button"
-                class="app-user-menu__item"
-                @click="openCommandPalette($event.currentTarget)"
-              >
-                Open command palette
-              </button>
-              <p class="app-user-menu__meta">{{ topDescription }}</p>
-            </nav>
-          </UiDropdown>
+          <RouterLink to="/add" class="ui-button ui-button--ghost ui-button--sm app-topbar__add" title="Add podcast">
+            <UiIcon name="plus" />
+            <span class="app-topbar__add-label">Add podcast</span>
+          </RouterLink>
+          <UiIconButton :label="`Theme: ${themeModeLabel()}`" tooltip="Change theme" class="app-topbar__theme" @click="cycleTheme">
+            <UiIcon :name="themeIcon" />
+          </UiIconButton>
         </div>
       </header>
 
@@ -577,7 +464,7 @@ onBeforeUnmount(() => {
     </div>
   </div>
 
-  <nav class="app-bottom-tabs" aria-label="Mobile navigation" :style="bottomTabsStyle">
+  <nav class="app-bottom-tabs" aria-label="Main" :style="bottomTabsStyle">
     <RouterLink
       v-for="item in primaryNavItems"
       :key="item.to"
@@ -585,17 +472,7 @@ onBeforeUnmount(() => {
       class="app-bottom-tabs__link"
       :aria-current="isActive(item.to) ? 'page' : undefined"
     >
-      <svg class="app-bottom-tabs__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          v-for="stroke in iconStrokes(item.icon)"
-          :key="stroke"
-          :d="stroke"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
+      <UiIcon :name="item.icon" class="app-bottom-tabs__icon" :size="20" />
       <span>{{ item.label }}</span>
     </RouterLink>
   </nav>

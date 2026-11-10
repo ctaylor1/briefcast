@@ -9,15 +9,63 @@ All notable changes to this project will be documented in this file.
 - **Upgrade note:** `HOST_PORT` now takes a port number only. A value such as `127.0.0.1:18080` makes Compose fail with an `invalid IP address` error; set `HOST_BIND` and `HOST_PORT` separately.
 - `DELETE /podcasts/:id/podcast` now keeps the podcast's folders on disk. It removes only the database rows, as the route name says. Use `DELETE /podcasts/:id` to remove files too.
 - `LOG_OUTPUT` now defaults to `stdout` in `docker-compose.yml`. The previous default, `both`, was not a keyword: logs went to a file named `both` inside the container and never reached `docker logs`.
+- The HTTP server now has a 10-second header read timeout and a 2-minute idle timeout, and shuts down cleanly on `SIGTERM` or Ctrl+C, giving in-flight requests up to 10 seconds. `docker stop` no longer waits for the kill timeout. Streams have no write timeout.
+- Request bodies are capped at 1 MiB, except OPML uploads, which keep their own limit. Larger bodies get `413`.
+- **Upgrade note:** the app now refuses to start when a database migration fails, and runs no later migrations. It used to log the failure and serve on a half-migrated schema. Before upgrading, check the last startup log for `database migration failed` lines; a migration that has been failing quietly will now stop startup.
+- `RELEASE.ps1 deploy -Target app` now requires a restore point when it replaces a running app: pass the folder holding the backup with `-RecoveryDir`, or pass `-NoRestorePoint` to deploy without one. The rollback record notes which.
+- Episode image and audio requests, search, the retention job and the file-size job now read only the columns they use, not whole episode rows with transcripts. The settings row is no longer read on every request. The file-size job handles at most 200 episodes per run.
+- **API change:** handlers that used to answer an empty `200` on failure now send an error. Missing episodes, podcasts and tags get `404` on the image, file, RSS, tag, `PATCH /podcastitems/:id` and `DELETE /podcastitems/:id/delete` routes; other failures get `500`. A podcast RSS request for a missing podcast no longer carries on after its error. `DELETE /podcastitems/:id/delete` now answers after the file is deleted, with the outcome.
+- Feed refresh no longer calls the LLM. Episodes that arrive with a feed transcript are summarized by the summary backfill, which starts after the refresh adds them. If a summary job is already running, the backfill runs again when that job ends. The refresh job also renews its 2-hour lease while it runs, and a renewal can no longer revive a lock that was just released.
+- **Upgrade note (deletes rows; back up first):** migrations `2026_11_09_02_00` to `02_03` remove duplicate episodes, meaning the same podcast and GUID, which a refresh racing "download all" could create. They then add a unique index on `(podcast_id, guid)` for episodes that have a GUID. The kept row is the one with a transcript, then a download, then a summary, then the oldest. Show-note links and Markdown revisions of the removed rows are deleted with them. Files on disk are not touched. To undo, restore the backup taken before the upgrade.
+- `POST /podcasts/:id/download` now answers `202` as soon as it has checked that the podcast exists, and queues the episodes in the background. It used to re-read the feed inside the request, which could hang on a slow host. A missing podcast gets `404`.
+- **Upgrade note (UI):** navigation is now Library, Episodes, Summaries, Activity and Settings. `/downloads` and `/about` redirect to Activity and Settings. The Library table view and the in-page Summaries reader are removed. The stored theme `auto` now follows the system setting; the clock schedule is its own mode.
+- Settings has section links and one save bar instead of a Save button per card. Episode rows are compact at every width, and Downloads shows cards below 1200px.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
+- `SQLITE_JOURNAL_MODE=wal` opts a SQLite database into WAL mode, so reads no longer block writes. It is off by default; see the README for the disk and backup caveats.
+- Migration `2026_11_09_01_00_AddPodcastItemsDownloadPathIndex` indexes `podcast_items.download_path`, so the ownership check reads no transcripts. It is additive.
+- A persistent player bar with a scrubber, skip and speed controls, and chapter marks. Playback continues across pages. A Now playing view shows chapters, the transcript and show notes. Episodes resume where you stopped; this adds a nullable `playback_position_seconds` column and `PATCH /podcastitems/:id/position`.
+- A podcast page, one routed episode page with Summary, Transcript, Chapters and Links tabs, and an Activity page for downloads, the work queue and logs.
+- Theme modes System, Light, Dark and Schedule, applied before the first paint. Toast notifications replace page-top messages and browser alerts.
 
 ### Fixed
+- The missing-file check no longer resets episodes when storage is unavailable. It skips the pass when the data directory cannot be read, treats only "file does not exist" as missing, and changes nothing when more than half of a library of 20 or more episodes looks missing (`MISSING_FILES_MAX_PERCENT`).
 - Removed the horizontal scrollbar that the Podcasts, Episodes and Downloads tables showed at full window width. Tables now scroll sideways only when their columns do not fit.
 - Reduced `database is locked` errors on SQLite. Two queries that run about once a minute read through every stored transcript and held the lock for seconds; two new indexes on `podcast_items` take them to about a millisecond.
 - Fixed deleting a tagged podcast on Postgres. The delete failed on a foreign key after its episodes were already gone. On SQLite it left orphaned rows in `podcast_tags`.
 - `cmd/migrate_to_pg` now copies `show_note_links`, `link_targets` and `prompt_versions`, which it used to leave behind while reporting success. It also runs in one transaction, refuses a target that already has data, skips orphaned tag links, and stops before writing if episodes or Markdown revisions are orphaned.
+- Local transcription (`WHISPERX_BACKEND=local`) no longer deletes audio when an error message mentions a missing file or unreadable audio; a missing model or ffmpeg produced the same text. An episode is reset for re-download only when its audio file is confirmed missing, and other failures, including unexpected stat errors, schedule a retry.
+- Podcast Index search gives up after 15 seconds instead of hanging on a stalled upstream, and goes through the outbound URL policy like other outbound requests.
+- A panic in request middleware, such as settings loading, now returns `500` instead of dropping the connection.
+- Transcription, summaries, alternate feed URLs and ID3 chapter updates now write only the columns they change. A long transcription or summary no longer undoes a "played" or bookmark change made while it ran, and an episode deleted during either job stays deleted instead of being recreated.
+- A summary is no longer generated from a transcript that failed to save.
+- Deleting a podcast now removes its episodes, their Markdown revisions and show-note links, its tag links and the podcast in one database transaction, before touching any files. A failure no longer leaves a podcast with some or all of its episodes gone. File removal happens afterwards on a best-effort basis; failures are logged.
+- Scheduled backups now archive a consistent `VACUUM INTO` snapshot of the configured SQLite database, wherever `DATABASE_URL` points. Previously they copied the live `$CONFIG/briefcast.db` file. Write and close errors are reported, a failed backup leaves no archive, and Postgres deployments no longer collect empty archives. Pruning keeps the newest five backup archives and leaves other files in the folder alone.
+- Two episodes of one podcast with the same title, such as "Trailer", no longer share one audio file. When the plain file name belongs to another episode, the episode ID is added to the name.
+- Resuming a download now continues only a partial file that this episode started from the same URL. Ownership is recorded in a `.briefcast-partial.json` sidecar that is removed on completion. The resume sends `If-Range` when the server gave a validator, so a file that changed on the server, for example with re-inserted ads, is downloaded again instead of being stitched together. Partial files from before this release are downloaded again from the start.
+- Requesting a download of an episode that is already downloading no longer starts a second download or resets the first one's state.
+- Episode and cover images: a failed or non-2xx response is no longer saved as an image, downloads over 20 MB are refused, response bodies are always closed, and an image already on disk is not fetched again.
+- Outbound requests stop after 10 redirects; the custom redirect checks had removed Go's default limit. Each outbound purpose now shares one connection pool instead of building a new transport per request.
+- `PATCH /podcastitems/:id` can now set `isPlayed` to false and `title` to an empty string, changes only the fields sent, and reports a failed update.
+- Adding a podcast no longer reports a database error as "already exists"; it answers `500`. Two simultaneous adds of one feed URL can no longer create two podcasts, and a refresh and "download all" of one podcast no longer insert its new episodes twice.
+- Startup clears stale job locks before it starts the monitoring stats warmup. The warmup's long read used to hold SQLite past the busy timeout, so clearing the locks failed with `database is locked`.
+- The show-note link backfill pauses for 250 ms after every 20 episodes it writes. On SQLite, the per-minute transcription job could not get the lock for the whole of a backfill (about 8 minutes on 5,000 episodes).
+- WebSocket messages over 64 KiB now close the connection instead of being buffered without limit.
+- Summarizing an episode that was deleted after it was loaded no longer writes an orphaned Markdown revision on SQLite, or fails on a foreign key on Postgres.
+- Accessibility: icon buttons have names, toggles announce their state, labels point at their own fields (all fields used to share one id), menus close on Escape or an outside click, and arrow keys scroll the summary reader again.
+- Settings and alternate feeds no longer save blank values after a failed load; the newest request wins when several are in flight; the player honours a start time; and IDs are encoded in request paths.
+
+### Removed
+- **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
+- The unrouted legacy HTML page handlers, the `client/` templates and the bundled legacy libraries under `webassets/` (Vue 2, axios and others). The web app at `/app` is unaffected. Only `webassets/blank.png`, which RSS feeds use as default artwork, remains.
+- The legacy `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1` and `RELEASE_RESET.ps1` scripts. After one typed "yes", the reset script deleted the database, backups and media without checking for errors. Use `RELEASE.ps1`; see RELEASE.md.
+- Tailwind CSS and `tailwind-merge`, which nothing used.
+
+### Security
+- The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.
+- The worker images now ship `urllib3` 2.8.0 (was 2.7.0), fixing PYSEC-2026-4175, PYSEC-2026-4176 and PYSEC-2026-4177. Other packages in the worker images still have known advisories; see `docs/refactor-assessment/2026-11-05/STATUS.md`.
+- The development tools' lock (`uv.lock`) now has no known advisories. Updated: `virtualenv` 21.14.13, `filelock` 4.2.4, `pip` 26.2.2, `pytest` 9.0.3, `requests` 2.33.1, `urllib3` 2.8.0, `certifi` 2026.10.23, `idna` 3.15, `msgpack` 1.2.4 and `pygments` 2.20.0. `virtualenv` 21 also brings in `python-discovery` 1.6.4 and needs `distlib` 0.4.4 and `packaging` 26.3. These are not shipped in any image.
 
 ## [1.9.4] - 2026-07-11
 

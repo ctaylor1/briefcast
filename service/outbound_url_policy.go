@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -79,7 +81,44 @@ func validateOutboundURLWithPolicy(rawURL string, policy outboundURLPolicy) (*ur
 	return parsed, nil
 }
 
+// maxOutboundRedirects matches the http.Client default, which a custom
+// CheckRedirect replaces and would otherwise leave unbounded.
+const maxOutboundRedirects = 10
+
+var errTooManyRedirects = errors.New("stopped after 10 redirects")
+
+// checkOutboundRedirect validates every redirect target against the purpose's
+// URL policy and stops after maxOutboundRedirects.
+func checkOutboundRedirect(purpose outboundURLPurpose) func(*http.Request, []*http.Request) error {
+	return func(r *http.Request, via []*http.Request) error {
+		if len(via) >= maxOutboundRedirects {
+			return errTooManyRedirects
+		}
+		_, err := validateOutboundURL(r.URL.String(), purpose)
+		return err
+	}
+}
+
+var (
+	outboundTransportsMu sync.Mutex
+	outboundTransports   = map[outboundURLPurpose]*http.Transport{}
+)
+
+// outboundHTTPTransport returns one shared transport per purpose, so
+// connections are pooled instead of a new transport (and idle sockets) per
+// request. The URL policy is read at dial time, so it follows the environment.
 func outboundHTTPTransport(purpose outboundURLPurpose) *http.Transport {
+	outboundTransportsMu.Lock()
+	defer outboundTransportsMu.Unlock()
+	if transport, ok := outboundTransports[purpose]; ok {
+		return transport
+	}
+	transport := newOutboundHTTPTransport(purpose)
+	outboundTransports[purpose] = transport
+	return transport
+}
+
+func newOutboundHTTPTransport(purpose outboundURLPurpose) *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
@@ -94,8 +133,8 @@ func outboundHTTPTransport(purpose outboundURLPurpose) *http.Transport {
 		baseDialContext = dialer.DialContext
 	}
 
-	policy := outboundPolicyForPurpose(purpose)
 	transport.DialContext = func(ctx context.Context, network string, address string) (net.Conn, error) {
+		policy := outboundPolicyForPurpose(purpose)
 		dialAddress, err := outboundDialAddress(ctx, network, address, policy)
 		if err != nil {
 			return nil, err

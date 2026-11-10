@@ -12,6 +12,7 @@ withDefaults(
 <template>
   <span class="ui-tooltip-wrap">
     <slot />
-    <span v-if="text" role="tooltip" class="ui-tooltip">{{ text }}</span>
+    <!-- Visual hint only: the wrapped control carries its own accessible name. -->
+    <span v-if="text" class="ui-tooltip" aria-hidden="true">{{ text }}</span>
   </span>
 </template>

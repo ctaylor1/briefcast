@@ -3,16 +3,11 @@ package controllers
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
-	"math"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/ctaylor1/briefcast/db"
-	"github.com/ctaylor1/briefcast/model"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
@@ -55,78 +50,6 @@ var searchProvider = map[string]service.SearchService{
 // enrichSearchResults is swappable so handler tests stay offline.
 var enrichSearchResults = service.EnrichSearchResults
 
-// AddPage handles the corresponding operation.
-func AddPage(c *gin.Context) {
-	setting := c.MustGet("setting").(*db.Setting)
-	c.HTML(http.StatusOK, "addPodcast.html", gin.H{"title": "Add Podcast", "setting": setting, "searchOptions": searchOptions})
-}
-
-// HomePage handles the corresponding operation.
-func HomePage(c *gin.Context) {
-	//var podcasts []db.Podcast
-	podcasts := service.GetAllPodcasts("")
-	setting := c.MustGet("setting").(*db.Setting)
-	c.HTML(http.StatusOK, "index.html", gin.H{"title": "Briefcast", "podcasts": podcasts, "setting": setting})
-}
-
-// PodcastPage handles the corresponding operation.
-func PodcastPage(c *gin.Context) {
-	var searchByIDQuery SearchByIDQuery
-	if c.ShouldBindUri(&searchByIDQuery) == nil {
-
-		var podcast db.Podcast
-
-		if err := db.GetPodcastByIDWithItems(searchByIDQuery.ID, &podcast); err == nil {
-			var pagination model.Pagination
-			if c.ShouldBindQuery(&pagination) == nil {
-				var page, count int
-				if page = pagination.Page; page == 0 {
-					page = 1
-				}
-				if count = pagination.Count; count == 0 {
-					count = 10
-				}
-				setting := c.MustGet("setting").(*db.Setting)
-				totalCount := len(podcast.PodcastItems)
-				totalPages := int(math.Ceil(float64(totalCount) / float64(count)))
-				nextPage, previousPage := 0, 0
-				if page < totalPages {
-					nextPage = page + 1
-				}
-				if page > 1 {
-					previousPage = page - 1
-				}
-
-				from := (page - 1) * count
-				to := page * count
-				if to > totalCount {
-					to = totalCount
-				}
-				c.HTML(http.StatusOK, "episodes.html", gin.H{
-					"title":          podcast.Title,
-					"podcastItems":   podcast.PodcastItems[from:to],
-					"setting":        setting,
-					"page":           page,
-					"count":          count,
-					"totalCount":     totalCount,
-					"totalPages":     totalPages,
-					"nextPage":       nextPage,
-					"previousPage":   previousPage,
-					"downloadedOnly": false,
-					"podcastID":      searchByIDQuery.ID,
-				})
-			} else {
-				c.JSON(http.StatusBadRequest, err)
-			}
-		} else {
-			c.JSON(http.StatusBadRequest, err)
-		}
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-	}
-
-}
-
 func getItemsToPlay(itemIds []string, podcastID string, tagIds []string) []db.PodcastItem {
 	var items []db.PodcastItem
 	if len(itemIds) > 0 {
@@ -147,192 +70,6 @@ func getItemsToPlay(itemIds []string, podcastID string, tagIds []string) []db.Po
 		items = *service.GetAllPodcastItemsByPodcastIds(podIds)
 	}
 	return items
-}
-
-// PlayerPage handles the corresponding operation.
-func PlayerPage(c *gin.Context) {
-
-	itemIds, hasItemIds := c.GetQueryArray("itemIds")
-	podcastID, hasPodcastID := c.GetQuery("podcastID")
-	tagIds, hasTagIds := c.GetQueryArray("tagIds")
-	title := "Briefcast"
-	var items []db.PodcastItem
-	var totalCount int64
-	if hasItemIds {
-		toAdd, _ := service.GetAllPodcastItemsByIds(itemIds)
-		items = *toAdd
-		totalCount = int64(len(items))
-	} else if hasPodcastID {
-		pod := service.GetPodcastByID(podcastID)
-		items = pod.PodcastItems
-		title = "Playing: " + pod.Title
-		totalCount = int64(len(items))
-	} else if hasTagIds {
-		tags := service.GetTagsByIds(tagIds)
-		var tagNames []string
-		var podIds []string
-		for _, tag := range *tags {
-			tagNames = append(tagNames, tag.Label)
-			for _, pod := range tag.Podcasts {
-				podIds = append(podIds, pod.ID)
-			}
-		}
-		items = *service.GetAllPodcastItemsByPodcastIds(podIds)
-		if len(tagNames) == 1 {
-			title = fmt.Sprintf("Playing episodes with tag : %s", (tagNames[0]))
-		} else {
-			title = fmt.Sprintf("Playing episodes with tags : %s", strings.Join(tagNames, ", "))
-		}
-	} else {
-		title = "Playing Latest Episodes"
-		if err := db.GetPaginatedPodcastItems(1, 20, nil, nil, time.Time{}, &items, &totalCount); err != nil {
-			controllerLogger.Warnw("failed to load latest episodes for player page", "error", err)
-		}
-	}
-	setting := c.MustGet("setting").(*db.Setting)
-
-	c.HTML(http.StatusOK, "player.html", gin.H{
-		"title":          title,
-		"podcastItems":   items,
-		"setting":        setting,
-		"count":          len(items),
-		"totalCount":     totalCount,
-		"downloadedOnly": true,
-	})
-
-}
-
-// SettingsPage handles the corresponding operation.
-func SettingsPage(c *gin.Context) {
-
-	setting := c.MustGet("setting").(*db.Setting)
-	diskStats, _ := db.GetPodcastEpisodeDiskStats()
-	c.HTML(http.StatusOK, "settings.html", gin.H{
-		"setting":   setting,
-		"title":     "Update your preferences",
-		"diskStats": diskStats,
-	})
-
-}
-
-// BackupsPage handles the corresponding operation.
-func BackupsPage(c *gin.Context) {
-
-	files, err := service.GetAllBackupFiles()
-	var allFiles []interface{}
-	setting := c.MustGet("setting").(*db.Setting)
-
-	for _, file := range files {
-		arr := strings.Split(file, string(os.PathSeparator))
-		name := arr[len(arr)-1]
-		subsplit := strings.Split(name, "_")
-		dateStr := subsplit[2]
-		date, err := time.Parse("2006.01.02", dateStr)
-		if err == nil {
-			toAdd := map[string]interface{}{
-				"date": date,
-				"name": name,
-				"path": strings.ReplaceAll(file, string(os.PathSeparator), "/"),
-			}
-			allFiles = append(allFiles, toAdd)
-		}
-	}
-
-	if err == nil {
-		c.HTML(http.StatusOK, "backups.html", gin.H{
-			"backups": allFiles,
-			"title":   "Backups",
-			"setting": setting,
-		})
-	} else {
-		c.JSON(http.StatusBadRequest, err)
-	}
-
-}
-
-func getSortOptions() interface{} {
-	return []struct {
-		Label, Value string
-	}{
-		{"Release (asc)", "release_asc"},
-		{"Release (desc)", "release_desc"},
-		{"Duration (asc)", "duration_asc"},
-		{"Duration (desc)", "duration_desc"},
-	}
-}
-
-// AllEpisodesPage handles the corresponding operation.
-func AllEpisodesPage(c *gin.Context) {
-	var filter model.EpisodesFilter
-	if err := c.ShouldBindQuery(&filter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	filter.VerifyPaginationValues()
-	setting := c.MustGet("setting").(*db.Setting)
-	podcasts := service.GetAllPodcasts("")
-	tags, _ := db.GetAllTags("")
-	toReturn := gin.H{
-		"title":        "All Episodes",
-		"podcastItems": []db.PodcastItem{},
-		"setting":      setting,
-		"page":         filter.Page,
-		"count":        filter.Count,
-		"filter":       filter,
-		"podcasts":     podcasts,
-		"tags":         tags,
-		"sortOptions":  getSortOptions(),
-	}
-	c.HTML(http.StatusOK, "episodes_new.html", toReturn)
-
-}
-
-// AllTagsPage handles the corresponding operation.
-func AllTagsPage(c *gin.Context) {
-	var pagination model.Pagination
-	var page, count int
-	if err := c.ShouldBindQuery(&pagination); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if page = pagination.Page; page == 0 {
-		page = 1
-	}
-	if count = pagination.Count; count == 0 {
-		count = 10
-	}
-
-	var tags []db.Tag
-	var totalCount int64
-
-	if err := db.GetPaginatedTags(page, count,
-		&tags, &totalCount); err == nil {
-
-		setting := c.MustGet("setting").(*db.Setting)
-		totalPages := math.Ceil(float64(totalCount) / float64(count))
-		nextPage, previousPage := 0, 0
-		if float64(page) < totalPages {
-			nextPage = page + 1
-		}
-		if page > 1 {
-			previousPage = page - 1
-		}
-		toReturn := gin.H{
-			"title":        "Tags",
-			"tags":         tags,
-			"setting":      setting,
-			"page":         page,
-			"count":        count,
-			"totalCount":   totalCount,
-			"totalPages":   totalPages,
-			"nextPage":     nextPage,
-			"previousPage": previousPage,
-		}
-		c.HTML(http.StatusOK, "tags.html", toReturn)
-	} else {
-		c.JSON(http.StatusBadRequest, err)
-	}
-
 }
 
 // Search handles the corresponding operation.
@@ -358,8 +95,9 @@ func Search(c *gin.Context) {
 			pod.AlreadySaved = ok
 		}
 		c.JSON(200, data)
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 	}
-
 }
 
 // GetOPML handles the corresponding operation.
@@ -443,31 +181,4 @@ func readOPMLUpload(r *http.Request) (string, error) {
 
 func isRequestBodyTooLarge(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "request body too large")
-}
-
-// AddNewPodcast handles the corresponding operation.
-func AddNewPodcast(c *gin.Context) {
-	var addPodcastData AddPodcastData
-	err := c.ShouldBind(&addPodcastData)
-
-	if err == nil {
-
-		_, err = service.AddPodcast(addPodcastData.URL)
-		if err == nil {
-			service.SafeGo("refresh after add page", func() {
-				if refreshErr := service.RefreshEpisodes(); refreshErr != nil {
-					controllerLogger.Warnw("background refresh after add page failed", "error", refreshErr)
-				}
-			})
-			c.Redirect(http.StatusFound, "/")
-
-		} else {
-
-			c.JSON(http.StatusBadRequest, err)
-
-		}
-	} else {
-		c.JSON(http.StatusBadRequest, err)
-	}
-
 }

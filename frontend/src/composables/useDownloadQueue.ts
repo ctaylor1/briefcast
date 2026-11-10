@@ -1,6 +1,7 @@
 import { reactive, ref } from "vue";
 import { downloadsApi, getErrorMessage } from "../lib/api";
 import { formatBytes } from "../lib/format";
+import { DownloadStatus, hasKnownTotal, progressPercent } from "../lib/episodeStatus";
 import type { PodcastItem } from "../types/api";
 
 export function useDownloadQueue() {
@@ -56,15 +57,11 @@ export function useDownloadQueue() {
     await downloadsApi.resumeEpisode(id);
   }
 
-  function queueProgressPercent(item: PodcastItem): number {
-    if (item.DownloadTotalBytes <= 0) {
-      return 0;
-    }
-    return Math.min(100, Math.round((item.DownloadedBytes / item.DownloadTotalBytes) * 100));
-  }
+  const queueProgressPercent = progressPercent;
+  const queueHasKnownTotal = hasKnownTotal;
 
   function queueProgressLabel(item: PodcastItem): string {
-    if (item.DownloadStatus === 2) {
+    if (item.DownloadStatus === DownloadStatus.Downloaded) {
       return "Download completed.";
     }
     if (item.DownloadTotalBytes > 0) {
@@ -73,14 +70,14 @@ export function useDownloadQueue() {
     if (item.DownloadedBytes > 0) {
       return `${formatBytes(item.DownloadedBytes)} downloaded (total size unknown)`;
     }
-    if (item.DownloadStatus === 4) {
+    if (item.DownloadStatus === DownloadStatus.Paused) {
       return "Paused";
     }
-    return item.DownloadStatus === 1 ? "Downloading..." : "Queued";
+    return item.DownloadStatus === DownloadStatus.Downloading ? "Downloading..." : "Queued";
   }
 
   function queueProgressRemainingLabel(item: PodcastItem): string {
-    if (item.DownloadStatus === 2) {
+    if (item.DownloadStatus === DownloadStatus.Downloaded) {
       return "Ready for playback.";
     }
     if (item.DownloadTotalBytes > 0) {
@@ -90,10 +87,6 @@ export function useDownloadQueue() {
       return `${remainingPercent}% left (${formatBytes(remainingBytes)} remaining)`;
     }
     return "Time left unavailable (no total size reported by source)";
-  }
-
-  function queueHasKnownTotal(item: PodcastItem): boolean {
-    return item.DownloadTotalBytes > 0;
   }
 
   return {

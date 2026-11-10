@@ -424,7 +424,7 @@ func TestCharacterize_ScheduleTranscriptRetry(t *testing.T) {
 		RetryMaxDelay:      60,
 		RetryMaxErrorChars: 100,
 	}, errors.New("characterized transcription failure"))
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("persist scheduled transcript retry: %v", err)
 	}
 	after := snapshotPodcastItemRow(t, item.ID)

@@ -1,7 +1,7 @@
 # Release Pipeline
 
 A single PowerShell script (`RELEASE.ps1`) driven by a JSON config file (`release.config.json`).
-Replaces the previous `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1`, `RELEASE_RESET.ps1`, and `build_tar.ps1` scripts.
+Replaces the previous `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1`, `RELEASE_RESET.ps1`, and `build_tar.ps1` scripts, which have been removed.
 
 Use the root `justfile` as the recommended interface. `just` recipes call `RELEASE.ps1` under the hood.
 
@@ -228,13 +228,9 @@ builds/
 
 # Emergency rollback
 .\RELEASE.ps1 rollback
-
-# Full factory reset (prompts for confirmation)
-.\RELEASE.ps1 reset
-
-# Full factory reset (no prompt, for CI)
-.\RELEASE.ps1 reset -Force
 ```
+
+There is no factory reset: `RELEASE.ps1 reset` refuses to run, because a reset can erase media that worker jobs still reference. Use the reviewed recovery procedure in [docs/backup-and-restore.md](docs/backup-and-restore.md).
 
 ## Migration from Previous Scripts
 
@@ -244,7 +240,7 @@ builds/
 | `RELEASE_BUILD.ps1 -Minor` | `.\RELEASE.ps1 ship -Bump minor` |
 | `RELEASE_BUILD.ps1 -Major -SkipTests` | `.\RELEASE.ps1 ship -Bump major -SkipTests` |
 | `RELEASE_RUN.ps1 -Version 1.3.3` | `.\RELEASE.ps1 deploy -Version 1.3.3` |
-| `RELEASE_RESET.ps1 -Version 1.3.3` | `.\RELEASE.ps1 reset` |
+| `RELEASE_RESET.ps1 -Version 1.3.3` | None; destructive reset is not supported |
 | `build_tar.ps1 -Version 1.3.3` | `.\RELEASE.ps1 build -Version 1.3.3` |
 
 ## Portability

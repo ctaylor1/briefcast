@@ -155,9 +155,14 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 		pct = 1
 	}
 	updates := map[string]any{"transcript_checkpoint_json": string(raw), "transcript_status": "processing", "transcript_progress_stage": stage, "transcript_progress_pct": pct, "transcript_next_attempt": nil, "transcript_last_error": ""}
+	previous, _ := decodeRemoteEnvelope(item.TranscriptCheckpointJSON) // nil when empty or legacy
 	// This commit is mandatory before any GET/PUT for this job identity.
 	if err = l.update(&item, updates, false); err != nil {
 		return err
+	}
+	if previous != nil && previous.JobID != e.JobID {
+		// A manual reset replaced a submission that may still be running.
+		cancelAbandonedJob(ctx, b, &item, previous)
 	}
 	item.TranscriptCheckpointJSON = string(raw)
 	item.TranscriptStatus = "processing"
@@ -296,7 +301,28 @@ func failRemoteItem(b *httpTranscriptionBackend, l *remoteLease, item *db.Podcas
 		return errors.Join(err, updateErr)
 	}
 	recordTranscriptionProblem(item, e, problem, status, stage, retries, nextPtr)
+	// The app has given up on this job for good while the worker may still be
+	// running it. Retryable problems reconnect later, so they keep the job.
+	if !problem.terminal && !problem.problem.Retryable && problem.status != 404 {
+		cancelAbandonedJob(l.ctx, b, item, e)
+	}
 	return err
+}
+
+// cancelAbandonedJob asks the worker to stop an accepted job the app will never
+// use, so it stops holding a worker slot. It is best effort: callers commit the
+// episode's new state first, and a failed cancel is only logged.
+func cancelAbandonedJob(ctx context.Context, b *httpTranscriptionBackend, item *db.PodcastItem, e *remoteEnvelope) {
+	if e == nil || e.WorkerInstanceID == nil || *e.WorkerInstanceID != b.caps.WorkerInstanceID || e.TerminalState != "" {
+		return
+	}
+	cancelCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := b.cancel(cancelCtx, e); err != nil {
+		logging.Sugar().Warnw("remote_transcription_cancel_failed", "podcast_item_id", item.ID, "job_id", e.JobID, "error", err)
+		return
+	}
+	logging.Sugar().Infow("remote_transcription_abandoned_job_cancelled", "podcast_item_id", item.ID, "job_id", e.JobID)
 }
 
 func validateRemoteReceipt(l *remoteLease, item *db.PodcastItem, e *remoteEnvelope) error {
@@ -350,8 +376,11 @@ func remoteQueueQuery(statuses []string, now time.Time) *gorm.DB {
 // slot. The decoded identity/digest are still validated before any ACK or
 // checkpoint clearing.
 //
-// The <> '' term changes no results, because both LIKE patterns need text. It must
-// stay, written literally: it is what lets idx_podcast_items_open_checkpoint apply.
+// The empty-string test below changes no results, because both LIKE patterns
+// need text. It must stay, written literally, because it is what lets
+// idx_podcast_items_open_checkpoint apply:
+//
+//	transcript_checkpoint_json <> ''
 func remoteReceiptQuery(now time.Time) *gorm.DB {
 	return db.DB.Where("transcript_status = 'available' AND transcript_json <> '' AND deleted_at IS NULL AND transcript_checkpoint_json <> ''").Where("transcript_checkpoint_json LIKE ? AND transcript_checkpoint_json LIKE ?", `%"backend":"http"%`, `%"receipt_result_sha256":"%`).Where("transcript_next_attempt IS NULL OR transcript_next_attempt <= ?", now).Order("COALESCE(transcript_next_attempt, updated_at) ASC").Order("id ASC").Limit(100)
 }

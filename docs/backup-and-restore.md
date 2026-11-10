@@ -4,13 +4,14 @@ This runbook describes the implemented application/worker backup boundaries. It 
 
 ## What scheduled backups contain
 
-`service/fileService.go:CreateBackup` runs every 48 hours and writes a tar.gz under `$CONFIG/backups`. It reads only the fixed `$CONFIG/briefcast.db` filename and retains at most five files through the existing pruning code.
+`service/fileService.go:CreateBackup` runs every 48 hours and writes a tar.gz under `$CONFIG/backups`. It keeps the newest five `briefcast_backup_*.tar.gz` archives; other files in that folder are not listed or pruned.
 
 | Database | Current scheduled behavior | Required recovery method |
 | --- | --- | --- |
-| SQLite at the default filename | Copies the main file while the app may be writing. No online backup transaction, WAL/journal capture or restore verification | Stop all writers and protect the actual configured database plus any journal files, or use a separately verified consistent SQLite backup mechanism |
-| SQLite at another configured filename | Still reads `briefcast.db`, so may fail or archive an unrelated old file | Locate the actual `DATABASE_URL`/`CONFIG` database and verify its snapshot |
-| PostgreSQL | Does not invoke `pg_dump` or inspect the active backend. May fail because `briefcast.db` is missing or archive an irrelevant leftover SQLite file | Compatible PostgreSQL logical dump, role/ownership plan and isolated `pg_restore` verification |
+| SQLite (any configured path) | Takes a consistent snapshot of the configured database with `VACUUM INTO` and archives it under the database's own path. The archive is written to a temporary name and renamed only after every write and close succeeds. A failed backup leaves no archive | Restore the snapshot while the app is stopped. Check it first with `PRAGMA integrity_check` |
+| PostgreSQL | Skipped, with one log line per run | Compatible PostgreSQL logical dump, role/ownership plan and isolated `pg_restore` verification |
+
+The snapshot holds a read lock while it runs, so writers wait for it on a large database (journal mode `delete`).
 
 The scheduled tar contains no media, configuration tree, stable app deployment ID, worker journal, model cache or tokens. File existence, successful creation and the UI's backup listing do not prove recoverability. Keep operational recovery artifacts **outside** `$CONFIG/backups`, where scheduled pruning can remove files, and outside the repository/build context. Preserve checksums and at least one separate storage copy according to the operator's retention policy.
 

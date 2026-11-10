@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -273,8 +274,15 @@ func getItunesImageURL(body []byte) string {
 func AddPodcast(url string) (db.Podcast, error) {
 	var podcast db.Podcast
 	err := db.GetPodcastByURL(url, &podcast)
+	if err == nil {
+		return podcast, &model.PodcastAlreadyExistsError{URL: url}
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// A failed lookup is not proof the podcast exists.
+		return db.Podcast{}, fmt.Errorf("%w: %w", ErrPodcastStore, err)
+	}
 	setting := db.GetOrCreateSetting()
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	{
 		parsed, body, err := FetchFeedWithFeedparser(url)
 		if err != nil {
 			Logger.Errorw("Error adding podcast", "url", url, "error", err)
@@ -299,9 +307,10 @@ func AddPodcast(url string) (db.Podcast, error) {
 			podcast.Image = getItunesImageURL(body)
 		}
 
-		err = db.CreatePodcast(&podcast)
-		if err != nil {
-			return db.Podcast{}, err
+		if existing, exists, createErr := createPodcastOnce(&podcast); createErr != nil {
+			return db.Podcast{}, fmt.Errorf("%w: %w", ErrPodcastStore, createErr)
+		} else if exists {
+			return existing, &model.PodcastAlreadyExistsError{URL: url}
 		}
 
 		_, coverErr := DownloadPodcastCoverImage(podcast.Image, podcast.Title)
@@ -314,15 +323,47 @@ func AddPodcast(url string) (db.Podcast, error) {
 				Logger.Warnw("Failed to create podcast NFO", "podcast", podcast.Title, "error", nfoErr)
 			}
 		}
-		return podcast, err
+		return podcast, nil
 	}
+}
 
-	return podcast, &model.PodcastAlreadyExistsError{URL: url}
+// ErrPodcastStore reports that reading or writing podcasts failed; callers
+// answer it as a server error, not as bad input.
+var ErrPodcastStore = errors.New("podcast storage failed")
 
+var (
+	// addPodcastMu makes the exists-check and the insert one step, so two adds
+	// of the same URL cannot both create a podcast.
+	addPodcastMu sync.Mutex
+	// podcastItemsMu serializes AddPodcastItems per podcast, so a refresh and a
+	// "download all" cannot both insert the same new episodes.
+	podcastItemsMu sync.Map
+)
+
+func createPodcastOnce(podcast *db.Podcast) (db.Podcast, bool, error) {
+	addPodcastMu.Lock()
+	defer addPodcastMu.Unlock()
+	var existing db.Podcast
+	err := db.GetPodcastByURL(podcast.URL, &existing)
+	if err == nil {
+		return existing, true, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return db.Podcast{}, false, err
+	}
+	return db.Podcast{}, false, db.CreatePodcast(podcast)
+}
+
+func lockPodcastItems(podcastID string) func() {
+	value, _ := podcastItemsMu.LoadOrStore(podcastID, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // AddPodcastItems handles the corresponding operation.
 func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
+	defer lockPodcastItems(podcast.ID)()
 	parsed, _, err := FetchFeedWithFeedparser(podcast.URL)
 	if err != nil {
 		return err
@@ -332,13 +373,9 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	setting := db.GetOrCreateSetting()
 	llmCfg := LoadLLMConfig()
 	summarizationEnabled := llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != ""
-	summarizationPrompt := ""
-	summarizationUserPrompt := ""
-	if summarizationEnabled {
-		llmCfg.Model = ResolveSummarizationModel(setting, llmCfg)
-		summarizationPrompt = ResolveSummarizationPrompt(setting, llmCfg)
-		summarizationUserPrompt = ResolveSummarizationUserPrompt(setting, llmCfg)
-	}
+	// New episodes with a feed transcript are summarized by the summary backfill
+	// after this returns, not here: an LLM call per episode held up the refresh.
+	queuedForSummary := 0
 	initialDownloadMode := NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode)
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
@@ -479,6 +516,11 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				TranscriptCheckpointJSON:   "",
 			}
 			if createErr := db.CreatePodcastItem(&podcastItem); createErr != nil {
+				if exists, _ := db.PodcastItemExistsWithGUID(podcast.ID, guid); exists && guid != "" {
+					// Another writer added it first; the unique index kept one row.
+					Logger.Infow("episode already stored", "podcast_id", podcast.ID, "episode_guid", guid)
+					continue
+				}
 				Logger.Errorw("failed to persist podcast item", "podcast_id", podcast.ID, "episode_guid", guid, "error", createErr)
 				if firstItemErr == nil {
 					firstItemErr = createErr
@@ -492,14 +534,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				ExportTranscript(&podcastItem)
 			}
 			if summarizationEnabled && transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
-				if sumErr := SummarizeEpisode(&podcastItem, llmCfg, summarizationPrompt, summarizationUserPrompt); sumErr != nil {
-					Logger.Warnw(
-						"episode summarization failed for feed transcript",
-						"podcast_item_id", podcastItem.ID,
-						"episode_guid", guid,
-						"error", sumErr,
-					)
-				}
+				queuedForSummary++
 			}
 		}
 	}
@@ -516,8 +551,16 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			Logger.Warnw("failed to resolve alternate file URLs during refresh", "podcast_id", podcast.ID, "error", resolveErr)
 		}
 	}
+	if queuedForSummary > 0 {
+		RequestSummaryBackfill()
+	}
 	return firstItemErr
 }
+
+const (
+	refreshLockMinutes          = 120
+	refreshLockHeartbeatSeconds = 300
+)
 
 func shouldQueueInitialBackCatalogEpisode(setting *db.Setting, mode string, index int, pubDate time.Time, now time.Time) bool {
 	switch NormalizeInitialDownloadModeWithDefault(mode) {
@@ -542,9 +585,15 @@ func shouldQueueInitialBackCatalogEpisode(setting *db.Setting, mode string, inde
 }
 
 // UpdateAllFileSizes handles the corresponding operation.
+// fileSizeBatchLimit bounds one run of UpdateAllFileSizes. Episodes that are
+// not downloaded need a HEAD request each, so an unbounded run on a large new
+// library could take hours; the rest are picked up by later runs.
+const fileSizeBatchLimit = 200
+
 func UpdateAllFileSizes() {
-	items, err := db.GetAllPodcastItemsWithoutSize()
+	items, err := db.GetPodcastItemsWithoutSize(fileSizeBatchLimit)
 	if err != nil {
+		Logger.Warnw("could not list episodes without a file size", "error", err)
 		return
 	}
 	for _, item := range *items {
@@ -839,6 +888,13 @@ func DownloadMissingEpisodes() error {
 			_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
 			return
 		}
+		release, started := beginEpisodeDownload(item.ID)
+		if !started {
+			// Another download of this episode is running; leave its state alone.
+			jobLogger.Infow("skipping episode already downloading", "podcast_item_id", item.ID)
+			return
+		}
+		defer release()
 
 		if err := SetPodcastItemAsDownloading(item.ID); err != nil {
 			jobLogger.Warnw("failed to mark episode downloading", "podcast_item_id", item.ID, "error", err)
@@ -896,26 +952,80 @@ func DownloadMissingEpisodes() error {
 // CheckMissingFiles handles the corresponding operation.
 func CheckMissingFiles() error {
 	items, err := db.GetDownloadedItemPaths()
-	setting := db.GetOrCreateSetting()
-
 	if err != nil {
 		return err
 	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	// An unavailable data root (unmounted volume, permission fault) makes every
+	// file look missing. Skip the pass instead of resetting the whole library.
+	if root := resolveAssetsDir(); root != "" {
+		info, statErr := missingFileStat(root)
+		if statErr != nil {
+			return fmt.Errorf("missing-file check skipped: data directory unavailable: %w", statErr)
+		}
+		if !info.IsDir() {
+			return errors.New("missing-file check skipped: data directory is not a directory")
+		}
+	}
+
+	missing := make([]db.DownloadedItemPath, 0)
 	for _, item := range items {
-		fileExists := FileExists(item.DownloadPath)
-		if !fileExists {
-			if setting.DontDownloadDeletedFromDisk {
-				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.Deleted); setErr != nil {
-					Logger.Warnw("failed to mark missing file episode deleted", "podcast_item_id", item.ID, "error", setErr)
-				}
-			} else {
-				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded); setErr != nil {
-					Logger.Warnw("failed to requeue missing file episode", "podcast_item_id", item.ID, "error", setErr)
-				}
-			}
+		_, statErr := missingFileStat(item.DownloadPath)
+		switch {
+		case statErr == nil:
+		case errors.Is(statErr, fs.ErrNotExist):
+			missing = append(missing, item)
+		default:
+			// Only "does not exist" proves a file is gone. Any other error is unknown.
+			Logger.Warnw("could not check episode file; leaving its state unchanged", "podcast_item_id", item.ID, "error", statErr)
+		}
+	}
+
+	maxPercent := missingFilesMaxPercent()
+	if len(items) >= missingFilesBreakerMinItems && len(missing)*100 > len(items)*maxPercent {
+		Logger.Errorw("missing-file check found too many missing files and changed nothing; "+
+			"if the files were removed on purpose, raise "+missingFilesMaxPercentEnv,
+			"missing", len(missing), "downloaded", len(items), "max_percent", maxPercent)
+		return fmt.Errorf("missing-file check aborted: %d of %d downloaded files look missing (limit %d%%)", len(missing), len(items), maxPercent)
+	}
+
+	status := db.NotDownloaded
+	if db.GetOrCreateSetting().DontDownloadDeletedFromDisk {
+		status = db.Deleted
+	}
+	for _, item := range missing {
+		if setErr := SetPodcastItemAsNotDownloaded(item.ID, status); setErr != nil {
+			Logger.Warnw("failed to update episode whose file is missing", "podcast_item_id", item.ID, "download_status", status, "error", setErr)
 		}
 	}
 	return nil
+}
+
+const (
+	missingFilesMaxPercentEnv     = "MISSING_FILES_MAX_PERCENT"
+	missingFilesDefaultMaxPercent = 50
+	// The breaker only applies to libraries this size or larger, so a small
+	// library can still lose most of its files legitimately.
+	missingFilesBreakerMinItems = 20
+)
+
+// missingFileStat is a seam so tests can inject stat errors.
+var missingFileStat = os.Stat
+
+func missingFilesMaxPercent() int {
+	raw := strings.TrimSpace(os.Getenv(missingFilesMaxPercentEnv))
+	if raw == "" {
+		return missingFilesDefaultMaxPercent
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > 100 {
+		Logger.Warnw("invalid "+missingFilesMaxPercentEnv+", using default", "value", raw, "default", missingFilesDefaultMaxPercent)
+		return missingFilesDefaultMaxPercent
+	}
+	return value
 }
 
 // DeleteEpisodeFile handles the corresponding operation.
@@ -1000,6 +1110,13 @@ func DownloadSingleEpisode(podcastItemID string) error {
 	if DownloadsPaused() {
 		return errors.New("downloads are paused")
 	}
+	release, started := beginEpisodeDownload(podcastItem.ID)
+	if !started {
+		// A second request must not reset the state of the download that is running.
+		Logger.Infow("download already in progress", "podcast_item_id", podcastItem.ID)
+		return ErrDownloadInProgress
+	}
+	defer release()
 	if err := SetPodcastItemAsDownloading(podcastItemID); err != nil {
 		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemID, "error", err)
 	}
@@ -1043,7 +1160,7 @@ func RefreshEpisodes() error {
 		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+	jobLock, acquired, lockErr := db.TryLock(jobName, refreshLockMinutes)
 	if lockErr != nil {
 		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
 		return lockErr
@@ -1058,6 +1175,12 @@ func RefreshEpisodes() error {
 		return acquireErr
 	}
 	defer db.UnlockByID(jobLock.ID)
+	// Renew the 120-minute lease while feeds, chapters and transcripts are
+	// fetched, so a long refresh is never treated as abandoned.
+	stopHeartbeat := startJobLockHeartbeat(jobLock.ID, refreshLockMinutes, refreshLockHeartbeatSeconds, func(err error) {
+		jobLogger.Warnw("job_lock_refresh_failed", "error", err)
+	})
+	defer stopHeartbeat()
 
 	var data []db.Podcast
 	err := db.GetAllPodcasts(&data, "")
@@ -1159,57 +1282,52 @@ func DeletePodcast(id string, deleteFiles bool) error {
 	if err != nil {
 		return err
 	}
-	var podcastItems []db.PodcastItem
-
-	err = db.GetAllPodcastItemsByPodcastID(id, &podcastItems)
-	if err != nil {
-		return err
-	}
+	var items []db.PodcastItemAssetPaths
 	var sharedWith []string
 	if deleteFiles {
+		// Read everything needed for file removal before deleting any rows.
+		if items, err = db.GetPodcastItemAssetPaths(id); err != nil {
+			return err
+		}
 		// Checked before anything is deleted, so a failed check leaves no partial delete.
-		sharedWith, err = otherPodcastIDsSharingFolder(podcast)
-		if err != nil {
-			return err
-		}
-	}
-	for _, item := range podcastItems {
-		if deleteFiles {
-			if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
-				Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
-			}
-			if item.LocalImage != "" {
-				if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
-					Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
-				}
-			}
-
-		}
-		if deleteErr := db.DeletePodcastItemByID(item.ID); deleteErr != nil {
-			return deleteErr
-		}
-
-	}
-
-	switch {
-	case !deleteFiles:
-		// The caller asked to keep this podcast's files, so its folders stay too.
-	case len(sharedWith) > 0:
-		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
-	default:
-		err = deletePodcastFolder(podcast.Title)
-		if err != nil {
+		if sharedWith, err = otherPodcastIDsSharingFolder(podcast); err != nil {
 			return err
 		}
 	}
 
-	err = db.DeletePodcastByID(id)
-	if err != nil {
+	// Rows first, in one transaction: a failure leaves the podcast complete,
+	// and a later file error can no longer leave a podcast with no episodes.
+	if err := db.DeletePodcastByID(id); err != nil {
 		return err
 	}
-	return nil
+	if !deleteFiles {
+		// The caller asked to keep this podcast's files, so its folders stay too.
+		return nil
+	}
 
+	// File removal is best effort: the rows are already gone.
+	for _, item := range items {
+		if err := deletePodcastItemAssetFile(item.ID, item.DownloadPath, "download_path"); err != nil {
+			Logger.Warnw("failed to delete episode media file", "podcast_item_id", item.ID, "path", item.DownloadPath, "error", err)
+		}
+		if item.LocalImage != "" {
+			if err := deletePodcastItemAssetFile(item.ID, item.LocalImage, "local_image"); err != nil {
+				Logger.Warnw("failed to delete episode local image", "podcast_item_id", item.ID, "path", item.LocalImage, "error", err)
+			}
+		}
+	}
+	if len(sharedWith) > 0 {
+		Logger.Warnw("skipping podcast folder removal because other podcasts share it", "podcast_id", id, "shared_with_podcast_ids", sharedWith)
+		return nil
+	}
+	if err := removePodcastFolder(podcast.Title); err != nil {
+		Logger.Errorw("podcast deleted but its folders could not be removed", "podcast_id", id, "error", err)
+	}
+	return nil
 }
+
+// removePodcastFolder is a seam so tests can make folder removal fail.
+var removePodcastFolder = deletePodcastFolder
 
 // otherPodcastIDsSharingFolder returns the other podcasts stored in the same
 // folders as podcast. Folders are named only by the sanitized title, so different

@@ -73,7 +73,7 @@ func TestDownloadMissingEpisodesSkipsWorkWhenLockIsHeld(t *testing.T) {
 	podcast := createPodcast(t, "download-lock-held", false)
 	item := createServicePodcastItem(t, podcast, "queued episode", db.NotDownloaded)
 	item.FileURL = server.URL + "/episode.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update queued item URL: %v", err)
 	}
 

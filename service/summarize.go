@@ -15,6 +15,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/logging"
 	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const defaultSummarizationPrompt = `You are an expert podcast content analyst. Your job is to read podcast transcripts and extract the most important information with precision, discipline, and clear prioritization.
@@ -340,11 +341,8 @@ func llmChatCompletionsURL(baseURL string) (string, error) {
 
 func llmHTTPClient(cfg LLMConfig) *http.Client {
 	client := &http.Client{
-		Transport: outboundHTTPTransport(outboundPurposeLLM),
-		CheckRedirect: func(r *http.Request, _ []*http.Request) error {
-			_, err := validateOutboundURL(r.URL.String(), outboundPurposeLLM)
-			return err
-		},
+		Transport:     outboundHTTPTransport(outboundPurposeLLM),
+		CheckRedirect: checkOutboundRedirect(outboundPurposeLLM),
 	}
 	if cfg.TimeoutSecs > 0 {
 		client.Timeout = time.Duration(cfg.TimeoutSecs) * time.Second
@@ -367,12 +365,23 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 			item.LLMSummaryStatus = "failed"
 		}
 		item.LLMSummaryError = missingTranscriptErr.Error()
-		if err := db.UpdatePodcastItem(item); err != nil {
+		if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"llm_summary_status": item.LLMSummaryStatus,
+			"llm_summary_error":  item.LLMSummaryError,
+		}); err != nil {
 			return err
 		}
 		return missingTranscriptErr
 	}
 
+	// Capturing the source writes a Markdown revision for the episode; an episode
+	// deleted since it was loaded must not get one (an orphan on SQLite, a
+	// foreign key error on Postgres).
+	if exists, existsErr := db.PodcastItemExists(item.ID); existsErr != nil {
+		return existsErr
+	} else if !exists {
+		return gorm.ErrRecordNotFound
+	}
 	transcript, prompt, report, err := prepareSummarySource(item, prompt, userPrompt)
 	if err != nil {
 		return err
@@ -386,7 +395,9 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	} else {
 		item.LLMSummaryStatus = "processing"
 	}
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"llm_summary_status": item.LLMSummaryStatus,
+	}); err != nil {
 		return err
 	}
 	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
@@ -397,7 +408,10 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 			item.LLMSummaryStatus = "failed"
 		}
 		item.LLMSummaryError = trimToLength(err.Error(), 1000)
-		if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
+		if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"llm_summary_status": item.LLMSummaryStatus,
+			"llm_summary_error":  item.LLMSummaryError,
+		}); updateErr != nil {
 			jobLogger.Warnw("failed to mark summary failure", "podcast_item_id", item.ID, "error", updateErr)
 		}
 		return err
@@ -419,7 +433,15 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return err
 	}
 	item.SummaryProvenanceJSON = provenance
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"llm_summary":             item.LLMSummary,
+		"llm_summary_status":      item.LLMSummaryStatus,
+		"llm_summary_error":       item.LLMSummaryError,
+		"llm_summary_date":        item.LLMSummaryDate,
+		"llm_summary_model":       item.LLMSummaryModel,
+		"llm_summary_prompt":      item.LLMSummaryPrompt,
+		"summary_provenance_json": item.SummaryProvenanceJSON,
+	}); err != nil {
 		return err
 	}
 	ExportSummary(item)

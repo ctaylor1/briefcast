@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { usePlayer } from "../composables/usePlayer";
+import { toast } from "../lib/toast";
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { useDownloadQueue } from "../composables/useDownloadQueue";
 import { getErrorMessage } from "../lib/api";
 import type { PodcastItem } from "../types/api";
@@ -9,20 +10,20 @@ import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { formatDateTime } from "../lib/format";
+import { DownloadStatus, isDownloaded, isDownloading, isPaused } from "../lib/episodeStatus";
 
-const infoMessage = ref("");
-const actionError = ref("");
+// Inside the Activity page the page header is the Activity one.
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
+
+const player = usePlayer();
 const confirmStopAllOpen = ref(false);
 const stoppingAllBusy = ref(false);
 const undoCancelItem = ref<PodcastItem | null>(null);
 const queueSort = ref<DownloadQueueSort>("download_date_desc");
 let undoCancelTimer: number | undefined;
-const DOWNLOAD_STATUS_QUEUED = 0;
-const DOWNLOAD_STATUS_DOWNLOADING = 1;
-const DOWNLOAD_STATUS_DOWNLOADED = 2;
-const DOWNLOAD_STATUS_PAUSED = 4;
 const QUEUE_REFRESH_MS = 15000;
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 type DownloadQueueSort =
@@ -34,7 +35,6 @@ type DownloadQueueSort =
   | "status"
   | "progress_desc"
   | "progress_asc";
-const router = useRouter();
 
 const {
   queueItems,
@@ -55,21 +55,9 @@ const {
 
 let queueInterval: number | undefined;
 
-function isPaused(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_PAUSED;
-}
-
-function isDownloading(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADING;
-}
-
-function isDownloaded(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADED;
-}
-
 function queueStatusLabel(item: PodcastItem): string {
   if (isDownloaded(item)) {
-    return "Download Completed";
+    return "Download completed";
   }
   if (isDownloading(item)) {
     return "Downloading";
@@ -111,7 +99,7 @@ function queueSortPriority(item: PodcastItem): number {
   if (isDownloading(item)) {
     return 0;
   }
-  if (item.DownloadStatus === DOWNLOAD_STATUS_QUEUED) {
+  if (item.DownloadStatus === DownloadStatus.Queued) {
     return 1;
   }
   if (isPaused(item)) {
@@ -226,40 +214,34 @@ function downloadDateLabel(item: PodcastItem): string {
 }
 
 async function pauseAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await pauseDownloads();
-    infoMessage.value = "Downloads paused.";
+    toast.success("Downloads paused.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not update download pause.");
+    toast.error(getErrorMessage(error, "Could not update download pause."));
   }
 }
 
 async function resumeAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await resumeDownloads();
-    infoMessage.value = "Downloads resumed.";
+    toast.success("Downloads resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume downloads.");
+    toast.error(getErrorMessage(error, "Could not resume downloads."));
   }
 }
 
 async function cancelAllDownloads(): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   stoppingAllBusy.value = true;
   try {
     await cancelAllQueuedDownloads();
-    infoMessage.value = "All queued downloads cancelled.";
+    toast.success("All queued downloads cancelled.");
     await fetchQueue();
     clearUndoCancel();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not cancel downloads.");
+    toast.error(getErrorMessage(error, "Could not cancel downloads."));
   } finally {
     stoppingAllBusy.value = false;
   }
@@ -296,40 +278,34 @@ async function undoCancelDownload(): Promise<void> {
   if (!item) {
     return;
   }
-  infoMessage.value = "";
-  actionError.value = "";
   clearUndoCancel();
   try {
     await resumeEpisodeDownload(item.ID);
-    infoMessage.value = "Download resumed.";
+    toast.success("Download resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume download.");
+    toast.error(getErrorMessage(error, "Could not resume download."));
   }
 }
 
 async function cancelDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await cancelEpisodeDownload(item.ID);
-    infoMessage.value = "Download cancelled.";
+    toast.success("Download cancelled.");
     armUndoCancel(item);
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not cancel download.");
+    toast.error(getErrorMessage(error, "Could not cancel download."));
   }
 }
 
 async function resumeDownload(item: PodcastItem): Promise<void> {
-  infoMessage.value = "";
-  actionError.value = "";
   try {
     await resumeEpisodeDownload(item.ID);
-    infoMessage.value = "Download resumed.";
+    toast.success("Download resumed.");
     await fetchQueue();
   } catch (error) {
-    actionError.value = getErrorMessage(error, "Could not resume download.");
+    toast.error(getErrorMessage(error, "Could not resume download."));
   }
 }
 
@@ -349,12 +325,7 @@ function queueProgressAriaText(item: PodcastItem): string {
 }
 
 function openPlayer(item: PodcastItem): void {
-  void router.push({
-    path: "/player",
-    query: {
-      itemIds: item.ID,
-    },
-  });
+  void player.playEpisode(item);
 }
 
 onMounted(() => {
@@ -374,19 +345,13 @@ onUnmounted(() => {
 
 <template>
   <section class="downloads-page stack-4">
-    <header class="page-header">
+    <header v-if="!embedded" class="page-header">
       <h2 class="section-title">Download queue</h2>
       <p class="section-subtitle">
         Track queue progress, pause downloads, and stop individual jobs.
       </p>
     </header>
 
-    <UiAlert v-if="infoMessage" tone="success">
-      {{ infoMessage }}
-    </UiAlert>
-    <UiAlert v-if="actionError" tone="danger">
-      {{ actionError }}
-    </UiAlert>
     <UiAlert v-if="undoCancelItem" tone="info">
       <div class="queue-undo">
         <span>Stopped "{{ undoCancelItem.Title }}".</span>
@@ -403,14 +368,14 @@ onUnmounted(() => {
           label="Sort"
           @update:model-value="queueSort = $event as DownloadQueueSort"
         >
-          <option value="download_date_desc">Download Date (Desc)</option>
-          <option value="download_date_asc">Download Date (Asc)</option>
-          <option value="title_asc">Alphabetical (A-Z)</option>
-          <option value="title_desc">Alphabetical Z-A</option>
-          <option value="podcast_asc">Podcast (A-Z)</option>
-          <option value="status">Status (Active First)</option>
-          <option value="progress_desc">Progress (High-Low)</option>
-          <option value="progress_asc">Progress (Low-High)</option>
+          <option value="download_date_desc">Download date (newest first)</option>
+          <option value="download_date_asc">Download date (oldest first)</option>
+          <option value="title_asc">Title (A–Z)</option>
+          <option value="title_desc">Title (Z–A)</option>
+          <option value="podcast_asc">Podcast (A–Z)</option>
+          <option value="status">Status (active first)</option>
+          <option value="progress_desc">Progress (high to low)</option>
+          <option value="progress_asc">Progress (low to high)</option>
         </UiSelect>
         <div class="downloads-filters__status">
           <span class="ui-label">Queue status</span>
@@ -430,10 +395,10 @@ onUnmounted(() => {
             :disabled="queueCounts.queued === 0 && queueCounts.downloading === 0"
             @click="pauseAllDownloads"
           >
-            Pause All Downloads
+            Pause all downloads
           </UiButton>
           <UiButton size="sm" variant="success" :disabled="queueCounts.paused === 0" @click="resumeAllDownloads">
-            Resume All Downloads
+            Resume all downloads
           </UiButton>
           <UiButton
             size="sm"
@@ -451,7 +416,7 @@ onUnmounted(() => {
             title="Refresh queue"
             @click="refreshQueue"
           >
-            ↻
+            <UiIcon name="refresh" />
           </UiButton>
         </div>
       </div>
@@ -480,19 +445,22 @@ onUnmounted(() => {
 
     <UiCard v-else padding="none">
       <div class="table-wrap visually-scrollable">
-        <table class="data-table downloads-table">
-          <thead>
-            <tr>
-              <th>Episode</th>
-              <th>Podcast</th>
-              <th>Download Date</th>
-              <th>Status</th>
-              <th>Progress</th>
-              <th>Actions</th>
+        <!-- Below 768px the rows restyle as cards. Explicit roles keep the table semantics
+             that some browsers drop when the display type changes. -->
+        <table class="data-table downloads-table" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader" scope="col">Episode</th>
+              <th role="columnheader" scope="col">Podcast</th>
+              <th role="columnheader" scope="col">Download date</th>
+              <th role="columnheader" scope="col">Status</th>
+              <th role="columnheader" scope="col">Progress</th>
+              <th role="columnheader" scope="col">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             <tr
+              role="row"
               v-for="item in sortedQueueItems"
               :key="item.ID"
               :class="{
@@ -500,14 +468,14 @@ onUnmounted(() => {
                 'downloads-table__row--paused': isPaused(item),
               }"
             >
-              <td>
+              <td role="cell" class="downloads-table__cell--episode">
                 <div class="downloads-table__episode">
                   <p class="downloads-table__title">{{ item.Title }}</p>
                 </div>
               </td>
-              <td class="meta-text">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
-              <td class="meta-text">{{ downloadDateLabel(item) }}</td>
-              <td>
+              <td role="cell" class="meta-text" data-label="Podcast">{{ item.Podcast?.Title || "Unknown podcast" }}</td>
+              <td role="cell" class="meta-text" data-label="Download date">{{ downloadDateLabel(item) }}</td>
+              <td role="cell" data-label="Status">
                 <div class="downloads-table__badges">
                   <UiBadge :tone="queueStatusTone(item)">
                     {{ queueStatusLabel(item) }}
@@ -520,7 +488,7 @@ onUnmounted(() => {
                   </UiBadge>
                 </div>
               </td>
-              <td>
+              <td role="cell" data-label="Progress">
                 <div v-if="!isPaused(item) && !isDownloaded(item)" class="downloads-table__progress">
                   <div
                     class="downloads-table__progress-track"
@@ -543,7 +511,7 @@ onUnmounted(() => {
                 <p v-else-if="isDownloaded(item)" class="downloads-table__completed-note">Download completed.</p>
                 <p v-else class="downloads-table__paused-note">Paused. Resume downloads to continue.</p>
               </td>
-              <td>
+              <td role="cell" class="downloads-table__cell--actions">
                 <div class="downloads-table__actions">
                   <UiButton
                     v-if="isPaused(item)"
@@ -551,7 +519,7 @@ onUnmounted(() => {
                     variant="success"
                     @click="resumeDownload(item)"
                   >
-                    Resume Download
+                    Resume download
                   </UiButton>
                   <UiButton size="sm" variant="outline" @click="openPlayer(item)">
                     Play
@@ -666,7 +634,7 @@ onUnmounted(() => {
 }
 
 .downloads-table__episode {
-  min-width: 280px;
+  min-width: 200px;
 }
 
 .downloads-table__title {
@@ -687,11 +655,11 @@ onUnmounted(() => {
 }
 
 .downloads-table__actions {
-  min-width: 180px;
+  min-width: 0;
 }
 
 .downloads-table__progress {
-  min-width: 140px;
+  min-width: 120px;
 }
 
 .downloads-table__progress-track {
@@ -756,6 +724,69 @@ onUnmounted(() => {
 @media (min-width: 768px) {
   .downloads-filters__row {
     grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+/* Below the wide desktop layout (the same 1200px switch the Episodes list uses), each row
+   becomes a card with the column name above each value. */
+@media (max-width: 1199px) {
+  .downloads-table,
+  .downloads-table tbody,
+  .downloads-table tr,
+  .downloads-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .downloads-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .downloads-table tbody {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .downloads-table tr {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-primary);
+  }
+
+  .downloads-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .downloads-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--color-text-secondary);
+    font-size: var(--font-caption-size);
+    line-height: var(--font-caption-line-height);
+    font-weight: 600;
+  }
+
+  .downloads-table__episode,
+  .downloads-table__actions,
+  .downloads-table__progress {
+    min-width: 0;
+  }
+
+  .downloads-table__progress-track {
+    max-width: none;
+  }
+
+  .downloads-table__cell--actions {
+    padding-top: var(--space-1);
   }
 }
 </style>

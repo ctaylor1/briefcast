@@ -75,8 +75,14 @@ var registerPipelineOnce sync.Once
 func RegisterPipelineMetrics() {
 	registerPipelineOnce.Do(func() {
 		telemetry.MustRegister(pipelineCollector{})
-		SafeGo("pipeline stats warmup", func() { _, _, _ = refreshPipelineStats() })
 	})
+}
+
+// StartPipelineStatsWarmup fills the stats cache in the background. Its grouped
+// scan reads most of podcast_items and holds the SQLite read lock for seconds,
+// so it starts only after the startup job-lock reset has written.
+func StartPipelineStatsWarmup() {
+	SafeGo("pipeline stats warmup", func() { _, _, _ = refreshPipelineStats() })
 }
 
 // QueueSnapshot is the current state of the download and transcription queues.

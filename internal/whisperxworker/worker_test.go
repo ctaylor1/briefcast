@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -342,6 +343,61 @@ func TestVerifiedCheckpointResumeAndFingerprintMismatch(t *testing.T) {
 	}
 }
 
+// A resumed job reports the checkpoint's completed seconds from its first
+// status. Clients reject completed > total, so the total must be known before
+// the script reports one (its first progress tick carries total 0).
+func TestResumedJobNeverReportsCompletedAboveTotal(t *testing.T) {
+	cfg, request, output := workerFixture(t)
+	var calls atomic.Int32
+	ticked, release := make(chan struct{}), make(chan struct{})
+	runner := fakeRunner{run: func(ctx context.Context, s RunSpec, p func(transcription.ProgressUpdate) error) error {
+		if calls.Add(1) == 1 {
+			if err := durableWrite(filepath.Join(s.Directory, "segments.json"), checkpointBytes(s, 120)); err != nil {
+				return err
+			}
+			if err := p(transcription.ProgressUpdate{Percent: 50, Stage: "transcribing", TotalSeconds: 240}); err != nil {
+				return err
+			}
+			return errors.New("synthetic failure")
+		}
+		if err := p(transcription.ProgressUpdate{Percent: 1, Stage: "loading", TotalSeconds: 0}); err != nil {
+			return err
+		}
+		close(ticked)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return durableWrite(filepath.Join(s.Directory, "stdout.json"), output)
+	}}
+	w := openTestWorker(t, cfg, runner)
+	id := uuid.NewString()
+	submitTest(t, w, id, request)
+	waitState(t, w, id, "failed")
+	retry := request
+	retry.ResumeFromJobID = &id
+	retry.Attempt = 2
+	second := uuid.NewString()
+	accepted := submitTest(t, w, second, retry)
+	if accepted.TotalSeconds < accepted.CompletedSeconds || accepted.TotalSeconds != 240 {
+		t.Fatalf("accepted resume status: completed=%v total=%v", accepted.CompletedSeconds, accepted.TotalSeconds)
+	}
+	<-ticked
+	status, err := w.Status(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.CompletedSeconds != 120 || status.TotalSeconds < status.CompletedSeconds {
+		t.Fatalf("first resumed tick: completed=%v total=%v", status.CompletedSeconds, status.TotalSeconds)
+	}
+	close(release)
+	final := waitState(t, w, second, "succeeded")
+	if final.TotalSeconds < final.CompletedSeconds {
+		t.Fatalf("final: completed=%v total=%v", final.CompletedSeconds, final.TotalSeconds)
+	}
+}
+
 func TestRejectMaliciousMediaAndChangedInputWithoutDeletingAudio(t *testing.T) {
 	cfg, request, output := workerFixture(t)
 	w := openTestWorker(t, cfg, successRunner(output))
@@ -436,6 +492,155 @@ func TestStorageFailuresCannotClaimAcceptanceOrSuccess(t *testing.T) {
 				t.Fatal("published undurable result")
 			}
 		})
+	}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// A storage fault must be reported (with its cause) so serve can exit and the
+// restart policy can run recovery, instead of leaving jobs "running" forever.
+func TestStateFaultIsSignalledOnceWithItsCause(t *testing.T) {
+	logs := &lockedBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cfg, request, output := workerFixture(t)
+	w := openTestWorker(t, cfg, successRunner(output))
+	if _, err := w.store.db.Exec("CREATE TRIGGER reject_write BEFORE UPDATE ON jobs WHEN NEW.state='succeeded' BEGIN SELECT RAISE(ABORT,'injected'); END"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-w.Faulted():
+		t.Fatal("faulted before any fault")
+	default:
+	}
+	submitTest(t, w, uuid.NewString(), request)
+	select {
+	case <-w.Faulted():
+	case <-time.After(5 * time.Second):
+		t.Fatal("state fault was not signalled")
+	}
+	first := w.Fault()
+	if first == nil || !strings.Contains(first.Error(), "injected") {
+		t.Fatalf("fault cause lost: %v", first)
+	}
+	w.mu.Lock()
+	w.unavailable(errors.New("later consequence")) // must not close twice
+	w.mu.Unlock()
+	if w.Fault() != first {
+		t.Fatal("later fault replaced the first cause")
+	}
+	if !strings.Contains(logs.String(), "worker_state_unavailable") || !strings.Contains(logs.String(), "injected") {
+		t.Fatalf("fault cause not logged: %s", logs.String())
+	}
+}
+
+// Hourly GC used to re-touch every pruned job under the global mutex forever.
+// A tombstone is skipped once its cleanup is durably finished, and a crash
+// between the tombstone commit and file deletion is still repaired.
+func TestPruneFinishesTombstonesOnceAndSkipsThem(t *testing.T) {
+	logs := &lockedBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cfg, request, output := workerFixture(t)
+	w := openTestWorker(t, cfg, successRunner(output))
+	done, interrupted := uuid.NewString(), uuid.NewString()
+	digests := map[string]string{}
+	for _, id := range []string{done, interrupted} {
+		submitTest(t, w, id, request)
+		waitState(t, w, id, "succeeded")
+		raw, err := w.Result(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result transcription.JobResult
+		if err = json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.Ack(id, result.ResultSHA256); err != nil {
+			t.Fatal(err)
+		}
+		digests[id] = result.ResultSHA256
+	}
+	// Crash image: the tombstone was committed but no file was deleted yet.
+	w.mu.Lock()
+	r, err := w.store.get(interrupted)
+	if err == nil {
+		r.Pruned = true
+		err = w.store.save(r, false)
+	}
+	w.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(w.store.resultPath(interrupted)); err != nil {
+		t.Fatal("fixture lost the result before pruning")
+	}
+	later := time.Now().Add(8 * 24 * time.Hour)
+	if err = w.PruneAcknowledged(later); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{done, interrupted} {
+		if _, err = os.Stat(w.store.resultPath(id)); !os.IsNotExist(err) {
+			t.Fatalf("pruned result file kept: %v", err)
+		}
+		if _, err = os.Stat(w.store.jobDir(id)); err != nil {
+			t.Fatal("job directory removed; an older worker's GC fails without it")
+		}
+		w.mu.Lock()
+		r, err = w.store.get(id)
+		w.mu.Unlock()
+		if err != nil || !r.Pruned || !r.PruneComplete {
+			t.Fatalf("tombstone not finished: %+v %v", r, err)
+		}
+		if _, err = w.Ack(id, digests[id]); err != nil {
+			t.Fatal("tombstone lost ACK")
+		}
+		if _, err = w.Result(id); !errors.Is(err, errGone) {
+			t.Fatal("pruned result still served")
+		}
+	}
+	// A finished tombstone is skipped: a file planted in its directory survives.
+	sentinel := filepath.Join(w.store.jobDir(done), "stdout.json")
+	if err = os.WriteFile(sentinel, []byte("planted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.PruneAcknowledged(later.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(sentinel); err != nil {
+		t.Fatal("finished tombstone was pruned again")
+	}
+	if err = os.Remove(sentinel); err != nil {
+		t.Fatal(err)
+	}
+	// Restart: recovery skips finished tombstones.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err = w.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restarted := openTestWorker(t, cfg, successRunner(output))
+	if _, err = restarted.Ack(done, digests[done]); err != nil {
+		t.Fatal("tombstone lost across restart")
+	}
+	if strings.Contains(logs.String(), "worker_artifact_cleanup_failed") {
+		t.Fatalf("restart warned about pruned jobs: %s", logs.String())
 	}
 }
 

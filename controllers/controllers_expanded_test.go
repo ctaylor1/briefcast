@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"bytes"
-	"encoding/json"
 	"html/template"
 	"io"
 	"mime/multipart"
@@ -55,18 +54,9 @@ func makeExpandedRouter(t *testing.T) *gin.Engine {
 {{define "tags.html"}}tags{{end}}
 `)))
 
-	router.GET("/add", AddPage)
-	router.GET("/home", HomePage)
-	router.GET("/podcast/:id", PodcastPage)
-	router.GET("/player", PlayerPage)
-	router.GET("/settings-page", SettingsPage)
-	router.GET("/backups", BackupsPage)
-	router.GET("/episodes", AllEpisodesPage)
-	router.GET("/tags-page", AllTagsPage)
 	router.GET("/search", Search)
 	router.GET("/opml", GetOPML)
 	router.POST("/opml", UploadOpml)
-	router.POST("/add-new", AddNewPodcast)
 
 	router.POST("/podcasts", AddPodcast)
 	router.GET("/podcasts", GetAllPodcasts)
@@ -79,7 +69,6 @@ func makeExpandedRouter(t *testing.T) *gin.Engine {
 	router.PATCH("/podcasts/:id/retention", PatchPodcastRetention)
 	router.PATCH("/podcasts/:id/sponsor-skip", PatchPodcastSponsorSkip)
 	router.DELETE("/podcasts/:id/items", DeletePodcastEpisodesByID)
-	router.DELETE("/podcasts/:id/items-only", DeletePodcasDeleteOnlyPodcasttEpisodesByID)
 	router.DELETE("/podcasts/:id/podcast", DeleteOnlyPodcastByID)
 	router.DELETE("/podcasts/:id", DeletePodcastByID)
 	router.GET("/podcasts/:id/rss", GetRssForPodcastByID)
@@ -168,7 +157,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	}
 	item.DownloadPath = episodeFilePath
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item paths failed: %v", err)
 	}
 
@@ -201,52 +190,8 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		enrichSearchResults = restoreEnrich
 	})
 
-	// pages.go handlers
-	resp := performRequest(router, http.MethodGet, "/add", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /add expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/home", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /home expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/podcast/"+podcast.ID+"?page=1&count=1", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /podcast/:id expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/player?itemIds="+item.ID, nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /player itemIds expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/player?podcastID="+podcast.ID, nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /player podcastID expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/player?tagIds="+tag.ID, nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /player tagIds expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/player", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /player latest expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/settings-page", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /settings-page expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/backups", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /backups expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/episodes?page=1&count=10", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /episodes expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/tags-page?page=1&count=10", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET /tags-page expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodGet, "/search?q=test&searchSource=itunes", nil, nil)
+	// Legacy page handlers were removed (P20); the JSON handlers in pages.go remain.
+	resp := performRequest(router, http.MethodGet, "/search?q=test&searchSource=itunes", nil, nil)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /search expected 200, got %d", resp.Code)
 	}
@@ -257,12 +202,6 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	resp = performRequest(router, http.MethodGet, "/opml", nil, nil)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /opml expected 200, got %d", resp.Code)
-	}
-	resp = performRequest(router, http.MethodPost, "/add-new", strings.NewReader("url="+existingURL), map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("POST /add-new expected 400 for duplicate, got %d", resp.Code)
 	}
 
 	var uploadBody bytes.Buffer
@@ -333,8 +272,8 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("GET /podcasts/:id/items expected 200, got %d", resp.Code)
 	}
 	resp = performRequest(router, http.MethodGet, "/podcasts/missing/download", nil, nil)
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("GET /podcasts/missing/download expected 400, got %d", resp.Code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("GET /podcasts/missing/download expected 404, got %d", resp.Code)
 	}
 
 	resp = performRequest(router, http.MethodGet, "/podcastitems", nil, nil)
@@ -372,7 +311,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("GET /podcastitems/:id/file local expected 200, got %d", resp.Code)
 	}
 	item.DownloadPath = filepath.Join(os.TempDir(), "missing-controller-episode.mp3")
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item missing download path failed: %v", err)
 	}
 	resp = performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/file", nil, nil)
@@ -480,11 +419,6 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	}
 
 	podcastToDelete, _ := createControllerPodcastAndItem(t)
-	resp = performRequest(router, http.MethodDelete, "/podcasts/"+podcastToDelete.ID+"/items-only", nil, nil)
-	if resp.Code != http.StatusNoContent {
-		t.Fatalf("DELETE /podcasts/:id/items-only expected 204, got %d", resp.Code)
-	}
-
 	resp = performRequest(router, http.MethodDelete, "/podcasts/"+podcastToDelete.ID, nil, nil)
 	if resp.Code != http.StatusNoContent {
 		t.Fatalf("DELETE /podcasts/:id expected 204, got %d", resp.Code)
@@ -511,13 +445,6 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("POST /settings invalid payload expected 400, got %d", resp.Code)
 	}
 
-	resp = performRequest(router, http.MethodPost, "/add-new", strings.NewReader(""), map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("POST /add-new empty expected 400, got %d", resp.Code)
-	}
-
 	resp = performRequest(router, http.MethodGet, "/ws", nil, nil)
 	if resp.Code != http.StatusOK && resp.Code != http.StatusBadRequest {
 		t.Fatalf("GET /ws expected 200 or 400 in upgrade-failure path, got %d", resp.Code)
@@ -539,12 +466,6 @@ func TestControllerHelpers(t *testing.T) {
 
 	if got := GetFileContentType(filepath.Join(os.TempDir(), "does-not-exist.bin")); got == "" {
 		t.Fatalf("expected default content type for missing file")
-	}
-
-	options := getSortOptions()
-	b, err := json.Marshal(options)
-	if err != nil || !bytes.Contains(b, []byte("release_asc")) {
-		t.Fatalf("unexpected sort options payload: %v %s", err, string(b))
 	}
 
 	items := getItemsToPlay([]string{item.ID}, "", nil)
@@ -598,9 +519,8 @@ func TestControllerMissingIDErrorBranches(t *testing.T) {
 		{method: http.MethodDelete, path: "/podcasts/missing", status: http.StatusBadRequest},
 		{method: http.MethodDelete, path: "/podcasts/missing/podcast", status: http.StatusBadRequest},
 		{method: http.MethodDelete, path: "/podcasts/missing/items", status: http.StatusBadRequest},
-		{method: http.MethodDelete, path: "/podcasts/missing/items-only", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcasts/missing/items", status: http.StatusOK},
-		{method: http.MethodGet, path: "/podcasts/missing/download", status: http.StatusBadRequest},
+		{method: http.MethodGet, path: "/podcasts/missing/download", status: http.StatusNotFound},
 		{method: http.MethodGet, path: "/podcastitems/missing", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcastitems/missing/markUnplayed", status: http.StatusBadRequest},
 		{method: http.MethodGet, path: "/podcastitems/missing/markPlayed", status: http.StatusBadRequest},
@@ -639,8 +559,8 @@ func TestControllerMissingIDErrorBranches(t *testing.T) {
 	resp = performRequest(router, http.MethodPatch, "/podcastitems/missing", strings.NewReader(`{"title":"x"}`), map[string]string{
 		"Content-Type": "application/json",
 	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("PATCH /podcastitems/missing expected 400, got %d", resp.Code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("PATCH /podcastitems/missing expected 404, got %d", resp.Code)
 	}
 }
 

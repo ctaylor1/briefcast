@@ -140,8 +140,10 @@ func (b localTranscriptionBackend) Transcribe(ctx context.Context, audioPath, re
 	}
 
 	cmd := exec.CommandContext(cmdCtx, pythonPath, scriptPath, audioPath)
+	// The audio and model output are untrusted; the child gets no secrets
+	// beyond the HF token it needs, which is added explicitly below.
 	cmd.Env = append(
-		os.Environ(),
+		helperCommandEnv(),
 		"WHISPERX_CONFIG_JSON="+string(payload),
 		"WHISPERX_WORKER_MODE=0",
 		whisperxProgressFileEnv+"="+progressPath,

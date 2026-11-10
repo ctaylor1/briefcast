@@ -1,34 +1,37 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { aboutNavItem, groupNavSections, linksNavItem, primaryNavItems, routeNavItems } from "./navigation.ts";
+import { activeNavItem, commandNavItems, librarySubItems, paletteOnlyItems, primaryNavItems } from "./navigation.ts";
+import { ICONS } from "./icons.ts";
 
-describe("Sidebar navigation", () => {
-  it("lists About directly under Settings as the last sidebar link", () => {
-    const sections = groupNavSections(routeNavItems);
-    assert.deepEqual(
-      sections.map((section) => section.title),
-      ["Library", "Playback", "System"],
-    );
-    const system = sections[sections.length - 1];
-    assert.deepEqual(
-      system.items.map((item) => item.label),
-      ["Settings", "About"],
-    );
-    const allLinks = sections.flatMap((section) => section.items);
-    assert.equal(allLinks[allLinks.length - 1], aboutNavItem);
+describe("navigation", () => {
+  it("has five destinations", () => {
+    assert.deepEqual(primaryNavItems.map((item) => item.label), ["Library", "Episodes", "Summaries", "Activity", "Settings"]);
   });
 
-  it("keeps About out of the mobile bottom tabs", () => {
-    assert.equal(primaryNavItems.includes(aboutNavItem), false);
-    assert.equal(primaryNavItems.length, 7);
+  it("keeps Add, Player, Downloads and About out of the nav but in the command palette", () => {
+    const navLabels = [...primaryNavItems, ...librarySubItems].map((item) => item.label);
+    for (const label of ["Add podcast", "Now playing", "Downloads", "About"]) {
+      assert.ok(!navLabels.includes(label), label);
+      assert.ok(commandNavItems.some((item) => item.label === label), label);
+    }
+    assert.equal(paletteOnlyItems.length, 4);
   });
 
-  it("lists Most referenced after Summaries, in the sidebar but not the mobile bottom tabs", () => {
-    const library = groupNavSections(routeNavItems)[0];
-    assert.deepEqual(
-      library.items.map((item) => item.label),
-      ["Podcasts", "Episodes", "Summaries", "Most referenced", "Downloads", "Add Podcast"],
-    );
-    assert.equal(primaryNavItems.includes(linksNavItem), false);
+  it("puts Most referenced under Library", () => {
+    assert.deepEqual(librarySubItems.map((item) => item.to), ["/links"]);
+  });
+
+  it("finds the active item, including detail pages", () => {
+    assert.equal(activeNavItem("/")?.label, "Library");
+    assert.equal(activeNavItem("/podcasts/abc")?.label, "Library");
+    assert.equal(activeNavItem("/episodes/abc")?.label, "Episodes");
+    assert.equal(activeNavItem("/activity")?.label, "Activity");
+    assert.equal(activeNavItem("/links")?.label, "Most referenced");
+  });
+
+  it("uses icons that exist", () => {
+    for (const item of commandNavItems) {
+      assert.ok(item.icon in ICONS, item.icon);
+    }
   });
 });

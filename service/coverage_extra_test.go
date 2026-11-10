@@ -117,7 +117,7 @@ func TestSearchLocalRecordsReturnsPodcastEpisodeChapterAndTranscriptMatches(t *t
 	item.TranscriptStatus = "available"
 	item.TranscriptJSON = `{"segments":[{"start":12.5,"end":15.0,"text":"hello world transcript"}]}`
 	item.Summary = "A summary mentioning search keyword"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update podcast item failed: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	item.ChaptersJSON = `{"chapters":[{"title":"chapter 1","startTime":1.5}]}`
 	item.TranscriptStatus = "available"
 	item.TranscriptJSON = `{"segments":[{"start":1.5,"end":2.0,"text":"hello"}]}`
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update podcast item failed: %v", err)
 	}
 
@@ -479,7 +479,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	// check missing file handling branch
 	updatedItem.DownloadStatus = db.Downloaded
 	updatedItem.DownloadPath = filepath.Join(dataDir, "missing-file.mp3")
-	if err := db.UpdatePodcastItem(&updatedItem); err != nil {
+	if err := savePodcastItemFixture(&updatedItem); err != nil {
 		t.Fatalf("update item for missing file check failed: %v", err)
 	}
 	setting.DontDownloadDeletedFromDisk = true
@@ -526,7 +526,7 @@ func TestPodcastServiceUtilityAndStateFlows(t *testing.T) {
 	deleteItem := createServicePodcastItem(t, podcast, "Delete Me", db.Downloaded)
 	deleteItem.DownloadPath = episodeFile
 	deleteItem.LocalImage = localImage
-	if err := db.UpdatePodcastItem(&deleteItem); err != nil {
+	if err := savePodcastItemFixture(&deleteItem); err != nil {
 		t.Fatalf("failed to update delete item paths: %v", err)
 	}
 	if err := DeleteEpisodeFile(deleteItem.ID); err != nil {
@@ -598,7 +598,7 @@ func TestChapterRefreshHelpers(t *testing.T) {
 	item.DownloadPath = audioPath
 	item.ChaptersJSON = `{"chapters":[{"title":"chapter 1","startTime":0.0}]}`
 	item.ChaptersType = "id3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist chapter refresh item: %v", err)
 	}
 
@@ -621,13 +621,13 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 	}
 	downloadedItem := createServicePodcastItem(t, podcast, "downloaded-size", db.Downloaded)
 	downloadedItem.DownloadPath = downloadedFilePath
-	if err := db.UpdatePodcastItem(&downloadedItem); err != nil {
+	if err := savePodcastItemFixture(&downloadedItem); err != nil {
 		t.Fatalf("failed to persist downloaded item path: %v", err)
 	}
 
 	missingFileItem := createServicePodcastItem(t, podcast, "missing-size", db.Downloaded)
 	missingFileItem.DownloadPath = filepath.Join(t.TempDir(), "missing-file.mp3")
-	if err := db.UpdatePodcastItem(&missingFileItem); err != nil {
+	if err := savePodcastItemFixture(&missingFileItem); err != nil {
 		t.Fatalf("failed to persist missing-file item path: %v", err)
 	}
 
@@ -644,7 +644,7 @@ func TestUpdateAllFileSizesCoversDownloadedAndRemotePaths(t *testing.T) {
 
 	remoteItem := createServicePodcastItem(t, podcast, "remote-size", db.NotDownloaded)
 	remoteItem.FileURL = server.URL + "/episode.mp3"
-	if err := db.UpdatePodcastItem(&remoteItem); err != nil {
+	if err := savePodcastItemFixture(&remoteItem); err != nil {
 		t.Fatalf("failed to persist remote item url: %v", err)
 	}
 
@@ -689,7 +689,7 @@ func TestDownloadMissingImagesAndLocalDownloadHelper(t *testing.T) {
 
 	item.Image = imageServer.URL + "/cover.jpg"
 	item.LocalImage = ""
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist image item url: %v", err)
 	}
 
@@ -777,7 +777,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 
 	okItem := createServicePodcastItem(t, podcast, "single-success", db.NotDownloaded)
 	okItem.FileURL = server.URL + "/ok.mp3"
-	if err := db.UpdatePodcastItem(&okItem); err != nil {
+	if err := savePodcastItemFixture(&okItem); err != nil {
 		t.Fatalf("failed to update ok item file url: %v", err)
 	}
 
@@ -801,7 +801,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 
 	failItem := createServicePodcastItem(t, podcast, "single-failure", db.NotDownloaded)
 	failItem.FileURL = server.URL + "/fail.mp3"
-	if err := db.UpdatePodcastItem(&failItem); err != nil {
+	if err := savePodcastItemFixture(&failItem); err != nil {
 		t.Fatalf("failed to update fail item file url: %v", err)
 	}
 
@@ -818,7 +818,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 
 	pausedItem := createServicePodcastItem(t, podcast, "single-paused", db.NotDownloaded)
 	pausedItem.FileURL = server.URL + "/ok.mp3"
-	if err := db.UpdatePodcastItem(&pausedItem); err != nil {
+	if err := savePodcastItemFixture(&pausedItem); err != nil {
 		t.Fatalf("failed to update paused item file url: %v", err)
 	}
 	PauseDownload(pausedItem.ID)
@@ -838,7 +838,7 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 
 	cancelledItem := createServicePodcastItem(t, podcast, "single-cancelled", db.NotDownloaded)
 	cancelledItem.FileURL = server.URL + "/ok.mp3"
-	if err := db.UpdatePodcastItem(&cancelledItem); err != nil {
+	if err := savePodcastItemFixture(&cancelledItem); err != nil {
 		t.Fatalf("failed to update cancelled item file url: %v", err)
 	}
 	CancelDownload(cancelledItem.ID)
@@ -860,19 +860,19 @@ func TestDownloadSingleEpisodeAndMissingEpisodesBranches(t *testing.T) {
 
 	queueOK := createServicePodcastItem(t, podcast, "queue-success", db.NotDownloaded)
 	queueOK.FileURL = server.URL + "/ok.mp3"
-	if err := db.UpdatePodcastItem(&queueOK); err != nil {
+	if err := savePodcastItemFixture(&queueOK); err != nil {
 		t.Fatalf("failed to update queue success item file url: %v", err)
 	}
 
 	queueFail := createServicePodcastItem(t, podcast, "queue-failure", db.NotDownloaded)
 	queueFail.FileURL = server.URL + "/fail.mp3"
-	if err := db.UpdatePodcastItem(&queueFail); err != nil {
+	if err := savePodcastItemFixture(&queueFail); err != nil {
 		t.Fatalf("failed to update queue fail item file url: %v", err)
 	}
 
 	queueCancelled := createServicePodcastItem(t, podcast, "queue-cancelled", db.NotDownloaded)
 	queueCancelled.FileURL = server.URL + "/ok.mp3"
-	if err := db.UpdatePodcastItem(&queueCancelled); err != nil {
+	if err := savePodcastItemFixture(&queueCancelled); err != nil {
 		t.Fatalf("failed to update queue cancelled item file url: %v", err)
 	}
 	CancelDownload(queueCancelled.ID)
@@ -920,7 +920,7 @@ func TestSetAllEpisodesToDownloadSuccess(t *testing.T) {
 	feedScript := writeTempScript(t, scriptDir, "feedparser_stub.py", feedparserStub)
 	t.Setenv("FEEDPARSER_PYTHON", pythonPath)
 	t.Setenv("FEEDPARSER_SCRIPT", feedScript)
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, feedScript, server.URL)
 
 	podcast := db.Podcast{
 		Title: "set-all-episodes",

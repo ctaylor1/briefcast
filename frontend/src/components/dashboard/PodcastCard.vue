@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import type { Podcast } from "../../types/api";
+import { RouterLink } from "vue-router";
+import { podcastImageUrl } from "../../lib/api/paths";
 import { formatDate } from "../../lib/format";
-import UiBadge from "../ui/UiBadge.vue";
-import UiCard from "../ui/UiCard.vue";
-import UiTooltip from "../ui/UiTooltip.vue";
+import { podcastPath } from "../../lib/routes";
+import type { Podcast } from "../../types/api";
+import UiIcon from "../ui/UiIcon.vue";
+import UiIconButton from "../ui/UiIconButton.vue";
+import PodcastActionsMenu from "./PodcastActionsMenu.vue";
 
+// A library tile: cover and title open the podcast page; one primary action (play the
+// latest episode) and everything else in the overflow menu.
 defineProps<{
   podcast: Podcast;
   busy: boolean;
 }>();
 
 const emit = defineEmits<{
-  (event: "open-player", podcastId: string): void;
   (event: "play", podcastId: string): void;
   (event: "download-all", podcast: Podcast): void;
   (event: "toggle-pause", podcast: Podcast): void;
@@ -21,279 +25,133 @@ const emit = defineEmits<{
   (event: "edit-feeds", podcast: Podcast): void;
   (event: "delete", podcast: Podcast): void;
 }>();
-
-function getPodcastImage(id: string): string {
-  return `/podcasts/${id}/image`;
-}
 </script>
 
 <template>
-  <UiCard padding="none" class="podcast-card">
-    <button
-      type="button"
-      class="podcast-card__cover-trigger"
-      :aria-label="`Open player for ${podcast.Title}`"
-      @click="emit('open-player', podcast.ID)"
-    >
-      <img
-        :src="getPodcastImage(podcast.ID)"
-        :alt="podcast.Title"
-        class="podcast-card__image"
-        loading="lazy"
-      />
-    </button>
-    <div class="podcast-card__content stack-3">
-      <div class="stack-1">
-        <h3 class="podcast-card__title-wrap">
-          <button
-            type="button"
-            class="podcast-card__title podcast-card__title-trigger"
-            @click="emit('open-player', podcast.ID)"
-          >
-            {{ podcast.Title }}
-          </button>
-        </h3>
-        <p class="meta-text">Last episode: {{ formatDate(podcast.LastEpisode) }}</p>
-      </div>
-      <div class="podcast-card__stats">
-        <UiBadge tone="neutral">
-          Downloaded: {{ podcast.DownloadedEpisodesCount }}
-        </UiBadge>
-        <UiBadge tone="neutral">
-          Queue: {{ podcast.DownloadingEpisodesCount }}
-        </UiBadge>
-        <UiBadge tone="neutral">
-          Total: {{ podcast.AllEpisodesCount }}
-        </UiBadge>
-      </div>
-      <div class="podcast-card__toolbar">
-        <!-- Row 1: Primary actions -->
-        <UiTooltip text="Open player">
-          <button
-            type="button"
-            class="icon-btn"
-            :disabled="busy"
-            @click="emit('play', podcast.ID)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip text="Download all episodes">
-          <button
-            type="button"
-            class="icon-btn"
-            :disabled="busy"
-            @click="emit('download-all', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 4v10M8 10l4 4 4-4M5 20h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip :text="podcast.IsPaused ? 'Resume downloads' : 'Pause downloads'">
-          <button
-            type="button"
-            class="icon-btn"
-            :class="{ 'icon-btn--active': podcast.IsPaused }"
-            :disabled="busy"
-            @click="emit('toggle-pause', podcast)"
-          >
-            <svg v-if="!podcast.IsPaused" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M10 4H6v16h4V4zM18 4h-4v16h4V4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M8 5v14l11-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip :text="podcast.RetentionKeepAll ? 'Retention: Keep all (click for global)' : 'Retention: Global (click to keep all)'">
-          <button
-            type="button"
-            class="icon-btn"
-            :class="{ 'icon-btn--active': podcast.RetentionKeepAll }"
-            :disabled="busy"
-            @click="emit('toggle-retention', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zM12 5v2M8 5v2M16 5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip :text="podcast.AutoSkipSponsorChapters ? 'Sponsor skip: On' : 'Sponsor skip: Off'">
-          <button
-            type="button"
-            class="icon-btn"
-            :class="{ 'icon-btn--active': podcast.AutoSkipSponsorChapters }"
-            :disabled="busy"
-            @click="emit('toggle-sponsor-skip', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M17 8l4-4M17 16l4 4M3 12h14M7 8l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip :text="podcast.BriefpointEnabled ? 'Briefpoint: On' : 'Briefpoint: Off'">
-          <button
-            type="button"
-            class="icon-btn"
-            :class="{ 'icon-btn--active': podcast.BriefpointEnabled }"
-            :disabled="busy"
-            @click="emit('toggle-briefpoint', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5l7 4v6l-7 4-7-4V9l7-4zM12 12v7M12 12L5 9M12 12l7-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip text="Alternate feeds">
-          <button
-            type="button"
-            class="icon-btn"
-            :disabled="busy"
-            @click="emit('edit-feeds', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 11a9 9 0 0 1 9-9M4 4a16 16 0 0 1 16 16M5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
-
-        <UiTooltip text="Delete podcast">
-          <button
-            type="button"
-            class="icon-btn icon-btn--danger"
-            :disabled="busy"
-            @click="emit('delete', podcast)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M3 6h18M8 6V4h8v2M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </UiTooltip>
+  <article class="podcast-tile">
+    <!-- The title link is the one keyboard stop; the cover repeats it for pointer users. -->
+    <RouterLink :to="podcastPath(podcast.ID)" class="podcast-tile__cover" tabindex="-1" aria-hidden="true">
+      <img :src="podcastImageUrl(podcast.ID)" alt="" loading="lazy" />
+    </RouterLink>
+    <div class="podcast-tile__body">
+      <h3 class="podcast-tile__title">
+        <RouterLink :to="podcastPath(podcast.ID)">{{ podcast.Title }}</RouterLink>
+      </h3>
+      <p class="podcast-tile__meta">
+        {{ podcast.AllEpisodesCount }} episodes · {{ formatDate(podcast.LastEpisode) }}
+      </p>
+      <p v-if="podcast.IsPaused || podcast.DownloadingEpisodesCount > 0" class="podcast-tile__state">
+        <span v-if="podcast.IsPaused" class="podcast-tile__chip podcast-tile__chip--warning">Paused</span>
+        <span v-if="podcast.DownloadingEpisodesCount > 0" class="podcast-tile__chip">
+          {{ podcast.DownloadingEpisodesCount }} downloading
+        </span>
+      </p>
+      <div class="podcast-tile__actions" role="group" :aria-label="`Actions for ${podcast.Title}`">
+        <UiIconButton label="Play latest episode" :disabled="busy" @click="emit('play', podcast.ID)">
+          <UiIcon name="play" />
+        </UiIconButton>
+        <PodcastActionsMenu
+          :podcast="podcast"
+          :busy="busy"
+          @download-all="emit('download-all', $event)"
+          @toggle-pause="emit('toggle-pause', $event)"
+          @toggle-retention="emit('toggle-retention', $event)"
+          @toggle-sponsor-skip="emit('toggle-sponsor-skip', $event)"
+          @toggle-briefpoint="emit('toggle-briefpoint', $event)"
+          @edit-feeds="emit('edit-feeds', $event)"
+          @delete="emit('delete', $event)"
+        />
       </div>
     </div>
-  </UiCard>
+  </article>
 </template>
 
 <style scoped>
-.podcast-card {
+/* No overflow: hidden on the tile: it would clip the actions menu, which is wider than
+   the tile. The cover rounds its own top corners instead. */
+.podcast-tile {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  background: var(--color-bg-primary);
+}
+
+.podcast-tile__cover {
+  display: block;
+  aspect-ratio: 1 / 1;
+  background: var(--color-hover);
+  border-radius: calc(var(--radius-3) - 1px) calc(var(--radius-3) - 1px) 0 0;
   overflow: hidden;
 }
 
-.podcast-card__image {
+.podcast-tile__cover img {
   width: 100%;
-  aspect-ratio: 1 / 1;
-  height: auto;
-  background: var(--color-hover);
+  height: 100%;
   object-fit: cover;
-}
-
-.podcast-card__cover-trigger {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
   display: block;
 }
 
-/* The card clips its overflow, so the focus ring has to sit inside the cover. */
-.podcast-card__cover-trigger:focus-visible {
-  outline-offset: -2px;
+.podcast-tile__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
 }
 
-.podcast-card__content {
-  padding: var(--space-4);
-}
-
-.podcast-card__title-wrap {
+.podcast-tile__title {
   margin: 0;
-}
-
-.podcast-card__title {
-  color: var(--color-text-primary);
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-line-height);
   font-weight: 600;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.podcast-card__title-trigger {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.podcast-card__title-trigger:hover {
-  color: var(--color-accent-hover);
-}
-
-.podcast-card__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.podcast-card__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
-}
-
-.icon-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.icon-btn:hover:not(:disabled) {
+.podcast-tile__title a {
   color: var(--color-text-primary);
-  background: var(--color-hover);
-  border-color: var(--color-text-secondary);
+  text-decoration: none;
 }
 
-.icon-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.icon-btn--active {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-  background: var(--color-accent-subtle);
-}
-
-.icon-btn--active:hover:not(:disabled) {
+.podcast-tile__title a:hover {
   color: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  text-decoration: underline;
 }
 
-.icon-btn--danger:hover:not(:disabled) {
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-  background: var(--color-danger-subtle, var(--color-hover));
+.podcast-tile__meta,
+.podcast-tile__state {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line-height);
+}
+
+.podcast-tile__state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.podcast-tile__chip {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--color-accent-subtle);
+  color: var(--color-text-primary);
+}
+
+.podcast-tile__chip--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-on-subtle);
+}
+
+.podcast-tile__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 </style>

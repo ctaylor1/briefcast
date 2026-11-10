@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import AboutView from "./AboutView.vue";
+import { toast } from "../lib/toast";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
 import UiDrawer from "../components/ui/UiDrawer.vue";
 import UiInput from "../components/ui/UiInput.vue";
-import MonitoringPanel from "../components/settings/MonitoringPanel.vue";
+import UiSelect from "../components/ui/UiSelect.vue";
 import { useStatusMessage } from "../composables/useStatusMessage";
-import { useTheme } from "../composables/useTheme";
+import { type ThemeMode, useTheme } from "../composables/useTheme";
 import { getErrorMessage, settingsApi } from "../lib/api";
 import { DEFAULT_OBSIDIAN_FOLDER, DEFAULT_OBSIDIAN_VAULT } from "../lib/obsidian";
 import { availableModelOptions, formatPricePerMillion, formatTokenCapacity } from "../lib/openrouterModels";
 import { userAgentSourceLabel } from "../lib/userAgent";
-import type { AppLogEntry, AppLogsResponse, AppSettings, OpenRouterModelsResponse, PromptVersion, RepairWorkResponse, SummaryJobStatus, WorkQueueItem } from "../types/api";
+import type { AppSettings, AppSettingsUpdate, OpenRouterModelsResponse, PromptVersion, SummaryJobStatus } from "../types/api";
 
-type SettingsTab = "configuration" | "work" | "monitoring" | "logs";
 
 type RetentionForm = {
   keepAllEpisodes: boolean;
@@ -61,22 +63,10 @@ const {
   setDarkStartHour,
 } = useTheme();
 
+const route = useRoute();
 const isLoading = ref(true);
-const isSavingBackCatalog = ref(false);
-const isSavingRetention = ref(false);
-const isSavingSummarization = ref(false);
-const isSavingAppearance = ref(false);
-const isSavingModelSettings = ref(false);
-const isSavingObsidian = ref(false);
-const isSavingBriefpoint = ref(false);
-const activeTab = ref<SettingsTab>("configuration");
-const isLoadingLogs = ref(false);
-const logsPayload = ref<AppLogsResponse | null>(null);
-const logsErrorMessage = ref("");
-const isLoadingWorkQueue = ref(false);
-const isStartingRepairWork = ref(false);
-const workQueuePayload = ref<RepairWorkResponse | null>(null);
-const workQueueErrorMessage = ref("");
+const loadFailed = ref(false);
+const settingsReady = computed(() => !isLoading.value && !loadFailed.value);
 const briefpointAPIKeyConfigured = ref(false);
 const outboundUserAgent = ref("");
 const outboundUserAgentSource = ref("");
@@ -100,13 +90,10 @@ const promptHistoryVersions = ref<PromptVersion[]>([]);
 const promptHistoryLoading = ref(false);
 const {
   errorMessage,
-  successMessage,
   clearAll,
   clearError,
   setError,
-  setSuccess,
 } = useStatusMessage(5000);
-let workQueuePollTimer: number | undefined;
 let summaryJobPollTimer: number | undefined;
 
 const retentionForm = ref<RetentionForm>({
@@ -167,14 +154,6 @@ const providerLabel = computed(() => isOpenRouterProvider.value ? "OpenRouter" :
 const retentionEnabled = computed(() => !retentionForm.value.keepAllEpisodes);
 const usesInitialDownloadCount = computed(() => backCatalogForm.value.initialDownloadMode === "count");
 const usesInitialDownloadMonths = computed(() => backCatalogForm.value.initialDownloadMode === "months");
-const logEntries = computed(() => logsPayload.value?.entries ?? []);
-const impactLogEntries = computed(() => logsPayload.value?.impactEntries ?? []);
-const logSources = computed(() => logsPayload.value?.sources ?? []);
-const logReadErrors = computed(() => logsPayload.value?.readErrors ?? []);
-const workQueue = computed(() => workQueuePayload.value?.queue ?? null);
-const workQueueItems = computed(() => workQueue.value?.items ?? []);
-const workQueueRunning = computed(() => workQueuePayload.value?.running ?? false);
-const lastRepairRun = computed(() => workQueuePayload.value?.lastRun ?? null);
 
 function mapToRetentionForm(settings: AppSettings): RetentionForm {
   return {
@@ -230,6 +209,7 @@ function sanitizeNumber(value: string): number {
 
 async function loadSettings(): Promise<void> {
   isLoading.value = true;
+  loadFailed.value = false;
   clearError();
   try {
     const settings = await settingsApi.get();
@@ -252,6 +232,8 @@ async function loadSettings(): Promise<void> {
     defaultProvider.value = settings.defaultProvider ?? "";
     defaultSystemPrompt.value = settings.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = settings.defaultUserPrompt ?? "";
+    lastLoadedSettings.value = settings;
+    markSaved();
     if (isOpenRouterProvider.value) void loadOpenRouterModels();
     try {
       const { models } = await settingsApi.getSummaryModels();
@@ -260,6 +242,8 @@ async function loadSettings(): Promise<void> {
       usedModels.value = [];
     }
   } catch (error) {
+    // Keep the forms hidden: saving them now would overwrite real settings with blanks.
+    loadFailed.value = true;
     setError(getErrorMessage(error, "Failed to load settings."));
   } finally {
     isLoading.value = false;
@@ -276,35 +260,6 @@ async function loadOpenRouterModels(refresh = false): Promise<void> {
     openRouterModelsErrorMessage.value = getErrorMessage(error, "Could not load OpenRouter models. Try refreshing the list.");
   } finally {
     isLoadingOpenRouterModels.value = false;
-  }
-}
-
-async function selectSettingsTab(tab: SettingsTab): Promise<void> {
-  activeTab.value = tab;
-  if (tab === "logs" && !logsPayload.value && !isLoadingLogs.value) {
-    await loadLogs();
-  }
-  if (tab === "work" && !workQueuePayload.value && !isLoadingWorkQueue.value) {
-    await loadWorkQueue();
-  }
-}
-
-async function loadLogs(): Promise<void> {
-  isLoadingLogs.value = true;
-  logsErrorMessage.value = "";
-  try {
-    logsPayload.value = await settingsApi.getLogs(200);
-  } catch (error) {
-    logsErrorMessage.value = getErrorMessage(error, "Failed to load application logs.");
-  } finally {
-    isLoadingLogs.value = false;
-  }
-}
-
-function clearWorkQueuePoll(): void {
-  if (workQueuePollTimer !== undefined) {
-    window.clearTimeout(workQueuePollTimer);
-    workQueuePollTimer = undefined;
   }
 }
 
@@ -334,171 +289,147 @@ async function loadSummaryJobStatus(): Promise<void> {
   }
 }
 
-function scheduleWorkQueuePoll(): void {
-  clearWorkQueuePoll();
-  if (!workQueuePayload.value?.running) {
-    return;
-  }
-  workQueuePollTimer = window.setTimeout(() => {
-    void loadWorkQueue({ silent: true });
-  }, 5000);
+// ---- One save model: every section's changes go out in one PATCH from the save bar.
+// Appearance applies and saves at once (see useTheme); everything else waits for Save.
+const isSaving = ref(false);
+const baseline = ref("");
+
+const sectionLinks = [
+  { id: "appearance", label: "Appearance" },
+  { id: "downloads", label: "New episodes" },
+  { id: "retention", label: "Retention" },
+  { id: "summaries", label: "AI summaries" },
+  { id: "obsidian", label: "Obsidian" },
+  { id: "briefpoint", label: "Briefpoint" },
+  { id: "about", label: "About" },
+];
+
+function goToSection(id: string): void {
+  document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function loadWorkQueue(options: { silent?: boolean } = {}): Promise<void> {
-  if (!options.silent) {
-    isLoadingWorkQueue.value = true;
-  }
-  workQueueErrorMessage.value = "";
-  try {
-    workQueuePayload.value = await settingsApi.getRepairWork(50);
-    scheduleWorkQueuePoll();
-  } catch (error) {
-    workQueueErrorMessage.value = getErrorMessage(error, "Failed to load work queue.");
-    clearWorkQueuePoll();
-  } finally {
-    if (!options.silent) {
-      isLoadingWorkQueue.value = false;
-    }
-  }
+function formSnapshot(): Record<string, string> {
+  return {
+    downloads: JSON.stringify(backCatalogForm.value),
+    retention: JSON.stringify(retentionForm.value),
+    summaries: JSON.stringify([summarizationForm.value, modelSettingsForm.value]),
+    obsidian: JSON.stringify(obsidianForm.value),
+    briefpoint: JSON.stringify(briefpointForm.value),
+  };
 }
 
-async function startRepairWork(): Promise<void> {
-  isStartingRepairWork.value = true;
-  workQueueErrorMessage.value = "";
-  try {
-    workQueuePayload.value = await settingsApi.startRepairWork(50);
-    scheduleWorkQueuePoll();
-  } catch (error) {
-    workQueueErrorMessage.value = getErrorMessage(error, "Failed to start repair work.");
-  } finally {
-    isStartingRepairWork.value = false;
-  }
+const savedSnapshot = computed<Record<string, string>>(() => (baseline.value ? JSON.parse(baseline.value) : {}));
+const dirtySections = computed(() => {
+  const now = formSnapshot();
+  return Object.keys(now).filter((key) => savedSnapshot.value[key] !== undefined && now[key] !== savedSnapshot.value[key]);
+});
+const isDirty = computed(() => dirtySections.value.length > 0);
+const dirtySectionLabels = computed(() =>
+  dirtySections.value.map((key) => sectionLinks.find((section) => section.id === key)?.label ?? key).join(", "),
+);
+
+function markSaved(): void {
+  baseline.value = JSON.stringify(formSnapshot());
 }
 
-function logLevelTone(level: AppLogEntry["level"]): "neutral" | "info" | "success" | "danger" | "warning" {
-  switch (level) {
-    case "fatal":
-    case "error":
-      return "danger";
-    case "warn":
-      return "warning";
-    case "debug":
-      return "neutral";
-    default:
-      return "info";
-  }
-}
-
-function formatLogTimestamp(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return date.toLocaleString();
-}
-
-function formatBytes(sizeBytes: number): string {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB"];
-  let value = sizeBytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function formatLogFields(fields: AppLogEntry["fields"]): string {
-  if (!fields || Object.keys(fields).length === 0) {
-    return "";
-  }
-  return JSON.stringify(fields, null, 2);
-}
-
-function workQueueTone(item: WorkQueueItem): "neutral" | "info" | "success" | "danger" | "warning" {
-  switch (item.category) {
-    case "active":
-      return "info";
-    case "failed":
-    case "blocked":
-      return "danger";
-    case "retry":
-    case "queued":
-      return "warning";
-    default:
-      return "neutral";
-  }
-}
-
-function formatOptionalTimestamp(iso?: string | null): string {
-  if (!iso) {
-    return "";
-  }
-  return formatLogTimestamp(iso);
-}
-
-async function saveBackCatalogSettings(): Promise<void> {
-  isSavingBackCatalog.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
+function buildPatch(): AppSettingsUpdate {
+  const dirty = new Set(dirtySections.value);
+  const patch: AppSettingsUpdate = {};
+  if (dirty.has("downloads")) {
+    Object.assign(patch, {
       autoDownload: backCatalogForm.value.autoDownload,
       downloadOnAdd: backCatalogForm.value.downloadOnAdd,
       initialDownloadMode: backCatalogForm.value.initialDownloadMode,
       initialDownloadCount: sanitizeNumber(backCatalogForm.value.initialDownloadCount),
       initialDownloadMonths: sanitizeNumber(backCatalogForm.value.initialDownloadMonths),
     });
-    backCatalogForm.value = mapToBackCatalogForm(updated);
-    setSuccess("Back catalog settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update back catalog settings."));
-  } finally {
-    isSavingBackCatalog.value = false;
   }
-}
-
-async function saveRetentionSettings(): Promise<void> {
-  isSavingRetention.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
+  if (dirty.has("retention")) {
+    Object.assign(patch, {
       keepAllEpisodes: retentionForm.value.keepAllEpisodes,
       keepLatestEpisodes: sanitizeNumber(retentionForm.value.keepLatestEpisodes),
       deleteAfterDays: sanitizeNumber(retentionForm.value.deleteAfterDays),
       deleteOnlyPlayed: retentionForm.value.deleteOnlyPlayed,
     });
-    retentionForm.value = mapToRetentionForm(updated);
-    setSuccess("Retention settings updated.");
+  }
+  if (dirty.has("summaries")) {
+    const systemPrompt = summarizationForm.value.summarizationPrompt.trim();
+    const userPrompt = summarizationForm.value.summarizationUserPrompt.trim();
+    Object.assign(patch, {
+      summarizationEnabled: summarizationForm.value.summarizationEnabled,
+      summarizationModel: summarizationForm.value.summarizationModel,
+      // An unchanged default prompt is stored as "use the default".
+      summarizationPrompt: systemPrompt === defaultSystemPrompt.value ? "" : systemPrompt,
+      summarizationUserPrompt: userPrompt === defaultUserPrompt.value ? "" : userPrompt,
+      llmConcurrency: modelSettingsForm.value.llmConcurrency,
+    });
+  }
+  if (dirty.has("obsidian")) {
+    Object.assign(patch, {
+      obsidianVault: obsidianForm.value.obsidianVault.trim() || DEFAULT_OBSIDIAN_VAULT,
+      obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
+    });
+  }
+  if (dirty.has("briefpoint")) {
+    Object.assign(patch, {
+      briefpointEnabled: briefpointForm.value.briefpointEnabled,
+      briefpointServerURL: briefpointForm.value.briefpointServerURL,
+    });
+    // A blank key field means "keep the stored key".
+    const key = briefpointForm.value.briefpointAPIKey.trim();
+    if (key) {
+      patch.briefpointAPIKey = key;
+    }
+  }
+  return patch;
+}
+
+function applySettings(settings: AppSettings): void {
+  retentionForm.value = mapToRetentionForm(settings);
+  backCatalogForm.value = mapToBackCatalogForm(settings);
+  summarizationForm.value = mapToSummarizationForm(settings);
+  modelSettingsForm.value = { llmConcurrency: settings.llmConcurrency ?? 1 };
+  obsidianForm.value = mapToObsidianForm(settings);
+  briefpointForm.value = {
+    briefpointEnabled: settings.briefpointEnabled ?? false,
+    briefpointServerURL: settings.briefpointServerURL ?? "",
+    briefpointAPIKey: "",
+  };
+  briefpointAPIKeyConfigured.value = settings.briefpointAPIKeyConfigured ?? false;
+  defaultSystemPrompt.value = settings.defaultSystemPrompt ?? defaultSystemPrompt.value;
+  defaultUserPrompt.value = settings.defaultUserPrompt ?? defaultUserPrompt.value;
+  lastLoadedSettings.value = settings;
+  markSaved();
+}
+
+async function saveChanges(): Promise<void> {
+  if (!isDirty.value || isSaving.value) {
+    return;
+  }
+  isSaving.value = true;
+  clearAll();
+  try {
+    applySettings(await settingsApi.update(buildPatch()));
+    toast.success("Settings saved.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to update retention settings."));
+    toast.error(getErrorMessage(error, "Failed to save settings."));
   } finally {
-    isSavingRetention.value = false;
+    isSaving.value = false;
   }
 }
 
-async function saveSummarizationSettings(): Promise<void> {
-  isSavingSummarization.value = true;
-  clearAll();
-  try {
-    const sysPrompt = summarizationForm.value.summarizationPrompt.trim();
-    const usrPrompt = summarizationForm.value.summarizationUserPrompt.trim();
-    const updated = await settingsApi.update({
-      summarizationEnabled: summarizationForm.value.summarizationEnabled,
-      summarizationModel: summarizationForm.value.summarizationModel,
-      summarizationPrompt: sysPrompt === defaultSystemPrompt.value ? "" : sysPrompt,
-      summarizationUserPrompt: usrPrompt === defaultUserPrompt.value ? "" : usrPrompt,
-    });
-    defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
-    defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
-    summarizationForm.value = mapToSummarizationForm(updated);
-    setSuccess("Summarization settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update summarization settings."));
-  } finally {
-    isSavingSummarization.value = false;
+function discardChanges(): void {
+  if (lastLoadedSettings.value) {
+    applySettings(lastLoadedSettings.value);
+  }
+}
+
+const lastLoadedSettings = ref<AppSettings | null>(null);
+
+// The browser asks before closing the tab with unsaved changes.
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (isDirty.value) {
+    event.preventDefault();
   }
 }
 
@@ -521,81 +452,17 @@ async function restorePromptVersion(id: string): Promise<void> {
     defaultSystemPrompt.value = updated.defaultSystemPrompt ?? "";
     defaultUserPrompt.value = updated.defaultUserPrompt ?? "";
     summarizationForm.value = mapToSummarizationForm(updated);
+    lastLoadedSettings.value = updated;
+    markSaved();
     promptHistoryOpen.value = false;
-    setSuccess("Prompt restored successfully.");
+    toast.success("Prompt restored successfully.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to restore prompt version."));
+    toast.error(getErrorMessage(error, "Failed to restore prompt version."));
   }
 }
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString();
-}
-
-async function saveModelSettings(): Promise<void> {
-  isSavingModelSettings.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
-      llmConcurrency: modelSettingsForm.value.llmConcurrency,
-    });
-    modelSettingsForm.value = {
-      llmConcurrency: updated.llmConcurrency ?? 1,
-    };
-    setSuccess("Model settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update model settings."));
-  } finally {
-    isSavingModelSettings.value = false;
-  }
-}
-
-async function saveObsidianSettings(): Promise<void> {
-  isSavingObsidian.value = true;
-  clearAll();
-  try {
-    const updated = await settingsApi.update({
-      obsidianVault: obsidianForm.value.obsidianVault.trim() || DEFAULT_OBSIDIAN_VAULT,
-      obsidianFolder: obsidianForm.value.obsidianFolder.trim() || DEFAULT_OBSIDIAN_FOLDER,
-    });
-    obsidianForm.value = mapToObsidianForm(updated);
-    setSuccess("Obsidian settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update Obsidian settings."));
-  } finally {
-    isSavingObsidian.value = false;
-  }
-}
-
-async function saveBriefpointSettings(): Promise<void> {
-  isSavingBriefpoint.value = true;
-  clearAll();
-  try {
-    const payload = {
-      briefpointEnabled: briefpointForm.value.briefpointEnabled,
-      briefpointServerURL: briefpointForm.value.briefpointServerURL,
-    };
-    const nextAPIKey = briefpointForm.value.briefpointAPIKey.trim();
-    const updated = await settingsApi.update(
-      nextAPIKey
-        ? {
-            ...payload,
-            briefpointAPIKey: nextAPIKey,
-          }
-        : payload,
-    );
-    briefpointForm.value = {
-      briefpointEnabled: updated.briefpointEnabled ?? false,
-      briefpointServerURL: updated.briefpointServerURL ?? "",
-      briefpointAPIKey: "",
-    };
-    briefpointAPIKeyConfigured.value = updated.briefpointAPIKeyConfigured ?? false;
-    setSuccess("Briefpoint settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update Briefpoint settings."));
-  } finally {
-    isSavingBriefpoint.value = false;
-  }
 }
 
 const commonTimezones = [
@@ -625,29 +492,18 @@ const commonTimezones = [
   "Pacific/Auckland",
 ];
 
+const themeOptions: Array<{ value: ThemeMode; label: string; description: string }> = [
+  { value: "system", label: "System", description: "Follow this device's light or dark setting." },
+  { value: "light", label: "Light", description: "Always light." },
+  { value: "dark", label: "Dark", description: "Always dark." },
+  { value: "schedule", label: "Schedule", description: "Light and dark at set hours." },
+];
+
 function formatHour(hour: number): string {
   if (hour === 0) return "12:00 AM";
   if (hour === 12) return "12:00 PM";
   if (hour < 12) return `${hour}:00 AM`;
   return `${hour - 12}:00 PM`;
-}
-
-async function saveAppearanceSettings(): Promise<void> {
-  isSavingAppearance.value = true;
-  clearAll();
-  try {
-    await settingsApi.update({
-      themeMode: themeMode.value,
-      timezone: timezone.value,
-      lightStartHour: lightStartHour.value,
-      darkStartHour: darkStartHour.value,
-    });
-    setSuccess("Appearance settings updated.");
-  } catch (error) {
-    setError(getErrorMessage(error, "Failed to update appearance settings."));
-  } finally {
-    isSavingAppearance.value = false;
-  }
 }
 
 async function resummarizeDryRun(): Promise<void> {
@@ -659,7 +515,7 @@ async function resummarizeDryRun(): Promise<void> {
     const result = await settingsApi.previewResummarize(filter as import("../types/api").ResummarizeFilter);
     resummarizeDryRunCount.value = result.total;
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to preview re-summarize."));
+    toast.error(getErrorMessage(error, "Failed to preview re-summarize."));
   }
 }
 
@@ -675,21 +531,27 @@ async function startResummarize(): Promise<void> {
     summaryJobStatus.value = result.status;
     summaryJobErrorMessage.value = "";
     scheduleSummaryJobPoll();
-    setSuccess("Re-summarize job started. Summaries will be regenerated in the background.");
+    toast.success("Re-summarize job started. Summaries will be regenerated in the background.");
   } catch (error) {
-    setError(getErrorMessage(error, "Failed to start re-summarize."));
+    toast.error(getErrorMessage(error, "Failed to start re-summarize."));
   } finally {
     isResummarizing.value = false;
   }
 }
 
-onMounted(() => {
-  void loadSettings();
+onMounted(async () => {
+  window.addEventListener("beforeunload", warnBeforeUnload);
   void loadSummaryJobStatus();
+  await loadSettings();
+  // /about and the palette's About entry land here.
+  if (route.query.section === "about") {
+    await nextTick();
+    goToSection("about");
+  }
 });
 onUnmounted(() => {
-  clearWorkQueuePoll();
   clearSummaryJobPoll();
+  window.removeEventListener("beforeunload", warnBeforeUnload);
 });
 </script>
 
@@ -702,57 +564,16 @@ onUnmounted(() => {
       </p>
     </header>
 
-    <UiAlert v-if="successMessage" tone="success">
-      {{ successMessage }}
-    </UiAlert>
+    <nav v-if="settingsReady" class="settings-nav" aria-label="Settings sections">
+      <button v-for="section in sectionLinks" :key="section.id" type="button" class="settings-nav__link" @click="goToSection(section.id)">
+        {{ section.label }}
+      </button>
+    </nav>
+
     <UiAlert v-if="errorMessage" tone="danger">
       {{ errorMessage }}
     </UiAlert>
 
-    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-      <button
-        type="button"
-        class="settings-tab"
-        :class="{ 'settings-tab--active': activeTab === 'configuration' }"
-        role="tab"
-        :aria-selected="activeTab === 'configuration'"
-        @click="selectSettingsTab('configuration')"
-      >
-        Configuration
-      </button>
-      <button
-        type="button"
-        class="settings-tab"
-        :class="{ 'settings-tab--active': activeTab === 'work' }"
-        role="tab"
-        :aria-selected="activeTab === 'work'"
-        @click="selectSettingsTab('work')"
-      >
-        Work Queue
-      </button>
-      <button
-        type="button"
-        class="settings-tab"
-        :class="{ 'settings-tab--active': activeTab === 'monitoring' }"
-        role="tab"
-        :aria-selected="activeTab === 'monitoring'"
-        @click="selectSettingsTab('monitoring')"
-      >
-        Monitoring
-      </button>
-      <button
-        type="button"
-        class="settings-tab"
-        :class="{ 'settings-tab--active': activeTab === 'logs' }"
-        role="tab"
-        :aria-selected="activeTab === 'logs'"
-        @click="selectSettingsTab('logs')"
-      >
-        Logs
-      </button>
-    </div>
-
-    <template v-if="activeTab === 'configuration'">
       <UiCard v-if="isLoading" padding="lg" class="stack-2">
         <span class="skeleton settings-skeleton-line settings-skeleton-line--title"></span>
         <span class="skeleton settings-skeleton-line"></span>
@@ -760,85 +581,75 @@ onUnmounted(() => {
         <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
       </UiCard>
 
+      <UiCard v-if="!isLoading && loadFailed" padding="lg" class="stack-3 settings-load-failed">
+        <p>Settings could not be loaded, so they are hidden to avoid saving blanks over them.</p>
+        <div>
+          <UiButton variant="secondary" size="sm" @click="loadSettings">Try again</UiButton>
+        </div>
+      </UiCard>
+
       <!-- Appearance settings -->
-      <UiCard v-if="!isLoading" padding="lg" class="stack-4">
-      <div class="stack-2">
-        <h3 class="settings-section-title">Appearance</h3>
-        <p class="section-subtitle">
-          Control the theme and schedule automatic light/dark switching.
-        </p>
-      </div>
-
-      <div class="surface-grid surface-grid--3">
-        <div class="stack-1">
-          <label class="settings-label" for="settings-theme-mode">Theme</label>
-          <select
-            id="settings-theme-mode"
-            class="ui-select"
-            :value="themeMode"
-            @change="setThemeMode(($event.target as HTMLSelectElement).value as 'light' | 'dark' | 'auto')"
-          >
-            <option value="auto">Auto (schedule)</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+      <UiCard id="settings-appearance" v-if="settingsReady" padding="lg" class="stack-4">
+        <div class="stack-2">
+          <h3 class="settings-section-title">Appearance</h3>
+          <p class="section-subtitle">Changes apply and save immediately.</p>
         </div>
 
-        <div class="stack-1">
-          <label class="settings-label" for="settings-timezone">Timezone</label>
-          <select
-            id="settings-timezone"
-            class="ui-select"
-            :value="timezone"
-            @change="setTimezone(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
-          </select>
-        </div>
-      </div>
+        <fieldset class="settings-theme-modes">
+          <legend class="settings-label">Theme</legend>
+          <label v-for="option in themeOptions" :key="option.value" class="settings-theme-mode">
+            <input
+              type="radio"
+              name="settings-theme-mode"
+              :value="option.value"
+              :checked="themeMode === option.value"
+              @change="setThemeMode(option.value)"
+            />
+            <span>
+              <span class="settings-theme-mode__title">{{ option.label }}</span>
+              <span class="meta-text">{{ option.description }}</span>
+            </span>
+          </label>
+        </fieldset>
 
-      <div class="surface-grid surface-grid--3">
-        <div class="stack-1">
-          <label class="settings-label" for="settings-light-start">Light mode starts at</label>
-          <select
-            id="settings-light-start"
-            class="ui-select"
-            :disabled="themeMode !== 'auto'"
-            :value="lightStartHour"
-            @change="setLightStartHour(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-          </select>
+        <div v-if="themeMode === 'schedule'" class="surface-grid surface-grid--3">
+          <div class="stack-1">
+            <UiSelect
+              id="settings-timezone"
+              label="Timezone"
+              :model-value="timezone"
+              @update:model-value="setTimezone($event)"
+            >
+              <option v-for="tz in commonTimezones" :key="tz" :value="tz">{{ tz.replace(/_/g, ' ') }}</option>
+            </UiSelect>
+          </div>
+          <div class="stack-1">
+            <UiSelect
+              id="settings-light-start"
+              label="Light from"
+              :model-value="lightStartHour"
+              @update:model-value="setLightStartHour(Number($event))"
+            >
+              <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+            </UiSelect>
+          </div>
+          <div class="stack-1">
+            <UiSelect
+              id="settings-dark-start"
+              label="Dark from"
+              :model-value="darkStartHour"
+              @update:model-value="setDarkStartHour(Number($event))"
+            >
+              <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
+            </UiSelect>
+          </div>
         </div>
-
-        <div class="stack-1">
-          <label class="settings-label" for="settings-dark-start">Dark mode starts at</label>
-          <select
-            id="settings-dark-start"
-            class="ui-select"
-            :disabled="themeMode !== 'auto'"
-            :value="darkStartHour"
-            @change="setDarkStartHour(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="surface-row">
-        <UiButton :disabled="isSavingAppearance" @click="saveAppearanceSettings">
-          {{ isSavingAppearance ? "Saving..." : "Save appearance settings" }}
-        </UiButton>
-        <p class="meta-text">
-          In Auto mode, the app switches between light and dark at the configured times.
-        </p>
-      </div>
-    </UiCard>
+      </UiCard>
 
     <!-- Back catalog download settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard id="settings-downloads" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Back Catalog Downloads</h3>
+        <h3 class="settings-section-title">New episodes</h3>
         <p class="section-subtitle">
           Choose which episodes are queued when a podcast is first added. Feed entries are still saved when the provider exposes them.
         </p>
@@ -870,18 +681,15 @@ onUnmounted(() => {
       </label>
 
       <div class="surface-grid surface-grid--3">
-        <label class="stack-1">
-          <span class="ui-label">Initial back catalog</span>
-          <select
-            v-model="backCatalogForm.initialDownloadMode"
-            class="ui-input"
-            :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd"
-          >
+        <UiSelect
+          label="Initial back catalog"
+          v-model="backCatalogForm.initialDownloadMode"
+          :disabled="!backCatalogForm.autoDownload || !backCatalogForm.downloadOnAdd"
+        >
             <option value="count">Latest episode count</option>
             <option value="months">Past N months</option>
             <option value="all">All feed episodes</option>
-          </select>
-        </label>
+        </UiSelect>
 
         <UiInput
           v-model="backCatalogForm.initialDownloadCount"
@@ -903,9 +711,6 @@ onUnmounted(() => {
       </div>
 
       <div class="surface-row">
-        <UiButton :disabled="isSavingBackCatalog" @click="saveBackCatalogSettings">
-          {{ isSavingBackCatalog ? "Saving..." : "Save back catalog settings" }}
-        </UiButton>
         <p class="meta-text">
           Set count or months to 0 to queue all episodes returned by the feed.
         </p>
@@ -913,7 +718,7 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Retention settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard id="settings-retention" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Retention</h3>
         <p class="section-subtitle">
@@ -981,9 +786,6 @@ onUnmounted(() => {
       </label>
 
       <div class="surface-row">
-        <UiButton :disabled="isSavingRetention" @click="saveRetentionSettings">
-          {{ isSavingRetention ? "Saving..." : "Save retention settings" }}
-        </UiButton>
         <p class="meta-text">
           Retention cleanup runs daily. Use podcast-level overrides to keep everything for specific feeds.
         </p>
@@ -991,9 +793,9 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- AI Summarization settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard id="settings-summaries" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">AI Summarization</h3>
+        <h3 class="settings-section-title">AI summaries</h3>
         <p class="section-subtitle">
           Automatically generate a summary for each episode after transcription completes.
           Requires an LLM API key configured via environment variables.
@@ -1015,11 +817,10 @@ onUnmounted(() => {
       </label>
 
       <div class="stack-1">
-        <label class="settings-label" for="summarization-model">Model</label>
-        <select
+        <UiSelect
           id="summarization-model"
+          label="Model"
           v-model="summarizationForm.summarizationModel"
-          class="ui-select"
           :disabled="!summarizationForm.summarizationEnabled"
         >
           <option value="">Default{{ defaultModel ? ` (${defaultModel})` : '' }}</option>
@@ -1031,7 +832,7 @@ onUnmounted(() => {
           <optgroup v-if="modelOptions.length" label="Configured and previously used">
             <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
           </optgroup>
-        </select>
+        </UiSelect>
         <p class="meta-text">
           The LLM model to use for summarization. "Default" uses the model from your .env configuration.
         </p>
@@ -1075,11 +876,6 @@ onUnmounted(() => {
         Changes to prompts only apply to future summarizations. Existing summaries are not affected.
       </UiAlert>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingSummarization" @click="saveSummarizationSettings">
-          {{ isSavingSummarization ? "Saving..." : "Save summarization settings" }}
-        </UiButton>
-      </div>
 
       <hr class="settings-divider" />
 
@@ -1093,16 +889,15 @@ onUnmounted(() => {
 
       <div class="surface-grid surface-grid--2">
         <div class="stack-1">
-          <label class="settings-label" for="resummarize-model">Generated by model</label>
-          <select
+          <UiSelect
             id="resummarize-model"
+            label="Generated by model"
             v-model="resummarizeModelFilter"
-            class="ui-select"
             :disabled="!summarizationForm.summarizationEnabled"
           >
             <option value="">All models</option>
             <option v-for="m in usedModels" :key="m" :value="m">{{ m }}</option>
-          </select>
+          </UiSelect>
         </div>
 
         <div class="stack-1">
@@ -1145,16 +940,8 @@ onUnmounted(() => {
         Last summary job: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
         {{ summaryJobStatus.failed }} failed.
       </p>
-    </UiCard>
 
-    <!-- Model Settings -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
-      <div class="stack-2">
-        <h3 class="settings-section-title">Model Settings</h3>
-        <p class="section-subtitle">
-          Configure how the LLM is used during batch summarization jobs.
-        </p>
-      </div>
+      <h4 class="settings-section-subtitle">Model</h4>
 
       <div class="stack-2">
         <div class="surface-row surface-row--between">
@@ -1221,35 +1008,29 @@ onUnmounted(() => {
           No recommended models are currently available from OpenRouter.
         </p>
         <p v-if="openRouterModels.length" class="meta-text">
-          Choose a model here, then save summarization settings above to apply it to future summaries.
+          Pick one in the Model list above; it applies to future summaries once you save.
         </p>
       </div>
 
       <div class="surface-grid surface-grid--3">
         <div class="stack-1">
-          <label class="settings-label" for="settings-llm-concurrency">Concurrency</label>
-          <select
+          <UiSelect
             id="settings-llm-concurrency"
+            label="Concurrency"
             v-model.number="modelSettingsForm.llmConcurrency"
-            class="ui-select"
           >
             <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
-          </select>
+          </UiSelect>
           <p class="meta-text">
             Number of parallel requests sent to the LLM provider during backfill and re-summarize jobs. Higher values speed up batch processing but may hit rate limits.
           </p>
         </div>
       </div>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingModelSettings" @click="saveModelSettings">
-          {{ isSavingModelSettings ? "Saving..." : "Save model settings" }}
-        </UiButton>
-      </div>
     </UiCard>
 
     <!-- Obsidian Integration -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard id="settings-obsidian" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
         <h3 class="settings-section-title">Obsidian</h3>
         <p class="section-subtitle">
@@ -1274,17 +1055,12 @@ onUnmounted(() => {
         />
       </div>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingObsidian" @click="saveObsidianSettings">
-          {{ isSavingObsidian ? "Saving..." : "Save Obsidian settings" }}
-        </UiButton>
-      </div>
     </UiCard>
 
     <!-- Network identity (read-only; configured in .env) -->
-    <UiCard v-if="!isLoading && outboundUserAgent" padding="lg" class="stack-4">
+    <UiCard id="settings-network" v-if="!isLoading && outboundUserAgent" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Network Identity</h3>
+        <h3 class="settings-section-title">Network identity</h3>
         <p class="section-subtitle">
           The User-Agent Briefcast sends when it fetches feeds, audio, artwork and charts.
           Podcast hosts use it to count downloads by app.
@@ -1298,9 +1074,9 @@ onUnmounted(() => {
     </UiCard>
 
     <!-- Briefpoint Integration -->
-    <UiCard v-if="!isLoading" padding="lg" class="stack-4">
+    <UiCard id="settings-briefpoint" v-if="settingsReady" padding="lg" class="stack-4">
       <div class="stack-2">
-        <h3 class="settings-section-title">Briefpoint Integration</h3>
+        <h3 class="settings-section-title">Briefpoint</h3>
         <p class="section-subtitle">
           Send completed episodes (transcripts and summaries) to Briefpoint for scoring and surfacing.
           Enable per-podcast sync from the dashboard.
@@ -1344,301 +1120,20 @@ onUnmounted(() => {
         Store it securely. If lost, rotate the key from the Briefpoint admin UI.
       </UiAlert>
 
-      <div class="surface-row">
-        <UiButton :disabled="isSavingBriefpoint" @click="saveBriefpointSettings">
-          {{ isSavingBriefpoint ? "Saving..." : "Save Briefpoint settings" }}
-        </UiButton>
+      </UiCard>
+
+    <div v-if="settingsReady && isDirty" class="settings-savebar" role="region" aria-label="Unsaved changes">
+      <p class="settings-savebar__text">You have unsaved changes{{ dirtySectionLabels ? ` in ${dirtySectionLabels}` : "" }}.</p>
+      <div class="settings-savebar__actions">
+        <UiButton variant="ghost" size="sm" :disabled="isSaving" @click="discardChanges">Discard</UiButton>
+        <UiButton size="sm" :disabled="isSaving" @click="saveChanges">{{ isSaving ? "Saving..." : "Save changes" }}</UiButton>
       </div>
-      </UiCard>
-    </template>
+    </div>
 
-    <template v-else-if="activeTab === 'work'">
-      <UiCard padding="lg" class="stack-4">
-        <div class="surface-row surface-row--between">
-          <div class="stack-2">
-            <h3 class="settings-section-title">Work Queue</h3>
-            <p class="section-subtitle">
-              Transcript and summary status across completed, queued, failed, and retrying work.
-            </p>
-          </div>
-          <div class="work-queue-actions">
-            <UiButton variant="secondary" :disabled="isLoadingWorkQueue" @click="loadWorkQueue()">
-              {{ isLoadingWorkQueue ? "Refreshing..." : "Refresh" }}
-            </UiButton>
-            <UiButton :disabled="isStartingRepairWork || workQueueRunning" @click="startRepairWork">
-              {{ isStartingRepairWork || workQueueRunning ? "Repairing..." : "Repair failed/missing work" }}
-            </UiButton>
-          </div>
-        </div>
-
-        <UiAlert v-if="workQueueErrorMessage" tone="danger">
-          {{ workQueueErrorMessage }}
-        </UiAlert>
-
-        <UiAlert v-if="workQueueRunning" tone="info">
-          Repair is running. This page will refresh while the job is active.
-        </UiAlert>
-
-        <div v-if="isLoadingWorkQueue" class="log-loading stack-2">
-          <span class="skeleton settings-skeleton-line settings-skeleton-line--title"></span>
-          <span class="skeleton settings-skeleton-line"></span>
-          <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
-        </div>
-
-        <template v-else-if="workQueue">
-          <div class="work-queue-grid">
-            <section class="work-queue-panel stack-3" aria-labelledby="summary-work-heading">
-              <div>
-                <h4 id="summary-work-heading" class="settings-section-subtitle">Summaries</h4>
-                <p class="meta-text">Generated from canonical transcripts.</p>
-              </div>
-              <div class="work-count-grid">
-                <div class="work-count-item">
-                  <span class="meta-text">Complete</span>
-                  <strong>{{ workQueue.summary.complete }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Processing</span>
-                  <strong>{{ workQueue.summary.processing }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Missing</span>
-                  <strong>{{ workQueue.summary.missing }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Failed</span>
-                  <strong>{{ workQueue.summary.failed }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Repair eligible</span>
-                  <strong>{{ workQueue.summary.eligibleForBackfill }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">No transcript</span>
-                  <strong>{{ workQueue.summary.blockedNoTranscript }}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section class="work-queue-panel stack-3" aria-labelledby="transcript-work-heading">
-              <div>
-                <h4 id="transcript-work-heading" class="settings-section-subtitle">Transcripts</h4>
-                <p class="meta-text">Created by the WhisperX worker after downloads finish.</p>
-              </div>
-              <div class="work-count-grid">
-                <div class="work-count-item">
-                  <span class="meta-text">Complete</span>
-                  <strong>{{ workQueue.transcripts.complete }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Queued</span>
-                  <strong>{{ workQueue.transcripts.queued }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Processing</span>
-                  <strong>{{ workQueue.transcripts.processing }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Failed</span>
-                  <strong>{{ workQueue.transcripts.failed }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Retry due</span>
-                  <strong>{{ workQueue.transcripts.retryDue }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Retry scheduled</span>
-                  <strong>{{ workQueue.transcripts.retryScheduled }}</strong>
-                </div>
-                <div class="work-count-item">
-                  <span class="meta-text">Blocked</span>
-                  <strong>{{ workQueue.transcripts.blocked }}</strong>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div class="work-config-alerts">
-            <UiAlert v-if="!workQueue.config.whisperxEnabled" tone="warning">
-              WhisperX is disabled. Transcript repair can queue work, but it cannot run transcriptions.
-            </UiAlert>
-            <UiAlert v-if="!workQueue.config.llmEnabled || !workQueue.config.llmApiKeyConfigured || !workQueue.config.summarizationEnabled" tone="warning">
-              Summary repair requires summarization enabled, LLM enabled, and an LLM API key.
-            </UiAlert>
-          </div>
-
-          <section v-if="lastRepairRun" class="work-queue-panel stack-2" aria-labelledby="last-repair-heading">
-            <h4 id="last-repair-heading" class="settings-section-subtitle">Last Repair</h4>
-            <p class="meta-text">
-              Started {{ formatOptionalTimestamp(lastRepairRun.startedAt) }}<template v-if="lastRepairRun.finishedAt">, finished {{ formatOptionalTimestamp(lastRepairRun.finishedAt) }}</template>.
-            </p>
-            <div class="work-repair-summary">
-              <span>Summaries: {{ lastRepairRun.summary.succeeded }} repaired, {{ lastRepairRun.summary.failed }} failed, {{ lastRepairRun.summary.eligible }} eligible.</span>
-              <span>Transcripts: {{ lastRepairRun.transcripts.forcedDue }} retries queued, {{ lastRepairRun.transcripts.queued }} ready now.</span>
-            </div>
-            <UiAlert v-if="lastRepairRun.error" tone="warning">
-              {{ lastRepairRun.error }}
-            </UiAlert>
-          </section>
-
-          <section class="stack-2" aria-labelledby="work-items-heading">
-            <div class="surface-row surface-row--between">
-              <h4 id="work-items-heading" class="settings-section-subtitle">Active And Attention Items</h4>
-              <p class="meta-text">Showing up to {{ workQueue.limit }} items.</p>
-            </div>
-
-            <div v-if="workQueueItems.length" class="work-item-list">
-              <article v-for="item in workQueueItems" :key="`${item.kind}-${item.id}`" class="work-item">
-                <div class="work-item-header">
-                  <div class="log-entry-badges">
-                    <UiBadge :tone="item.kind === 'summary' ? 'info' : 'neutral'">{{ item.kind }}</UiBadge>
-                    <UiBadge :tone="workQueueTone(item)">{{ item.statusLabel }}</UiBadge>
-                  </div>
-                  <time class="log-entry-time">{{ formatOptionalTimestamp(item.updatedAt) }}</time>
-                </div>
-                <p class="log-entry-message">{{ item.title }}</p>
-                <p class="log-entry-meta">
-                  {{ item.podcastTitle || "Unknown podcast" }}
-                  <template v-if="item.model"> | {{ item.model }}</template>
-                </p>
-                <div class="work-item-meta">
-                  <span v-if="item.progressPct">Progress {{ item.progressPct }}%</span>
-                  <span v-if="item.progressStage">{{ item.progressStage.replace(/_/g, " ") }}</span>
-                  <span v-if="item.retryCount">Retried {{ item.retryCount }} {{ item.retryCount === 1 ? "time" : "times" }}</span>
-                  <span v-if="item.nextAttempt">Next attempt {{ formatOptionalTimestamp(item.nextAttempt) }}</span>
-                </div>
-                <p v-if="item.lastError" class="work-item-error">{{ item.lastError }}</p>
-              </article>
-            </div>
-            <div v-else class="empty-state">
-              No active, failed, retrying, or blocked transcript/summary work was found.
-            </div>
-          </section>
-        </template>
-      </UiCard>
-    </template>
-
-    <template v-else-if="activeTab === 'monitoring'">
-      <MonitoringPanel />
-    </template>
-
-    <template v-else>
-      <UiCard padding="lg" class="stack-4">
-        <div class="surface-row surface-row--between">
-          <div class="stack-2">
-            <h3 class="settings-section-title">Latest Logs</h3>
-            <p class="section-subtitle">
-              Recent application, job, download, summary, and transcript logs.
-            </p>
-          </div>
-          <UiButton variant="secondary" :disabled="isLoadingLogs" @click="loadLogs">
-            {{ isLoadingLogs ? "Refreshing..." : "Refresh" }}
-          </UiButton>
-        </div>
-
-        <UiAlert v-if="logsErrorMessage" tone="danger">
-          {{ logsErrorMessage }}
-        </UiAlert>
-
-        <div v-if="isLoadingLogs" class="log-loading stack-2">
-          <span class="skeleton settings-skeleton-line settings-skeleton-line--title"></span>
-          <span class="skeleton settings-skeleton-line"></span>
-          <span class="skeleton settings-skeleton-line settings-skeleton-line--short"></span>
-        </div>
-
-        <template v-else>
-          <div v-if="logsPayload" class="log-summary-grid">
-            <div class="log-summary-item">
-              <span class="meta-text">User-impacting</span>
-              <strong>{{ impactLogEntries.length }}</strong>
-            </div>
-            <div class="log-summary-item">
-              <span class="meta-text">Entries shown</span>
-              <strong>{{ logEntries.length }}</strong>
-            </div>
-            <div class="log-summary-item">
-              <span class="meta-text">Sources</span>
-              <strong>{{ logSources.length }}</strong>
-            </div>
-          </div>
-
-          <section v-if="impactLogEntries.length" class="stack-2" aria-labelledby="impact-log-heading">
-            <h4 id="impact-log-heading" class="settings-section-subtitle">Needs Attention</h4>
-            <div class="log-list log-list--compact">
-              <article
-                v-for="entry in impactLogEntries"
-                :key="`impact-${entry.id}`"
-                class="log-entry log-entry--impact"
-              >
-                <div class="log-entry-header">
-                  <div class="log-entry-badges">
-                    <UiBadge :tone="logLevelTone(entry.level)">{{ entry.level.toUpperCase() }}</UiBadge>
-                    <UiBadge tone="warning">{{ entry.category }}</UiBadge>
-                  </div>
-                  <time class="log-entry-time">{{ formatLogTimestamp(entry.timestamp) }}</time>
-                </div>
-                <p class="log-entry-message">{{ entry.humanMessage }}</p>
-                <p class="log-entry-meta">
-                  {{ entry.source }}<template v-if="entry.caller"> | {{ entry.caller }}</template>
-                </p>
-              </article>
-            </div>
-          </section>
-
-          <UiAlert v-else-if="logsPayload" tone="success">
-            No user-impacting errors were found in the latest log entries.
-          </UiAlert>
-
-          <UiAlert v-if="logReadErrors.length" tone="warning">
-            {{ logReadErrors.length }} log source{{ logReadErrors.length === 1 ? "" : "s" }} could not be read.
-          </UiAlert>
-
-          <div v-if="logSources.length" class="log-source-list">
-            <span v-for="source in logSources" :key="source.name" class="log-source-chip">
-              {{ source.name }} ({{ formatBytes(source.sizeBytes) }})
-            </span>
-          </div>
-
-          <section class="stack-2" aria-labelledby="all-log-heading">
-            <div class="surface-row surface-row--between">
-              <h4 id="all-log-heading" class="settings-section-subtitle">All Recent Entries</h4>
-              <p v-if="logsPayload && logsPayload.totalDiscovered > logEntries.length" class="meta-text">
-                Showing {{ logEntries.length }} of {{ logsPayload.totalDiscovered }} discovered entries.
-              </p>
-            </div>
-
-            <div v-if="logEntries.length" class="log-list">
-              <article
-                v-for="entry in logEntries"
-                :key="entry.id"
-                class="log-entry"
-                :class="{ 'log-entry--impact': entry.userImpact }"
-              >
-                <div class="log-entry-header">
-                  <div class="log-entry-badges">
-                    <UiBadge :tone="logLevelTone(entry.level)">{{ entry.level.toUpperCase() }}</UiBadge>
-                    <UiBadge :tone="entry.userImpact ? 'warning' : 'neutral'">{{ entry.category }}</UiBadge>
-                  </div>
-                  <time class="log-entry-time">{{ formatLogTimestamp(entry.timestamp) }}</time>
-                </div>
-                <p class="log-entry-message">{{ entry.humanMessage }}</p>
-                <p class="log-entry-meta">
-                  {{ entry.source }}<template v-if="entry.service"> | {{ entry.service }}</template><template v-if="entry.caller"> | {{ entry.caller }}</template>
-                </p>
-                <details v-if="formatLogFields(entry.fields) || entry.raw" class="log-entry-details">
-                  <summary>Details</summary>
-                  <pre v-if="formatLogFields(entry.fields)" class="log-entry-pre">{{ formatLogFields(entry.fields) }}</pre>
-                  <pre v-if="entry.raw" class="log-entry-pre">{{ entry.raw }}</pre>
-                </details>
-              </article>
-            </div>
-            <div v-else class="empty-state">
-              No file-backed logs were found.
-            </div>
-          </section>
-        </template>
-      </UiCard>
-    </template>
+    <!-- About (moved here from its own page). -->
+    <section id="settings-about" class="stack-3">
+      <AboutView />
+    </section>
   </section>
 
   <UiDrawer
@@ -1677,266 +1172,6 @@ onUnmounted(() => {
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   font-size: 0.875rem;
-  overflow-wrap: anywhere;
-}
-
-.settings-tabs {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-primary);
-  padding: var(--space-1);
-  overflow-x: auto;
-}
-
-.settings-tab {
-  min-height: 40px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: var(--font-button-size);
-  font-weight: var(--font-button-weight);
-  padding: var(--space-2) var(--space-4);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.settings-tab:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-}
-
-.settings-tab--active {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent-hover);
-}
-
-.log-loading {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-secondary);
-  padding: var(--space-4);
-}
-
-.log-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-3);
-}
-
-.log-summary-item {
-  display: grid;
-  gap: var(--space-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
-}
-
-.log-summary-item strong {
-  color: var(--color-text-primary);
-  font-size: var(--font-section-size);
-  line-height: var(--font-section-line-height);
-}
-
-.log-list {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.log-list--compact {
-  gap: var(--space-2);
-}
-
-.log-entry {
-  min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-primary);
-  padding: var(--space-4);
-}
-
-.log-entry--impact {
-  border-color: rgba(203, 145, 47, 0.55);
-  background: rgba(203, 145, 47, 0.08);
-}
-
-.log-entry-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.log-entry-badges {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.log-entry-time {
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
-
-.log-entry-message {
-  margin: var(--space-3) 0 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-body-size);
-  line-height: var(--font-body-line-height);
-  overflow-wrap: anywhere;
-}
-
-.log-entry-meta {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-  overflow-wrap: anywhere;
-}
-
-.log-entry-details {
-  margin-top: var(--space-3);
-}
-
-.log-entry-details summary {
-  color: var(--color-accent);
-  cursor: pointer;
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
-
-.log-entry-pre {
-  max-height: 260px;
-  overflow: auto;
-  margin: var(--space-2) 0 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-primary);
-  padding: var(--space-3);
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  line-height: 18px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.log-source-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.log-source-chip {
-  max-width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-  overflow-wrap: anywhere;
-}
-
-.work-queue-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.work-queue-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
-}
-
-.work-queue-panel {
-  min-width: 0;
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-4);
-}
-
-.work-count-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-
-.work-count-item {
-  display: grid;
-  gap: var(--space-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-secondary);
-  padding: var(--space-3);
-}
-
-.work-count-item strong {
-  color: var(--color-text-primary);
-  font-size: var(--font-card-title-size);
-  line-height: var(--font-card-title-line-height);
-}
-
-.work-config-alerts {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.work-repair-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
-
-.work-item-list {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.work-item {
-  min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-primary);
-  padding: var(--space-4);
-}
-
-.work-item-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.work-item-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  margin-top: var(--space-2);
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
-
-.work-item-error {
-  margin: var(--space-3) 0 0;
-  color: var(--color-danger);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -2066,24 +1301,24 @@ onUnmounted(() => {
 .prompt-version-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-3, 0.75rem);
+  gap: var(--space-3);
 }
 
 .prompt-version-item {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
-  padding: var(--spacing-3, 0.75rem);
+  border-radius: var(--radius-3);
+  padding: var(--space-3);
 }
 
 .prompt-version-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-2, 0.5rem);
+  margin-bottom: var(--space-2);
 }
 
 .prompt-version-date {
-  font-size: var(--font-sm-size, 0.875rem);
+  font-size: var(--font-body-size);
   color: var(--color-text-secondary);
 }
 
@@ -2091,30 +1326,121 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: var(--font-sm-size, 0.875rem);
+  font-size: var(--font-body-size);
   color: var(--color-text-primary);
   max-height: 12rem;
   overflow-y: auto;
 }
 
-@media (min-width: 768px) {
-  .log-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 
-  .work-queue-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+.settings-theme-modes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-theme-modes legend {
+  margin-bottom: var(--space-2);
+}
+
+.settings-theme-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+
+.settings-theme-mode:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.settings-theme-mode input {
+  margin-top: 3px;
+  accent-color: var(--color-accent);
+}
+
+.settings-theme-mode > span {
+  display: grid;
+}
+
+.settings-theme-mode__title {
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .settings-theme-modes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 520px) {
-  .settings-tabs {
-    width: 100%;
-  }
+.settings-nav {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 10;
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: var(--space-2) 0;
+  background: var(--color-bg-secondary);
+}
 
-  .settings-tab {
-    flex: 1 1 0;
-    padding-inline: var(--space-3);
+.settings-nav__link {
+  flex: 0 0 auto;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+}
+
+.settings-nav__link:hover {
+  background: var(--color-hover);
+}
+
+[id^="settings-"] {
+  scroll-margin-top: calc(var(--topbar-height) + 56px);
+}
+
+.settings-savebar {
+  position: sticky;
+  bottom: calc(var(--space-3) + var(--player-bar-height));
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-3);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-popover);
+}
+
+.settings-savebar__text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.settings-savebar__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 767px) {
+  .settings-savebar {
+    bottom: calc(var(--space-2) + var(--player-bar-height) + var(--bottom-tabs-height));
   }
 }
 </style>

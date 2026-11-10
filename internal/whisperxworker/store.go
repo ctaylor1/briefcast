@@ -26,6 +26,7 @@ type record struct {
 	ResultDigest    string                   `json:"result_digest"`
 	AcknowledgedAt  *time.Time               `json:"acknowledged_at"`
 	Pruned          bool                     `json:"pruned"`
+	PruneComplete   bool                     `json:"prune_complete,omitempty"` // files deleted; GC and recovery skip it
 	Checkpoint      *checkpointRef           `json:"checkpoint"`
 	BudgetUsed      time.Duration            `json:"budget_used"`
 	RunSince        *time.Time               `json:"run_since"`

@@ -48,6 +48,7 @@ type Worker struct {
 	mu          sync.Mutex
 	active      map[string]context.CancelFunc
 	fault       error
+	faulted     chan struct{} // closed on the first fault; nil for offline maintenance
 	stopping    bool
 	wake        chan struct{}
 	done        chan struct{}
@@ -64,7 +65,7 @@ func Open(ctx context.Context, cfg Config, runner Runner) (_ *Worker, err error)
 	if err != nil {
 		return nil, err
 	}
-	w := &Worker{cfg: cfg, runner: runner, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), tokenDigest: token}
+	w := &Worker{cfg: cfg, runner: runner, active: map[string]context.CancelFunc{}, faulted: make(chan struct{}), wake: make(chan struct{}, 1), done: make(chan struct{}), tokenDigest: token}
 	w.metrics = newWorkerMetrics(w)
 	w.store, err = openStore(cfg.StateDir)
 	if err != nil {
@@ -118,12 +119,31 @@ func (w *Worker) notify() {
 	default:
 	}
 }
+
+// unavailable records a sticky state fault; callers hold w.mu. The first fault
+// is kept as the cause and closes Faulted so serve can exit for recovery.
 func (w *Worker) unavailable(err error) {
-	w.fault = err
+	if w.fault == nil {
+		w.fault = err
+		if w.faulted != nil {
+			close(w.faulted)
+		}
+	}
 	for _, cancel := range w.active {
 		cancel()
 	}
-	slog.Error("worker_state_unavailable")
+	slog.Error("worker_state_unavailable", "error", err)
+}
+
+// Faulted is closed once the worker hits a state fault it cannot recover from
+// while running. The process should exit so its restart policy runs recovery.
+func (w *Worker) Faulted() <-chan struct{} { return w.faulted }
+
+// Fault returns the first recorded state fault, or nil.
+func (w *Worker) Fault() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fault
 }
 func terminal(state string) bool {
 	return state == "succeeded" || state == "failed" || state == "cancelled"
@@ -261,13 +281,22 @@ func (w *Worker) Submit(ctx context.Context, id string, raw []byte) (transcripti
 		if (old.Status.State != "failed" && old.Status.State != "cancelled") || old.Request.DeploymentID != request.DeploymentID || old.Request.EpisodeID != request.EpisodeID || old.Request.GenerationID != request.GenerationID || old.Request.Input.SHA256 != request.Input.SHA256 || old.Request.Input.SizeBytes != request.Input.SizeBytes || old.Status.EffectiveConfig.OptionsSHA256 != r.Status.EffectiveConfig.OptionsSHA256 || old.Status.EffectiveConfig.EngineProfile != request.EngineProfile || old.PipelineVersion != transcription.PipelineVersion || old.Checkpoint == nil {
 			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume source is incompatible", false)
 		}
-		if _, err = w.readCheckpoint(old); err != nil {
+		verified, err := w.readCheckpoint(old)
+		if err != nil {
+			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume data failed verification", false)
+		}
+		var cp checkpointPayload
+		if err = json.Unmarshal(verified, &cp); err != nil {
 			return r.Status, false, transcription.Error("CHECKPOINT_INCOMPATIBLE", "Resume data failed verification", false)
 		}
 		ref := *old.Checkpoint
 		r.Checkpoint = &ref
 		r.Status.Checkpoint.CompletedSeconds = ref.CompletedSeconds
 		r.Status.Checkpoint.SegmentCount = ref.SegmentCount
+		// Status reports the checkpoint's completed seconds before the script
+		// reports a total. Seed the total from the verified checkpoint so a
+		// resumed job never shows completed > total, which clients reject.
+		r.Status.TotalSeconds = max(old.Status.TotalSeconds, cp.TotalSeconds)
 	}
 	if err = os.MkdirAll(w.store.jobDir(id), 0700); err != nil {
 		return r.Status, false, err
@@ -571,6 +600,9 @@ func (w *Worker) recover(ctx context.Context) error {
 		return err
 	}
 	for _, r := range records {
+		if r.PruneComplete {
+			continue // a finished tombstone has no result or artifacts left to verify or clean
+		}
 		if r.Status.State == "succeeded" && !r.Pruned {
 			if _, err = w.resultLocked(r); err != nil {
 				return fmt.Errorf("durable result verification failed for %s", r.Status.JobID)

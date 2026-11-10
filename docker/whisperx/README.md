@@ -4,7 +4,7 @@ App: root `Dockerfile`, Python 3.12 feedparser/mutagen lock in `docker/app/requi
 
 ## Locks and builds
 
-`baseline-packages.json` records distribution names/versions from the preserved baseline image, without credentials or private installation URLs. Constraints retain those versions. The CPU variant replaces the Torch/Torchaudio/TorchVision CUDA wheels with CPU wheels, uses TorchCodec 0.7.0 (the CPU index has no `0.7.0+cpu`), and omits NVIDIA runtime packages. Triton remains because an installed dependency requires it. CUDA uses the exact installed cu128 combination.
+`baseline-packages.json` records distribution names/versions from the preserved baseline image, without credentials or private installation URLs. Constraints retain those versions, with one security exception: `urllib3` is 2.8.0 (baseline 2.7.0) for PYSEC-2026-4175, PYSEC-2026-4176 and PYSEC-2026-4177. The CPU variant replaces the Torch/Torchaudio/TorchVision CUDA wheels with CPU wheels, uses TorchCodec 0.7.0 (the CPU index has no `0.7.0+cpu`), and omits NVIDIA runtime packages. Triton remains because an installed dependency requires it. CUDA uses the exact installed cu128 combination.
 
 Reproduce lock generation with the existing `uv` tool, independently of root Python 3.14 tooling:
 

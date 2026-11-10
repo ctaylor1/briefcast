@@ -403,3 +403,124 @@ def test_cutover_record_requires_archived_app_boot_and_candidate_source_bundle(t
     assert record["gates"]["representative_quality"]
     assert record["image_overrides"]["WHISPERX_IMAGE"] == worker_id
     assert any("sidecars" in action for action in record["rollback_actions"])
+
+
+def _run_app_deploy(tmp_path, extra_args):
+    """Run an app deploy against mocked Docker; returns (result, calls, rollback)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    archive = tmp_path / "app.tar"
+    archive.write_bytes(b"synthetic archive; mock Docker only")
+    old_id, new_id = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    manifest = {
+        "version": "1.0.0",
+        "variant": "app",
+        "service": "briefcast",
+        "image_id": new_id,
+        "archive": archive.name,
+        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+    }
+    (tmp_path / "briefcast_v1.0.0.json").write_text(json.dumps(manifest))
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("WHISPERX_RUNTIME=disabled\n")
+    log = tmp_path / "calls.jsonl"
+    fixture_root = tmp_path / "repository"
+    for file in [
+        "scripts/ReleasePackaging.ps1",
+        "scripts/Packaging.psm1",
+        "release.config.json",
+        "docker/compose-modes.json",
+        "docker/whisperx/VERSION",
+    ]:
+        destination = fixture_root / file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / file, destination)
+    harness = tmp_path / "harness.ps1"
+    harness.write_text(
+        "param($Root,$EnvFile,$BuildDir,$Log,$OldId,$NewId,[string[]]$Extra)\n"
+        "$global:MockLog=$Log; $global:MockOld=$OldId; $global:MockNew=$NewId\n"
+        "function global:docker {\n"
+        "  $a=@($args); ConvertTo-Json -Compress -InputObject $a | "
+        "Add-Content -LiteralPath $global:MockLog\n"
+        "  $global:LASTEXITCODE=0\n"
+        "  if (($a -join ' ') -eq 'compose version --short') { '2.24.0'; return }\n"
+        "  if ($a -contains 'ps') { 'app-container'; return }\n"
+        "  if ($a[0] -eq 'inspect') { $global:MockOld; return }\n"
+        "  if ($a -contains 'inspect') { $global:MockNew; return }\n"
+        "}\n"
+        "$splat = @{}\n"
+        "foreach ($x in $Extra) { if ($x -eq 'NoRestorePoint') { $splat.NoRestorePoint = $true } "
+        "elseif ($x) { $splat.RecoveryDir = $x } }\n"
+        "& (Join-Path $Root 'scripts/ReleasePackaging.ps1') deploy -Target app -Runtime disabled "
+        "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir -SkipVerify @splat\n"
+    )
+    result = subprocess.run(
+        [
+            PWSH,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(harness),
+            str(fixture_root),
+            str(env_file),
+            str(tmp_path),
+            str(log),
+            old_id,
+            new_id,
+            *extra_args,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    rollback_path = tmp_path / "rollback-briefcast-app-disabled.json"
+    rollback = (
+        json.loads(rollback_path.read_text(encoding="utf-8-sig"))
+        if rollback_path.exists()
+        else None
+    )
+    return result, calls, rollback
+
+
+def test_app_deploy_requires_a_restore_point(tmp_path):
+    # No restore point and no explicit override: refuse before loading or starting anything.
+    result, calls, rollback = _run_app_deploy(tmp_path / "none", [])
+    assert result.returncode != 0
+    assert "restore point" in (result.stderr + result.stdout)
+    assert not any("load" in c or "up" in c for c in calls)
+    assert rollback is None
+
+
+def test_app_deploy_rejects_an_empty_restore_point(tmp_path):
+    empty = tmp_path / "empty-recovery"
+    empty.mkdir()
+    result, calls, _ = _run_app_deploy(tmp_path / "run", [str(empty)])
+    assert result.returncode != 0
+    assert "empty" in (result.stderr + result.stdout)
+    assert not any("load" in c or "up" in c for c in calls)
+
+
+def test_app_deploy_records_its_restore_point(tmp_path):
+    recovery = tmp_path / "recovery"
+    recovery.mkdir()
+    (recovery / "briefcast_backup.tar.gz").write_bytes(b"backup")
+    result, calls, rollback = _run_app_deploy(tmp_path / "run", [str(recovery)])
+    assert result.returncode == 0, result.stderr
+    assert any(
+        c[-6:] == ["up", "-d", "--no-build", "--no-deps", "--force-recreate", "briefcast"]
+        for c in calls
+    )
+    assert rollback["restore_point"] == str(recovery.resolve())
+
+
+def test_app_deploy_without_restore_point_needs_explicit_override(tmp_path):
+    result, calls, rollback = _run_app_deploy(tmp_path / "run", ["NoRestorePoint"])
+    assert result.returncode == 0, result.stderr
+    assert "without a restore point" in (result.stderr + result.stdout)
+    assert rollback["restore_point"] is None
+
+
+def test_legacy_release_scripts_are_removed():
+    # They could wipe the database, backups and media after one typed "yes",
+    # with no exit-code checks. RELEASE.ps1 replaces them and refuses resets.
+    for name in ["RELEASE_BUILD.ps1", "RELEASE_RUN.ps1", "RELEASE_RESET.ps1"]:
+        assert not (ROOT / name).exists(), name

@@ -225,12 +225,9 @@ func sendEpisodeToBriefpoint(cfg BriefpointConfig, podcast *db.Podcast, episode 
 	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
 	client := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: outboundHTTPTransport(outboundPurposeBriefpoint),
-		CheckRedirect: func(r *http.Request, _ []*http.Request) error {
-			_, redirectErr := validateOutboundURL(r.URL.String(), outboundPurposeBriefpoint)
-			return redirectErr
-		},
+		Timeout:       30 * time.Second,
+		Transport:     outboundHTTPTransport(outboundPurposeBriefpoint),
+		CheckRedirect: checkOutboundRedirect(outboundPurposeBriefpoint),
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {

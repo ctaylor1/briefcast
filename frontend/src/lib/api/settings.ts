@@ -12,6 +12,7 @@ import type {
   SummaryJobStatus,
 } from "../../types/api";
 import { httpClient } from "./http";
+import { apiPath } from "./paths";
 
 export const settingsApi = {
   get(): Promise<AppSettings> {
@@ -36,22 +37,24 @@ export const settingsApi = {
     return httpClient.get("/settings/summary-models");
   },
   getOpenRouterModels(refresh = false): Promise<OpenRouterModelsResponse> {
-    return httpClient.get<OpenRouterModelsResponse>(`/settings/openrouter-models${refresh ? "?refresh=true" : ""}`);
+    return httpClient.get<OpenRouterModelsResponse>("/settings/openrouter-models", {
+      params: refresh ? { refresh: "true" } : undefined,
+    });
   },
   getPromptVersions(type: "system" | "user"): Promise<PromptVersion[]> {
-    return httpClient.get<PromptVersion[]>(`/settings/prompt-versions?type=${type}`);
+    return httpClient.get<PromptVersion[]>("/settings/prompt-versions", { params: { type } });
   },
   restorePromptVersion(id: string): Promise<AppSettings> {
-    return httpClient.post<AppSettings>(`/settings/prompt-versions/${id}/restore`);
+    return httpClient.post<AppSettings>(apiPath`/settings/prompt-versions/${id}/restore`);
   },
   getLogs(limit = 200): Promise<AppLogsResponse> {
-    return httpClient.get<AppLogsResponse>(`/settings/logs?limit=${encodeURIComponent(String(limit))}`);
+    return httpClient.get<AppLogsResponse>("/settings/logs", { params: { limit } });
   },
   getRepairWork(limit = 50): Promise<RepairWorkResponse> {
-    return httpClient.get<RepairWorkResponse>(`/settings/repair-work?limit=${encodeURIComponent(String(limit))}`);
+    return httpClient.get<RepairWorkResponse>("/settings/repair-work", { params: { limit } });
   },
   startRepairWork(limit = 50): Promise<RepairWorkResponse> {
-    return httpClient.post<RepairWorkResponse>(`/settings/repair-work?limit=${encodeURIComponent(String(limit))}`);
+    return httpClient.post<RepairWorkResponse>("/settings/repair-work", undefined, { params: { limit } });
   },
   getMonitoring(): Promise<MonitoringSnapshot> {
     return httpClient.get<MonitoringSnapshot>("/settings/monitoring");

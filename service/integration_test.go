@@ -49,7 +49,7 @@ func TestIntegrationFeedDownloadWhisperX(t *testing.T) {
 	t.Setenv("WHISPERX_DIARIZATION", "false")
 
 	server := httptest.NewServer(testFeedServer())
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, feedScript, server.URL)
 	t.Cleanup(server.Close)
 
 	var err error
@@ -179,7 +179,7 @@ import json
 import os
 import sys
 
-base = os.environ.get("TEST_BASE_URL", "")
+base = open(__file__ + ".base").read().strip()
 payload = {
     "feed": {
         "title": "Integration Podcast",

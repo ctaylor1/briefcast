@@ -476,6 +476,20 @@ func (b *httpTranscriptionBackend) result(ctx context.Context, e *remoteEnvelope
 	return &result, nil
 }
 
+// cancel asks the worker to stop a job. The worker keeps the job's journal
+// entry and any checkpoint; a cancelled job is terminal and frees its slot.
+func (b *httpTranscriptionBackend) cancel(ctx context.Context, e *remoteEnvelope) error {
+	raw, _, err := b.request(ctx, "POST", "/v1/jobs/"+e.JobID+"/cancel", nil, false)
+	if err != nil {
+		return err
+	}
+	var s transcription.JobStatus
+	if json.Unmarshal(raw, &s) != nil || s.JobID != e.JobID {
+		return remoteProblem("INVALID_CONFIG", "Invalid worker cancel response", false)
+	}
+	return nil
+}
+
 func (b *httpTranscriptionBackend) acknowledge(ctx context.Context, e *remoteEnvelope) error {
 	body, _ := json.Marshal(transcription.AckRequest{ResultSHA256: *e.ReceiptResultSHA256})
 	raw, _, err := b.request(ctx, "POST", "/v1/jobs/"+e.JobID+"/ack", body, false)

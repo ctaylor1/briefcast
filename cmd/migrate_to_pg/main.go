@@ -56,7 +56,10 @@ func main() {
 
 	appdb.DB = dst
 	fmt.Println("running AutoMigrate + migrations on target database...")
-	appdb.Migrate()
+	if err := appdb.Migrate(); err != nil {
+		fmt.Fprintf(os.Stderr, "schema setup failed: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println("schema ready.")
 	fmt.Println()
 

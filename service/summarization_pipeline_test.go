@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 )
@@ -47,14 +48,14 @@ func TestAddPodcastItemsQueuesUnavailableFeedTranscriptsAndUsesSettingsModel(t *
 	script := writeTempScript(t, t.TempDir(), "feedparser_summary_pipeline.py", `import json
 import os
 import sys
-base = os.environ["TEST_BASE_URL"]
+base = open(__file__ + ".base").read().strip()
 json.dump({"feed": {"title": "Test feed"}, "entries": [
   {"guid": "good", "title": "Good", "transcripts": [{"url": base + "/good.txt", "type": "text/plain"}]},
   {"guid": "empty", "title": "Empty", "transcripts": [{"url": base + "/empty.txt", "type": "text/plain"}]},
   {"guid": "missing", "title": "Missing", "transcripts": [{"url": base + "/missing.txt", "type": "text/plain"}]}
 ]}, sys.stdout)
 `)
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, script, server.URL)
 	t.Setenv(feedparserPythonEnv, pythonPath)
 	t.Setenv(feedparserScriptEnv, script)
 	t.Setenv("LLM_ENABLED", "true")
@@ -73,6 +74,14 @@ json.dump({"feed": {"title": "Test feed"}, "entries": [
 	if err := AddPodcastItems(&podcast, false); err != nil {
 		t.Fatalf("add episodes: %v", err)
 	}
+	// Summaries run in the summary backfill that AddPodcastItems starts, not inline.
+	var requestedModel string
+	select {
+	case requestedModel = <-models:
+	case <-time.After(30 * time.Second):
+		t.Fatal("expected a summarization request")
+	}
+	waitForSummaryJobIdle(t)
 	items := make([]db.PodcastItem, 0)
 	if err := db.GetAllPodcastItemsByPodcastID(podcast.ID, &items); err != nil {
 		t.Fatalf("load episodes: %v", err)
@@ -97,13 +106,20 @@ json.dump({"feed": {"title": "Test feed"}, "entries": [
 			t.Fatalf("unexpected episode %q", item.GUID)
 		}
 	}
-	select {
-	case got := <-models:
-		if got != "settings-model" {
-			t.Fatalf("expected Settings model in request, got %q", got)
+	if requestedModel != "settings-model" {
+		t.Fatalf("expected Settings model in request, got %q", requestedModel)
+	}
+}
+
+// waitForSummaryJobIdle waits for a background summary job to finish.
+func waitForSummaryJobIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for GetSummaryBackfillRunning() {
+		if time.Now().After(deadline) {
+			t.Fatal("summary job did not finish")
 		}
-	default:
-		t.Fatal("expected a summarization request")
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -139,7 +155,7 @@ json.dump({"segments": [{"start": 0, "end": 1, "text": "Useful transcription."}]
 	item.DownloadPath = audioPath
 	item.TranscriptStatus = "pending_whisperx"
 	item.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update episode: %v", err)
 	}
 	t.Setenv(whisperxEnabledEnv, "true")

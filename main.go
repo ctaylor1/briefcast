@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ctaylor1/briefcast/controllers"
@@ -46,7 +51,12 @@ func main() {
 		appLogger.Fatalw("database initialization failed", "error", err)
 		return
 	}
-	db.Migrate()
+	if err := db.Migrate(); err != nil {
+		// Serving on a half-migrated schema risks writes the next migration
+		// cannot repair. Restore from backup or fix the cause, then restart.
+		appLogger.Fatalw("database migration failed; not starting", "error", err)
+		return
+	}
 	telemetry.SetVersion(resolveRunningVersion())
 	service.RegisterPipelineMetrics()
 	r := buildRouter()
@@ -55,17 +65,22 @@ func main() {
 	service.SafeGo("startup configuration log", assetEnv)
 	service.SafeGo("cron scheduler", intiCron)
 
-	if err := r.Run(); err != nil {
+	srv := newHTTPServer(r)
+	appLogger.Infow("http server listening", "addr", srv.Addr)
+	if err := serveUntilSignal(srv, appLogger); err != nil {
 		appLogger.Fatalw("http server terminated", "error", err)
 	}
-
+	appLogger.Infow("http server stopped")
 }
 
 func buildRouter() *gin.Engine {
 	r := gin.New()
+	// The request logger stays outermost so it records the 500 that Recovery
+	// writes; Recovery wraps every other middleware and handler.
 	r.Use(logging.RequestLoggerMiddleware())
-	r.Use(setupSettings())
 	r.Use(gin.Recovery())
+	r.Use(limitRequestBody(defaultMaxRequestBodyBytes))
+	r.Use(clacksOverhead())
 	r.Use(location.Default())
 
 	// Legacy HTML templates removed; modern Vue app is the only UI.
@@ -106,13 +121,10 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.DELETE("/podcasts/:id", controllers.DeletePodcastByID)
 	router.GET("/podcasts/:id/items", controllers.GetPodcastItemsByPodcastID)
 	router.POST("/podcasts/:id/download", controllers.DownloadAllEpisodesByPodcastID)
-	router.GET("/podcasts/:id/download", controllers.DownloadAllEpisodesByPodcastID) // deprecated
 	router.DELETE("/podcasts/:id/items", controllers.DeletePodcastEpisodesByID)
 	router.DELETE("/podcasts/:id/podcast", controllers.DeleteOnlyPodcastByID)
 	router.PATCH("/podcasts/:id/pause", controllers.PausePodcastByID)
-	router.GET("/podcasts/:id/pause", controllers.PausePodcastByID) // deprecated
 	router.PATCH("/podcasts/:id/unpause", controllers.UnpausePodcastByID)
-	router.GET("/podcasts/:id/unpause", controllers.UnpausePodcastByID) // deprecated
 	router.PATCH("/podcasts/:id/retention", controllers.PatchPodcastRetention)
 	router.PATCH("/podcasts/:id/sponsor-skip", controllers.PatchPodcastSponsorSkip)
 	router.PATCH("/podcasts/:id/briefpoint", controllers.PatchPodcastBriefpoint)
@@ -126,16 +138,12 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/podcastitems/:id/image", controllers.GetPodcastItemImageByID)
 	router.GET("/podcastitems/:id/file", controllers.GetPodcastItemFileByID)
 	router.PATCH("/podcastitems/:id/markUnplayed", controllers.MarkPodcastItemAsUnplayed)
-	router.GET("/podcastitems/:id/markUnplayed", controllers.MarkPodcastItemAsUnplayed) // deprecated
 	router.PATCH("/podcastitems/:id/markPlayed", controllers.MarkPodcastItemAsPlayed)
-	router.GET("/podcastitems/:id/markPlayed", controllers.MarkPodcastItemAsPlayed) // deprecated
 	router.PATCH("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem)
-	router.GET("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem) // deprecated
 	router.PATCH("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
-	router.GET("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem) // deprecated
 	router.PATCH("/podcastitems/:id", controllers.PatchPodcastItemByID)
+	router.PATCH("/podcastitems/:id/position", controllers.PatchPodcastItemPosition)
 	router.POST("/podcastitems/:id/download", controllers.DownloadPodcastItem)
-	router.GET("/podcastitems/:id/download", controllers.DownloadPodcastItem) // deprecated
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)
 	router.POST("/podcastitems/:id/retranscribe", controllers.RetranscribePodcastItem)
@@ -144,7 +152,6 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.POST("/podcastitems/:id/cancel", controllers.CancelPodcastItemDownload)
 	router.POST("/podcastitems/:id/resume", controllers.ResumePodcastItemDownload)
 	router.DELETE("/podcastitems/:id/delete", controllers.DeletePodcastItem)
-	router.GET("/podcastitems/:id/delete", controllers.DeletePodcastItem) // deprecated
 
 	router.GET("/links/top", controllers.GetTopLinks)
 	router.GET("/links/targets/:id", controllers.GetLinkTarget)
@@ -200,13 +207,23 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/rss", controllers.GetRss)
 	router.GET("/ws", controllers.DefaultHub.Handler)
 }
+
+// setupSettings puts the settings row in the request context. It is no longer
+// installed globally; handlers that need settings read them on demand.
 func setupSettings() gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		setting := db.GetOrCreateSetting()
 		c.Set("setting", setting)
 		c.Writer.Header().Set("X-Clacks-Overhead", "GNU Terry Pratchett")
+		c.Next()
+	}
+}
 
+// clacksOverhead sets the header every response has carried, without the
+// per-request settings read that setupSettings did.
+func clacksOverhead() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("X-Clacks-Overhead", "GNU Terry Pratchett")
 		c.Next()
 	}
 }
@@ -318,10 +335,18 @@ func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency in
 	})
 }
 
+// runStartupJobs clears stale job locks before starting the stats warmup.
+// Started first, the warmup's long read held the database past the busy
+// timeout and made the lock reset fail with "database is locked".
+func runStartupJobs(unlockAllJobs func(), startStatsWarmup func()) {
+	unlockAllJobs()
+	startStatsWarmup()
+}
+
 func intiCron() {
 	appLogger := logging.Sugar()
 	checkFrequency := resolveCheckFrequency(os.Getenv("CHECK_FREQUENCY"), appLogger)
-	service.UnlockAllJobs()
+	runStartupJobs(service.UnlockAllJobs, service.StartPipelineStatsWarmup)
 
 	scheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 	whisperxFrequency := resolveWhisperXFrequency(checkFrequency, os.Getenv("WHISPERX_CHECK_FREQUENCY"), appLogger)
@@ -357,4 +382,99 @@ func serveModernApp(c *gin.Context) {
 		return
 	}
 	c.File(indexPath)
+}
+
+const (
+	// No WriteTimeout or ReadTimeout: media and exports are streamed and
+	// OPML uploads can be slow. Header and idle timeouts bound idle clients.
+	httpReadHeaderTimeout = 10 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+	httpShutdownTimeout   = 10 * time.Second
+
+	// defaultMaxRequestBodyBytes caps request bodies on every route that does
+	// not set its own limit. JSON settings and edits are far smaller.
+	defaultMaxRequestBodyBytes int64 = 1 << 20
+)
+
+// routesWithOwnBodyLimit read large bodies under their own, larger cap.
+var routesWithOwnBodyLimit = map[string]bool{
+	"/opml": true,
+}
+
+// resolveListenAddr matches gin.Engine.Run: PORT when set, otherwise :8080.
+func resolveListenAddr() string {
+	if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		return ":" + port
+	}
+	return ":8080"
+}
+
+func newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              resolveListenAddr(),
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
+}
+
+// serveUntilSignal runs srv until it fails or SIGINT/SIGTERM arrives, then
+// shuts down, waiting at most httpShutdownTimeout for in-flight requests.
+func serveUntilSignal(srv *http.Server, logger *zap.SugaredLogger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	listener, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return err
+	}
+	return serveUntilDone(ctx, srv, listener, logger)
+}
+
+func serveUntilDone(ctx context.Context, srv *http.Server, listener net.Listener, logger *zap.SugaredLogger) error {
+	serveErr := make(chan error, 1)
+	// Not SafeGo: this is the server itself. A recovered panic here would leave
+	// main waiting forever instead of exiting.
+	go func() { serveErr <- srv.Serve(listener) }()
+
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	logger.Infow("shutting down http server", "timeout_seconds", int(httpShutdownTimeout.Seconds()))
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		// Long streams (media, exports) can outlast the deadline; cut them off.
+		logger.Warnw("http server did not finish in-flight requests before the deadline", "error", err)
+		if closeErr := srv.Close(); closeErr != nil {
+			logger.Warnw("closing http server failed", "error", closeErr)
+		}
+	}
+	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// limitRequestBody caps request bodies at max bytes. Requests that declare a
+// larger Content-Length get 413 immediately; others fail when the handler
+// reads past the cap.
+func limitRequestBody(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body == nil || c.Request.Body == http.NoBody || routesWithOwnBodyLimit[c.FullPath()] {
+			c.Next()
+			return
+		}
+		if c.Request.ContentLength > max {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
+		c.Next()
+	}
 }

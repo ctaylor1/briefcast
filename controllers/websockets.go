@@ -62,6 +62,9 @@ var wsupgrader = websocket.Upgrader{
 	},
 }
 
+// wsMaxMessageBytes caps a single incoming WebSocket message.
+const wsMaxMessageBytes = 64 << 10
+
 // Handler upgrades the HTTP connection to WebSocket, reads messages,
 // and forwards everything (including disconnect) through the hub channel.
 func (h *Hub) Handler(c *gin.Context) {
@@ -75,6 +78,8 @@ func (h *Hub) Handler(c *gin.Context) {
 		conn.Close()
 		h.broadcast <- Message{MessageType: "Disconnect", Connection: conn}
 	}()
+	// Player messages are a few hundred bytes; cap what one message can buffer.
+	conn.SetReadLimit(wsMaxMessageBytes)
 	for {
 		var mess Message
 		if err := conn.ReadJSON(&mess); err != nil {

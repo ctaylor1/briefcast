@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,16 +77,29 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		fileName = fmt.Sprintf("%s-%s", prefix, fileName)
 	}
 	folder := createAudioFolderIfNotExists(podcastName)
-	finalPath := path.Join(folder, fileName)
-
-	var resumeOffset int64
-	if info, statErr := os.Stat(finalPath); statErr == nil {
-		resumeOffset = info.Size()
+	owner := downloadID
+	if owner == "" {
+		owner = "url:" + link
 	}
-	// If a partial file already exists, request the remaining bytes.
-	// Callers treat non-2xx responses as hard failures and reset item state.
-	if resumeOffset > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
+	finalPath, releasePath := resolveEpisodeDownloadPath(downloadID, owner, folder, fileName)
+	defer releasePath()
+	sidecarPath := finalPath + downloadSidecarSuffix
+
+	// Resume only a partial file this episode started from this URL, as recorded
+	// in its sidecar. Anything else at the path is replaced, never appended to.
+	var resumeOffset int64
+	if sidecar, ok := readDownloadSidecar(sidecarPath); ok && sidecar.PodcastItemID == downloadID && sidecar.URL == link {
+		if info, statErr := os.Stat(finalPath); statErr == nil {
+			resumeOffset = info.Size()
+		}
+		if resumeOffset > 0 {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
+			// With a validator the server sends the whole file (200) instead of
+			// the rest of a different one, for example after ads are re-inserted.
+			if validator := sidecar.ifRangeValidator(); validator != "" {
+				req.Header.Set("If-Range", validator)
+			}
+		}
 	}
 
 	resp, err := doRequestWithHostLimit(client, req)
@@ -98,6 +112,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		_ = resp.Body.Close()
 		if resumeOffset > 0 && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
 			// Some hosts reject stale resume offsets (416). Drop the partial file and retry once.
+			_ = os.Remove(sidecarPath)
 			if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
 				Logger.Warnw("failed to reset partial file after range rejection", "path", finalPath, "error", removeErr)
 			} else {
@@ -115,8 +130,17 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.OpenFile(finalPath, os.O_WRONLY|os.O_APPEND, 0o644)
 	} else {
-		// Servers that ignore range requests can still succeed with a full-body response.
+		// Servers that ignore range requests, or whose file changed, send the full body.
 		resumeOffset = 0
+		if sidecarErr := writeDownloadSidecar(sidecarPath, downloadSidecar{
+			PodcastItemID: downloadID,
+			URL:           link,
+			ETag:          resp.Header.Get("ETag"),
+			LastModified:  resp.Header.Get("Last-Modified"),
+		}); sidecarErr != nil {
+			// The download still works without the sidecar; it just cannot resume.
+			Logger.Warnw("could not record download ownership; this download will not resume", "path", sidecarPath, "error", sidecarErr)
+		}
 		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.Create(finalPath)
 	}
@@ -129,6 +153,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		_ = file.Close()
 		if removeFileOnReturn {
 			_ = os.Remove(finalPath)
+			_ = os.Remove(sidecarPath)
 		}
 	}()
 
@@ -190,6 +215,9 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		return "", fmt.Errorf("download incomplete: got %d of %d bytes for %s", downloadedBytes, totalBytes, link)
 	}
 
+	if removeErr := os.Remove(sidecarPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		Logger.Warnw("could not remove download sidecar", "path", sidecarPath, "error", removeErr)
+	}
 	changeOwnership(finalPath)
 	return finalPath, nil
 
@@ -266,94 +294,85 @@ func CreateNfoFile(podcast *db.Podcast) error {
 	return os.WriteFile(finalPath, []byte(toPersist), 0o644)
 }
 
-// DownloadPodcastCoverImage handles the corresponding operation.
+// DownloadPodcastCoverImage saves a podcast's cover image.
 func DownloadPodcastCoverImage(link string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
-	client := httpClient()
-	req, err := getRequest(link)
-	if err != nil {
-		logError("error creating request", err, "url", link)
-		return "", err
-	}
-
-	resp, err := doRequestWithHostLimit(client, req)
-	if err != nil {
-		logError("error getting response", err, "url", link)
-		return "", err
-	}
-
-	fileName := getFileName(link, "folder", ".jpg")
-	folder := createImagesFolderIfNotExists(podcastName)
-
-	finalPath := path.Join(folder, fileName)
-	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
-		changeOwnership(finalPath)
-		return finalPath, nil
-	}
-
-	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
-	file, err := os.Create(finalPath)
-	if err != nil {
-		logError("error creating file", err, "path", finalPath, "url", link)
-		return "", err
-	}
-	defer resp.Body.Close()
-	_, erra := io.Copy(file, resp.Body)
-	defer file.Close()
-	if erra != nil {
-		logError("error saving file", erra, "path", finalPath, "url", link)
-		return "", erra
-	}
-	changeOwnership(finalPath)
-	return finalPath, nil
+	finalPath := path.Join(createImagesFolderIfNotExists(podcastName), getFileName(link, "folder", ".jpg"))
+	return downloadImageFile(link, finalPath)
 }
 
-// DownloadImage handles the corresponding operation.
+// DownloadImage saves an episode image under the podcast's image folder.
 func DownloadImage(link string, episodeID string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
-	client := httpClient()
+	finalPath := path.Join(createImagesFolderIfNotExists(podcastName), getFileName(link, episodeID, ".jpg"))
+	return downloadImageFile(link, finalPath)
+}
+
+// maxImageDownloadBytes caps one image download; artwork is far smaller, and an
+// unbounded response could fill the disk.
+var maxImageDownloadBytes int64 = 20 << 20
+
+// downloadImageFile saves link to finalPath unless the file already exists. It
+// requires a 2xx response, caps the size and writes through a temporary file,
+// so an error page or a cut-off response is never kept as an image.
+func downloadImageFile(link, finalPath string) (string, error) {
+	if info, err := os.Stat(finalPath); err == nil && !info.IsDir() {
+		changeOwnership(finalPath)
+		return finalPath, nil
+	}
 	req, err := getRequest(link)
 	if err != nil {
 		logError("error creating request", err, "url", link)
 		return "", err
 	}
-
-	resp, err := doRequestWithHostLimit(client, req)
+	resp, err := doRequestWithHostLimit(httpClient(), req)
 	if err != nil {
 		logError("error getting response", err, "url", link)
 		return "", err
 	}
-
-	fileName := getFileName(link, episodeID, ".jpg")
-	imageFolder := createImagesFolderIfNotExists(podcastName)
-	finalPath := path.Join(imageFolder, fileName)
-
-	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
-		changeOwnership(finalPath)
-		return finalPath, nil
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", &DownloadHTTPError{StatusCode: resp.StatusCode, Status: resp.Status, URL: link}
+	}
+	if resp.ContentLength > maxImageDownloadBytes {
+		return "", fmt.Errorf("image is %d bytes, over the %d byte limit: %s", resp.ContentLength, maxImageDownloadBytes, link)
 	}
 
+	partial := finalPath + ".partial"
 	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
-	file, err := os.Create(finalPath)
+	file, err := os.Create(partial)
 	if err != nil {
-		logError("error creating file", err, "path", finalPath, "url", link)
+		logError("error creating file", err, "path", partial, "url", link)
 		return "", err
 	}
-	defer resp.Body.Close()
-	_, erra := io.Copy(file, resp.Body)
-	defer file.Close()
-	if erra != nil {
-		logError("error saving file", erra, "path", finalPath, "url", link)
-		return "", erra
+	written, copyErr := io.Copy(file, io.LimitReader(resp.Body, maxImageDownloadBytes+1))
+	closeErr := file.Close()
+	switch {
+	case copyErr != nil:
+		err = copyErr
+	case closeErr != nil:
+		err = closeErr
+	case written > maxImageDownloadBytes:
+		err = fmt.Errorf("image is over the %d byte limit: %s", maxImageDownloadBytes, link)
+	case written == 0:
+		err = fmt.Errorf("image response was empty: %s", link)
+	}
+	if err == nil {
+		err = os.Rename(partial, finalPath)
+	}
+	if err != nil {
+		_ = os.Remove(partial)
+		logError("error saving image", err, "path", finalPath, "url", link)
+		return "", err
 	}
 	changeOwnership(finalPath)
 	return finalPath, nil
-
 }
+
 func changeOwnership(path string) {
 	uid, err1 := strconv.Atoi(os.Getenv("PUID"))
 	gid, err2 := strconv.Atoi(os.Getenv("PGID"))
@@ -404,18 +423,31 @@ func FileExists(filePath string) bool {
 
 }
 
-// GetAllBackupFiles handles the corresponding operation.
+// GetAllBackupFiles lists the scheduled backup archives, newest first. Other
+// files in the backups folder are ignored, so pruning never removes them.
 func GetAllBackupFiles() ([]string, error) {
 	var files []string
 	folder := createConfigFolderIfNotExists("backups")
 	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && isBackupArchiveName(info.Name()) {
 			files = append(files, path)
 		}
 		return nil
 	})
 	sort.Sort(sort.Reverse(sort.StringSlice(files)))
 	return files, err
+}
+
+const (
+	backupArchivePrefix = "briefcast_backup_"
+	backupArchiveSuffix = ".tar.gz"
+)
+
+func isBackupArchiveName(name string) bool {
+	return strings.HasPrefix(name, backupArchivePrefix) && strings.HasSuffix(name, backupArchiveSuffix)
 }
 
 // GetFileSize handles the corresponding operation.
@@ -471,39 +503,86 @@ func GetFileSizeFromURL(url string) (int64, error) {
 	return int64(size), nil
 }
 
-// CreateBackup handles the corresponding operation.
+// ErrBackupSkipped reports that the scheduled backup does not cover this database.
+var ErrBackupSkipped = errors.New("scheduled backup skipped")
+
+// CreateBackup writes a consistent snapshot of the SQLite database, taken with
+// VACUUM INTO, to a tar.gz under $CONFIG/backups and keeps the newest five.
+// On Postgres it does nothing: use pg_dump (see docs/backup-and-restore.md).
 func CreateBackup() (string, error) {
-	backupFileName := "briefcast_backup_" + backupNow().Format("2006.01.02_150405") + ".tar.gz"
+	if db.CurrentDriver() != db.DriverSQLite {
+		Logger.Infow("scheduled backup skipped: it covers SQLite only; back up Postgres with pg_dump", "driver", db.CurrentDriver())
+		return "", ErrBackupSkipped
+	}
+	dbPath, err := db.SQLiteFilePath()
+	if err != nil {
+		return "", err
+	}
+
+	backupFileName := backupArchivePrefix + backupNow().Format("2006.01.02_150405") + backupArchiveSuffix
 	folder := createConfigFolderIfNotExists("backups")
-	configPath := os.Getenv("CONFIG")
-	tarballFilePath := path.Join(folder, backupFileName)
-	// #nosec G304 -- backup destination is under configured app config directory.
-	file, err := os.Create(tarballFilePath)
-	if err != nil {
-		return "", fmt.Errorf("could not create tarball file %q: %w", tarballFilePath, err)
-	}
-	defer file.Close()
+	tarballFilePath := filepath.Join(folder, backupFileName)
+	snapshotPath := tarballFilePath + ".db.partial"
+	partialTarball := tarballFilePath + ".partial"
+	defer func() {
+		for _, leftover := range []string{snapshotPath, partialTarball} {
+			if removeErr := os.Remove(leftover); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+				Logger.Warnw("could not remove partial backup file", "path", leftover, "error", removeErr)
+			}
+		}
+	}()
 
-	dbPath := path.Join(configPath, "briefcast.db")
-	// #nosec G703 -- dbPath is rooted at configured app config directory.
-	_, err = os.Stat(dbPath)
-	if err != nil {
-		return "", fmt.Errorf("could not find db file %q: %w", dbPath, err)
+	started := time.Now()
+	if err := db.SQLiteSnapshot(snapshotPath); err != nil {
+		return "", fmt.Errorf("could not snapshot database: %w", err)
 	}
+	// The archive entry keeps the database's own path, as before.
+	if err := writeBackupTarball(partialTarball, snapshotPath, dbPath); err != nil {
+		return "", err
+	}
+	if err := os.Rename(partialTarball, tarballFilePath); err != nil {
+		return "", fmt.Errorf("could not finish backup %q: %w", tarballFilePath, err)
+	}
+	Logger.Infow("backup created", "file", backupFileName, "duration_ms", time.Since(started).Milliseconds())
+	deleteOldBackup()
+	return backupFileName, nil
+}
+
+// writeBackupTarball archives source under entryName, checking every close so a
+// truncated archive is reported instead of kept.
+func writeBackupTarball(destination, source, entryName string) (err error) {
+	// #nosec G304 -- destination is under the configured app config directory.
+	file, err := os.Create(destination)
+	if err != nil {
+		return fmt.Errorf("could not create tarball file %q: %w", destination, err)
+	}
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("could not close tarball file %q: %w", destination, closeErr)
+		}
+	}()
 	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
-
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
-
-	err = addFileToTarWriter(dbPath, tarWriter)
-	if err == nil {
-		deleteOldBackup()
+	if err := addFileToTarWriterAs(source, entryName, tarWriter); err != nil {
+		return err
 	}
-	return backupFileName, err
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("could not finish tar stream: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("could not finish gzip stream: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("could not flush tarball file %q: %w", destination, err)
+	}
+	return nil
 }
 
 func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
+	return addFileToTarWriterAs(filePath, filePath, tarWriter)
+}
+
+func addFileToTarWriterAs(filePath string, entryName string, tarWriter *tar.Writer) error {
 	// #nosec G304,G703 -- filePath is a generated internal backup input path.
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -517,7 +596,7 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 	}
 
 	header := &tar.Header{
-		Name:    filePath,
+		Name:    entryName,
 		Size:    stat.Size(),
 		Mode:    int64(stat.Mode()),
 		ModTime: stat.ModTime(),
@@ -538,11 +617,8 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 func httpClient() *http.Client {
 	timeoutSeconds := getEnvInt(httpTimeoutEnv, defaultHTTPTimeoutSeconds)
 	client := http.Client{
-		Transport: outboundHTTPTransport(outboundPurposeHTTP),
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			_, err := validateOutboundURL(r.URL.String(), outboundPurposeHTTP)
-			return err
-		},
+		Transport:     outboundHTTPTransport(outboundPurposeHTTP),
+		CheckRedirect: checkOutboundRedirect(outboundPurposeHTTP),
 	}
 	if timeoutSeconds > 0 {
 		client.Timeout = time.Duration(timeoutSeconds) * time.Second

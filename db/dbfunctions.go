@@ -43,9 +43,38 @@ func GetAllPodcastItems(podcasts *[]PodcastItem) error {
 
 // GetAllPodcastItemsWithoutSize handles the corresponding operation.
 func GetAllPodcastItemsWithoutSize() (*[]PodcastItem, error) {
+	return GetPodcastItemsWithoutSize(0)
+}
+
+// GetPodcastItemsWithoutSize lists up to limit episodes (0 for all) whose size
+// is unknown, newest first, reading only the columns a size check needs.
+func GetPodcastItemsWithoutSize(limit int) (*[]PodcastItem, error) {
 	var podcasts []PodcastItem
-	result := DB.Where("file_size<=?", 0).Order("pub_date desc").Find(&podcasts)
+	query := DB.Select("id", "download_status", "download_path", "file_url", "pub_date").
+		Where("file_size<=?", 0).Order("pub_date desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	result := query.Find(&podcasts)
 	return &podcasts, result.Error
+}
+
+// PodcastItemMedia is the subset of an episode the media and image routes serve.
+type PodcastItemMedia struct {
+	ID           string
+	Image        string
+	LocalImage   string
+	DownloadPath string
+	FileURL      string
+}
+
+// GetPodcastItemMediaByID loads only the columns needed to serve an episode's
+// audio or image, so a Range request does not read the transcript.
+func GetPodcastItemMediaByID(id string) (PodcastItemMedia, error) {
+	var media PodcastItemMedia
+	result := DB.Model(&PodcastItem{}).Select("id", "image", "local_image", "download_path", "file_url").
+		Where("id = ?", id).Take(&media)
+	return media, result.Error
 }
 
 func getSortOrder(sorting model.EpisodeSort) string {
@@ -179,10 +208,19 @@ func DeletePodcastItemByID(id string) error {
 	})
 }
 
-// DeletePodcastByID handles the corresponding operation.
+// DeletePodcastByID deletes a podcast and everything that belongs to it in one
+// transaction: its episodes, their Markdown revisions and show-note links, and
+// its tag links. Either all of it is gone or none of it is.
 func DeletePodcastByID(id string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("podcast_id = ?", id).Delete(&ShowNoteLink{}).Error; err != nil {
+		episodeIDs := tx.Model(&PodcastItem{}).Select("id").Where("podcast_id = ?", id)
+		if err := tx.Where("episode_id IN (?)", episodeIDs).Delete(&MarkdownRevision{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("podcast_id = ? OR podcast_item_id IN (?)", id, episodeIDs).Delete(&ShowNoteLink{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("podcast_id = ?", id).Delete(&PodcastItem{}).Error; err != nil {
 			return err
 		}
 		// Postgres enforces this foreign key, so a leftover tag link blocks the delete.
@@ -191,6 +229,20 @@ func DeletePodcastByID(id string) error {
 		}
 		return tx.Where("id=?", id).Delete(&Podcast{}).Error
 	})
+}
+
+// PodcastItemAssetPaths is the subset of an episode needed to remove its files.
+type PodcastItemAssetPaths struct {
+	ID           string
+	DownloadPath string
+	LocalImage   string
+}
+
+// GetPodcastItemAssetPaths lists a podcast's episode file paths without loading transcripts.
+func GetPodcastItemAssetPaths(podcastID string) ([]PodcastItemAssetPaths, error) {
+	var paths []PodcastItemAssetPaths
+	result := DB.Model(&PodcastItem{}).Select("id", "download_path", "local_image").Where("podcast_id = ?", podcastID).Find(&paths)
+	return paths, result.Error
 }
 
 // DeleteTagByID handles the corresponding operation.
@@ -315,6 +367,17 @@ func GetAllPodcastItemsToBeDownloaded() (*[]PodcastItem, error) {
 type DownloadedItemPath struct {
 	ID           string
 	DownloadPath string
+}
+
+// GetOtherPodcastItemIDByDownloadPath returns the ID of an episode other than
+// excludeID whose download_path is filePath, or "" when there is none.
+func GetOtherPodcastItemIDByDownloadPath(filePath string, excludeID string) (string, error) {
+	var ids []string
+	result := DB.Model(&PodcastItem{}).Where("download_path = ? AND id <> ?", filePath, excludeID).Limit(1).Pluck("id", &ids)
+	if result.Error != nil || len(ids) == 0 {
+		return "", result.Error
+	}
+	return ids[0], nil
 }
 
 // GetDownloadedItemPaths lists downloaded episodes without loading their transcripts.
@@ -558,6 +621,21 @@ func CreatePodcast(podcast *Podcast) error {
 	return tx.Error
 }
 
+// PodcastItemExists reports whether an episode row exists.
+func PodcastItemExists(id string) (bool, error) {
+	var count int64
+	err := DB.Model(&PodcastItem{}).Where("id = ?", id).Count(&count).Error
+	return count > 0, err
+}
+
+// PodcastItemExistsWithGUID reports whether the podcast already has an episode
+// with this GUID.
+func PodcastItemExistsWithGUID(podcastID, guid string) (bool, error) {
+	var count int64
+	err := DB.Model(&PodcastItem{}).Where("podcast_id = ? AND guid = ?", podcastID, guid).Count(&count).Error
+	return count > 0, err
+}
+
 // CreatePodcastItem handles the corresponding operation.
 func CreatePodcastItem(podcastItem *PodcastItem) error {
 	tx := DB.Omit("Podcast").Create(&podcastItem)
@@ -570,20 +648,13 @@ func UpdatePodcast(podcast *Podcast) error {
 	return tx.Error
 }
 
-// UpdatePodcastItem handles the corresponding operation.
-func UpdatePodcastItem(podcastItem *PodcastItem) error {
-	// GORM's slow/error SQL logs can contain entire transcripts and retained
-	// prompts. Callers receive the error and log safe contextual identifiers.
-	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Omit("Podcast").Save(&podcastItem)
-	return tx.Error
-}
-
 // UpdatePodcastItemColumns writes only the given columns, so a change made to any
 // other column since the caller read the episode is kept. Keys are column names.
 // Unlike UpdatePodcastItem it cannot recreate a deleted episode: it returns
 // gorm.ErrRecordNotFound when no row matches id.
 func UpdatePodcastItemColumns(id string, columns map[string]interface{}) error {
-	// Silent for the same reason as UpdatePodcastItem: values can be whole transcripts.
+	// GORM's slow/error SQL logs can contain entire transcripts and retained
+	// prompts. Callers receive the error and log safe contextual identifiers.
 	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
 		Model(&PodcastItem{}).Where("id = ?", id).Updates(columns)
 	if tx.Error != nil {
@@ -781,7 +852,8 @@ func RefreshLockByID(id string, duration int) error {
 	if duration > 0 {
 		updates["duration"] = duration
 	}
-	return DB.Model(&JobLock{}).Where("id = ?", id).Updates(updates).Error
+	// duration > 0: a released lock is never brought back by a late renewal.
+	return DB.Model(&JobLock{}).Where("id = ? AND duration > 0", id).Updates(updates).Error
 }
 
 // Unlock releases all rows for a named lock.

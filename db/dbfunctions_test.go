@@ -145,7 +145,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	itemA1.Image = "https://example.com/a1.jpg"
 	itemA1.ChaptersJSON = `{"chapters":[{"title":"Topic match","startTime":5}]}`
 	itemA1.TranscriptJSON = `{"segments":[{"start":12,"text":"keyword transcript"}]}`
-	if err := UpdatePodcastItem(&itemA1); err != nil {
+	if err := savePodcastItemFixture(&itemA1); err != nil {
 		t.Fatalf("update itemA1 failed: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestPodcastAndItemQueries(t *testing.T) {
 	itemA3 := newPodcastItem(t, podcastA.ID, "a-3", "Episode A3", Deleted, now.Add(-30*time.Minute))
 	itemB1 := newPodcastItem(t, podcastB.ID, "b-1", "Episode B1", Paused, now.Add(-90*time.Minute))
 	itemB1.IsPlayed = true
-	if err := UpdatePodcastItem(&itemB1); err != nil {
+	if err := savePodcastItemFixture(&itemB1); err != nil {
 		t.Fatalf("update itemB1 failed: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestEpisodeFavoriteFiltersAndSummaryFavoriteSync(t *testing.T) {
 	bookmarked.BookmarkDate = now
 	bookmarked.LLMSummary = "bookmarked summary"
 	bookmarked.LLMSummaryStatus = "available"
-	if err := UpdatePodcastItem(&bookmarked); err != nil {
+	if err := savePodcastItemFixture(&bookmarked); err != nil {
 		t.Fatalf("update bookmarked item failed: %v", err)
 	}
 
@@ -408,14 +408,14 @@ func TestEpisodeFavoriteFiltersAndSummaryFavoriteSync(t *testing.T) {
 	summaryFavorited.IsSummaryFavorited = true
 	summaryFavorited.LLMSummary = "summary favorite"
 	summaryFavorited.LLMSummaryStatus = "available"
-	if err := UpdatePodcastItem(&summaryFavorited); err != nil {
+	if err := savePodcastItemFixture(&summaryFavorited); err != nil {
 		t.Fatalf("update summary-favorited item failed: %v", err)
 	}
 
 	plain := newPodcastItem(t, podcast.ID, "fav-3", "Plain Episode", Downloaded, now.Add(-time.Hour))
 	plain.LLMSummary = "plain summary"
 	plain.LLMSummaryStatus = "available"
-	if err := UpdatePodcastItem(&plain); err != nil {
+	if err := savePodcastItemFixture(&plain); err != nil {
 		t.Fatalf("update plain item failed: %v", err)
 	}
 
@@ -492,7 +492,7 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	item.ChaptersJSON = `{"chapters":[{"title":"Keyword chapter","startTime":3}]}`
 	item.TranscriptJSON = `{"segments":[{"start":1,"text":"keyword transcript"}]}`
 	item.FileSize = 321
-	if err := UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item failed: %v", err)
 	}
 
@@ -611,7 +611,7 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	pending.DownloadPath = filepath.Join(t.TempDir(), "audio.mp3")
 	pending.TranscriptStatus = "pending_whisperx"
 	pending.TranscriptJSON = ""
-	if err := UpdatePodcastItem(&pending); err != nil {
+	if err := savePodcastItemFixture(&pending); err != nil {
 		t.Fatalf("failed to create pending transcript item: %v", err)
 	}
 
@@ -619,7 +619,7 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	processing.DownloadPath = filepath.Join(t.TempDir(), "audio-processing.mp3")
 	processing.TranscriptStatus = "processing"
 	processing.TranscriptJSON = ""
-	if err := UpdatePodcastItem(&processing); err != nil {
+	if err := savePodcastItemFixture(&processing); err != nil {
 		t.Fatalf("failed to create processing transcript item: %v", err)
 	}
 
@@ -629,7 +629,7 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	failedReady.TranscriptJSON = ""
 	readyAt := time.Now().UTC().Add(-30 * time.Second)
 	failedReady.TranscriptNextAttempt = &readyAt
-	if err := UpdatePodcastItem(&failedReady); err != nil {
+	if err := savePodcastItemFixture(&failedReady); err != nil {
 		t.Fatalf("failed to create failed-ready transcript item: %v", err)
 	}
 
@@ -639,7 +639,7 @@ func TestSettingsLocksTagsAndSearchHelpers(t *testing.T) {
 	failedFuture.TranscriptJSON = ""
 	futureAt := time.Now().UTC().Add(10 * time.Minute)
 	failedFuture.TranscriptNextAttempt = &futureAt
-	if err := UpdatePodcastItem(&failedFuture); err != nil {
+	if err := savePodcastItemFixture(&failedFuture); err != nil {
 		t.Fatalf("failed to create failed-future transcript item: %v", err)
 	}
 
@@ -680,7 +680,7 @@ func TestGetPodcastItemsForWhisperxResumesProcessingBeforePending(t *testing.T) 
 	pending.DownloadPath = filepath.Join(t.TempDir(), "pending.mp3")
 	pending.TranscriptStatus = "pending_whisperx"
 	pending.TranscriptJSON = ""
-	if err := UpdatePodcastItem(&pending); err != nil {
+	if err := savePodcastItemFixture(&pending); err != nil {
 		t.Fatalf("failed to create pending transcript item: %v", err)
 	}
 
@@ -688,7 +688,7 @@ func TestGetPodcastItemsForWhisperxResumesProcessingBeforePending(t *testing.T) 
 	processing.DownloadPath = filepath.Join(t.TempDir(), "processing.mp3")
 	processing.TranscriptStatus = "processing"
 	processing.TranscriptJSON = ""
-	if err := UpdatePodcastItem(&processing); err != nil {
+	if err := savePodcastItemFixture(&processing); err != nil {
 		t.Fatalf("failed to create processing transcript item: %v", err)
 	}
 
@@ -905,7 +905,7 @@ func TestDatabaseWrapperCoveragePaths(t *testing.T) {
 	item := newPodcastItem(t, podcast.ID, "wrapper-1", "Wrapper Episode", Downloaded, time.Now().UTC())
 	item.Image = "https://example.com/wrapper.jpg"
 	item.LocalImage = ""
-	if err := UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update wrapper item image fields: %v", err)
 	}
 

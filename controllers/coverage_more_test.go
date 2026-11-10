@@ -46,7 +46,7 @@ func TestEpisodeMediaDoesNotServeLocalPathsOutsideAssets(t *testing.T) {
 	item.Image = "https://example.com/fallback.jpg"
 	item.DownloadPath = outsideAudio
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with outside paths: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestEpisodeMediaDoesNotServeAssetDirectories(t *testing.T) {
 	item.Image = "https://example.com/fallback.jpg"
 	item.DownloadPath = dataDir
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with directory paths: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestEpisodeMediaRejectsUnsafeFallbackRedirects(t *testing.T) {
 	item.Image = "javascript:alert(1)"
 	item.DownloadPath = ""
 	item.FileURL = "file:///etc/passwd"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with unsafe fallback URLs: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestEpisodeMediaAndPodcastItemActionBranches(t *testing.T) {
 	defer audioServer.Close()
 
 	item.FileURL = audioServer.URL + "/audio.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist controller test item update: %v", err)
 	}
 
@@ -214,7 +214,7 @@ func TestDownloadControllerResumeAndCancelBranches(t *testing.T) {
 
 	item.FileURL = audioServer.URL + "/audio.mp3"
 	item.DownloadStatus = db.NotDownloaded
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update queue item: %v", err)
 	}
 
@@ -271,10 +271,8 @@ func TestBackupsAndRssErrorBranches(t *testing.T) {
 		t.Fatalf("failed to create valid backup file: %v", err)
 	}
 
-	resp := performRequest(router, http.MethodGet, "/backups", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 from backups endpoint, got %d", resp.Code)
-	}
+	// The legacy /backups page was removed (P20); only the RSS branch remains.
+	var resp *httptest.ResponseRecorder
 
 	sqlDB, err := db.DB.DB()
 	if err != nil {
@@ -300,12 +298,5 @@ func TestAddPodcastGenericErrorBranches(t *testing.T) {
 	})
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 from add podcast generic error branch, got %d", resp.Code)
-	}
-
-	resp = performRequest(router, http.MethodPost, "/add-new", strings.NewReader("url=http://127.0.0.1:1/feed.xml"), map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	})
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 from add-new generic error branch, got %d", resp.Code)
 	}
 }
