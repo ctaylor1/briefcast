@@ -56,7 +56,7 @@ func TestExportTranscriptAndSummaryUseAssetsLayout(t *testing.T) {
 	item.Podcast = podcast
 	item.CanonicalTranscript = "transcript text"
 	item.LLMSummary = "summary text"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update export item: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestExportEpisodeFileNameSkipsMissingPubDate(t *testing.T) {
 	podcast := createPodcast(t, "No Date Podcast", false)
 	item := createServicePodcastItem(t, podcast, "No Date Episode", db.Downloaded)
 	item.PubDate = time.Time{}
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update no-date item: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestExportAllUsesAssetsLayout(t *testing.T) {
 	item.PubDate = time.Date(2024, 4, 6, 0, 0, 0, 0, time.UTC)
 	item.CanonicalTranscript = "all transcript"
 	item.LLMSummary = "all summary"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update podcast item: %v", err)
 	}
 
@@ -146,7 +146,7 @@ func TestExportAllBackfillsCanonicalTranscriptFromTranscriptJSON(t *testing.T) {
 	item.TranscriptJSON = `{"segments":[{"speaker":"host","start":0,"end":1,"text":"Legacy transcript text."}]}`
 	item.CanonicalTranscript = ""
 	item.CanonicalTranscriptVersion = 0
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update podcast item: %v", err)
 	}
 

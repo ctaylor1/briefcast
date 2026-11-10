@@ -31,7 +31,7 @@ func markdownTestItem(t *testing.T) db.PodcastItem {
 	item.CanonicalTranscript = "SPEAKER_01: A qualified claim."
 	item.CanonicalTranscriptVersion = canonicalTranscriptVersionCurrent
 	item.LLMSummary = "## Takeaways\n\nA qualified claim."
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatal(err)
 	}
 	return item

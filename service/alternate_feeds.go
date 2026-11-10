@@ -78,7 +78,9 @@ func ResolveAlternateFileURLs(podcast *db.Podcast) error {
 			}
 			existing = append(existing, enclosureURL)
 			item.AlternateFileURLs = MarshalAlternateURLs(existing)
-			if err := db.UpdatePodcastItem(item); err != nil {
+			if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+				"alternate_file_urls": item.AlternateFileURLs,
+			}); err != nil {
 				Logger.Warnw("failed to save alternate file URL", "podcast_item_id", item.ID, "error", err)
 			}
 		}

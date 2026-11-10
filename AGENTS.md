@@ -223,8 +223,9 @@ Each backlog item should include:
   title without a test that proves no other podcast's files are affected.
 - Treat only `fs.ErrNotExist` as "file is gone". Any other stat error means "unknown":
   do not change database state because of it.
-- Write episode state with `db.UpdatePodcastItemColumns`. Do not add new callers of
-  `db.UpdatePodcastItem`: it rewrites the whole row and can recreate a deleted episode.
+- Write episode state with `db.UpdatePodcastItemColumns`, naming only the columns the code
+  owns. The whole-row `db.UpdatePodcastItem` was removed: it overwrote concurrent changes and
+  could recreate a deleted episode. Tests set up rows with `savePodcastItemFixture`.
 - Start background goroutines with `service.SafeGo`. Clear any "running" flag in a
   `defer`, because a contained panic skips ordinary cleanup code.
 - New state-changing routes use POST, PATCH or DELETE. Do not add GET routes with side

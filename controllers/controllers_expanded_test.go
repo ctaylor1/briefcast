@@ -168,7 +168,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 	}
 	item.DownloadPath = episodeFilePath
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item paths failed: %v", err)
 	}
 
@@ -372,7 +372,7 @@ func TestPodcastAndPagesHandlersCoverage(t *testing.T) {
 		t.Fatalf("GET /podcastitems/:id/file local expected 200, got %d", resp.Code)
 	}
 	item.DownloadPath = filepath.Join(os.TempDir(), "missing-controller-episode.mp3")
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item missing download path failed: %v", err)
 	}
 	resp = performRequest(router, http.MethodGet, "/podcastitems/"+item.ID+"/file", nil, nil)

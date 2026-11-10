@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ctaylor1/briefcast/db"
 	pm "github.com/ctaylor1/briefcast/internal/podcastmarkdown"
 	"github.com/ctaylor1/briefcast/service"
 )
@@ -18,7 +17,7 @@ func TestMarkdownUIExportsUseSameServerDocuments(t *testing.T) {
 	setupControllersTestDB(t)
 	_, item := createControllerPodcastAndItem(t)
 	item.LLMSummary = "## Takeaway\n\nA qualification."
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatal(err)
 	}
 	router := makeRouter()

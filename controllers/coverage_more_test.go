@@ -46,7 +46,7 @@ func TestEpisodeMediaDoesNotServeLocalPathsOutsideAssets(t *testing.T) {
 	item.Image = "https://example.com/fallback.jpg"
 	item.DownloadPath = outsideAudio
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with outside paths: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestEpisodeMediaDoesNotServeAssetDirectories(t *testing.T) {
 	item.Image = "https://example.com/fallback.jpg"
 	item.DownloadPath = dataDir
 	item.FileURL = "https://example.com/fallback.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with directory paths: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestEpisodeMediaRejectsUnsafeFallbackRedirects(t *testing.T) {
 	item.Image = "javascript:alert(1)"
 	item.DownloadPath = ""
 	item.FileURL = "file:///etc/passwd"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update item with unsafe fallback URLs: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestEpisodeMediaAndPodcastItemActionBranches(t *testing.T) {
 	defer audioServer.Close()
 
 	item.FileURL = audioServer.URL + "/audio.mp3"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist controller test item update: %v", err)
 	}
 
@@ -214,7 +214,7 @@ func TestDownloadControllerResumeAndCancelBranches(t *testing.T) {
 
 	item.FileURL = audioServer.URL + "/audio.mp3"
 	item.DownloadStatus = db.NotDownloaded
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update queue item: %v", err)
 	}
 

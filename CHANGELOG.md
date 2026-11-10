@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - Local transcription (`WHISPERX_BACKEND=local`) no longer deletes audio when an error message mentions a missing file or unreadable audio; a missing model or ffmpeg produced the same text. An episode is reset for re-download only when its audio file is confirmed missing, and other failures, including unexpected stat errors, schedule a retry.
 - Podcast Index search gives up after 15 seconds instead of hanging on a stalled upstream, and goes through the outbound URL policy like other outbound requests.
 - A panic in request middleware, such as settings loading, now returns `500` instead of dropping the connection.
+- Transcription, summaries, alternate feed URLs and ID3 chapter updates now write only the columns they change. A long transcription or summary no longer undoes a "played" or bookmark change made while it ran, and an episode deleted during either job stays deleted instead of being recreated.
+- A summary is no longer generated from a transcript that failed to save.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

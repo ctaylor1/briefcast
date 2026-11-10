@@ -368,7 +368,16 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 			item.TranscriptProgressPct = 1
 			item.TranscriptProgressStage = "starting"
 		}
-		if err := db.UpdatePodcastItem(&item); err != nil {
+		if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"transcript_status":         item.TranscriptStatus,
+			"transcript_next_attempt":   item.TranscriptNextAttempt,
+			"transcript_progress_pct":   item.TranscriptProgressPct,
+			"transcript_progress_stage": item.TranscriptProgressStage,
+		}); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				jobLogger.Infow("skipping transcription: episode was deleted", "podcast_item_id", item.ID)
+				return
+			}
 			jobLogger.Warnw("failed to mark transcript processing", "podcast_item_id", item.ID, "error", err)
 		}
 
@@ -380,7 +389,11 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 				if !applyWhisperXProgressUpdate(&item, progress) {
 					return
 				}
-				if updateErr := db.UpdatePodcastItem(&item); updateErr != nil {
+				if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+					"transcript_progress_stage":  item.TranscriptProgressStage,
+					"transcript_progress_pct":    item.TranscriptProgressPct,
+					"transcript_checkpoint_json": item.TranscriptCheckpointJSON,
+				}); updateErr != nil {
 					jobLogger.Warnw(
 						"failed to persist transcript progress",
 						"podcast_item_id",
@@ -430,12 +443,36 @@ func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend 
 		item.TranscriptCheckpointJSON = ""
 		// Lineage: record which WhisperX model produced this transcript.
 		item.TranscriptModel = transcriptResultModel(output, cfg.Model)
-		if err := db.UpdatePodcastItem(&item); err != nil {
-			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", err)
-			setError(err)
+		saveErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"transcript_json":              item.TranscriptJSON,
+			"canonical_transcript":         item.CanonicalTranscript,
+			"canonical_transcript_version": item.CanonicalTranscriptVersion,
+			"canonical_updated_at":         item.CanonicalUpdatedAt,
+			"transcript_status":            item.TranscriptStatus,
+			"transcript_retry_count":       item.TranscriptRetryCount,
+			"transcript_next_attempt":      item.TranscriptNextAttempt,
+			"transcript_last_error":        item.TranscriptLastError,
+			"transcript_progress_pct":      item.TranscriptProgressPct,
+			"transcript_progress_stage":    item.TranscriptProgressStage,
+			"transcript_checkpoint_json":   item.TranscriptCheckpointJSON,
+			"transcript_model":             item.TranscriptModel,
+		})
+		if saveErr != nil {
+			if errors.Is(saveErr, gorm.ErrRecordNotFound) {
+				// The episode was deleted while it was transcribing. Saving the
+				// whole row used to recreate it; now the transcript is dropped.
+				jobLogger.Infow("discarding transcript: episode was deleted during transcription", "podcast_item_id", item.ID)
+				return
+			}
+			jobLogger.Warnw("failed to save transcript output", "podcast_item_id", item.ID, "error", saveErr)
+			setError(saveErr)
 		}
 
 		ExportTranscript(&item)
+		if saveErr != nil {
+			// A summary must only ever read a committed transcript.
+			return
+		}
 
 		// Summarize the transcript if LLM summarization is enabled.
 		llmCfg := LoadLLMConfig()
@@ -614,7 +651,19 @@ func resetItemForRedownload(item *db.PodcastItem, reason string, jobLogger *zap.
 	item.TranscriptRetryCount = 0
 	item.TranscriptNextAttempt = nil
 	item.TranscriptLastError = reason
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"download_status":            item.DownloadStatus,
+		"download_path":              item.DownloadPath,
+		"downloaded_bytes":           item.DownloadedBytes,
+		"download_total_bytes":       item.DownloadTotalBytes,
+		"transcript_status":          item.TranscriptStatus,
+		"transcript_progress_pct":    item.TranscriptProgressPct,
+		"transcript_progress_stage":  item.TranscriptProgressStage,
+		"transcript_checkpoint_json": item.TranscriptCheckpointJSON,
+		"transcript_retry_count":     item.TranscriptRetryCount,
+		"transcript_next_attempt":    item.TranscriptNextAttempt,
+		"transcript_last_error":      item.TranscriptLastError,
+	}); err != nil {
 		jobLogger.Warnw("failed to reset item for re-download", "podcast_item_id", item.ID, "error", err)
 	}
 }
@@ -648,7 +697,14 @@ func markLocalTranscriptRetry(item *db.PodcastItem, cfg WhisperXConfig, transcri
 		"retry_count", item.TranscriptRetryCount,
 		"next_attempt", item.TranscriptNextAttempt,
 	)
-	if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
+	if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"transcript_status":         item.TranscriptStatus,
+		"transcript_retry_count":    item.TranscriptRetryCount,
+		"transcript_last_error":     item.TranscriptLastError,
+		"transcript_next_attempt":   item.TranscriptNextAttempt,
+		"transcript_progress_stage": item.TranscriptProgressStage,
+		"transcript_progress_pct":   item.TranscriptProgressPct,
+	}); updateErr != nil {
 		jobLogger.Warnw("failed to mark transcript failure", "podcast_item_id", item.ID, "error", updateErr)
 	}
 }

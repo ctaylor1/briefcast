@@ -570,20 +570,13 @@ func UpdatePodcast(podcast *Podcast) error {
 	return tx.Error
 }
 
-// UpdatePodcastItem handles the corresponding operation.
-func UpdatePodcastItem(podcastItem *PodcastItem) error {
-	// GORM's slow/error SQL logs can contain entire transcripts and retained
-	// prompts. Callers receive the error and log safe contextual identifiers.
-	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Omit("Podcast").Save(&podcastItem)
-	return tx.Error
-}
-
 // UpdatePodcastItemColumns writes only the given columns, so a change made to any
 // other column since the caller read the episode is kept. Keys are column names.
 // Unlike UpdatePodcastItem it cannot recreate a deleted episode: it returns
 // gorm.ErrRecordNotFound when no row matches id.
 func UpdatePodcastItemColumns(id string, columns map[string]interface{}) error {
-	// Silent for the same reason as UpdatePodcastItem: values can be whole transcripts.
+	// GORM's slow/error SQL logs can contain entire transcripts and retained
+	// prompts. Callers receive the error and log safe contextual identifiers.
 	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
 		Model(&PodcastItem{}).Where("id = ?", id).Updates(columns)
 	if tx.Error != nil {

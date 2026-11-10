@@ -348,7 +348,7 @@ func TestRepairWorkEndpoints(t *testing.T) {
 	futureAttempt := time.Now().UTC().Add(time.Hour)
 	item.TranscriptNextAttempt = &futureAttempt
 	item.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update repair item: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestEpisodeMediaEndpoints(t *testing.T) {
 	item.BookmarkDate = time.Now().UTC()
 	item.LLMSummaryStatus = "available"
 	item.LLMSummary = "controller summary"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update favorited media item failed: %v", err)
 	}
 

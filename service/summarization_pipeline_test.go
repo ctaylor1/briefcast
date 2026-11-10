@@ -139,7 +139,7 @@ json.dump({"segments": [{"start": 0, "end": 1, "text": "Useful transcription."}]
 	item.DownloadPath = audioPath
 	item.TranscriptStatus = "pending_whisperx"
 	item.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("update episode: %v", err)
 	}
 	t.Setenv(whisperxEnabledEnv, "true")

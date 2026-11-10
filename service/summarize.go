@@ -367,7 +367,10 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 			item.LLMSummaryStatus = "failed"
 		}
 		item.LLMSummaryError = missingTranscriptErr.Error()
-		if err := db.UpdatePodcastItem(item); err != nil {
+		if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"llm_summary_status": item.LLMSummaryStatus,
+			"llm_summary_error":  item.LLMSummaryError,
+		}); err != nil {
 			return err
 		}
 		return missingTranscriptErr
@@ -386,7 +389,9 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	} else {
 		item.LLMSummaryStatus = "processing"
 	}
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"llm_summary_status": item.LLMSummaryStatus,
+	}); err != nil {
 		return err
 	}
 	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
@@ -397,7 +402,10 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 			item.LLMSummaryStatus = "failed"
 		}
 		item.LLMSummaryError = trimToLength(err.Error(), 1000)
-		if updateErr := db.UpdatePodcastItem(item); updateErr != nil {
+		if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"llm_summary_status": item.LLMSummaryStatus,
+			"llm_summary_error":  item.LLMSummaryError,
+		}); updateErr != nil {
 			jobLogger.Warnw("failed to mark summary failure", "podcast_item_id", item.ID, "error", updateErr)
 		}
 		return err
@@ -419,7 +427,15 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return err
 	}
 	item.SummaryProvenanceJSON = provenance
-	if err := db.UpdatePodcastItem(item); err != nil {
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+		"llm_summary":             item.LLMSummary,
+		"llm_summary_status":      item.LLMSummaryStatus,
+		"llm_summary_error":       item.LLMSummaryError,
+		"llm_summary_date":        item.LLMSummaryDate,
+		"llm_summary_model":       item.LLMSummaryModel,
+		"llm_summary_prompt":      item.LLMSummaryPrompt,
+		"summary_provenance_json": item.SummaryProvenanceJSON,
+	}); err != nil {
 		return err
 	}
 	ExportSummary(item)

@@ -91,7 +91,12 @@ func RefreshChaptersFromID3(item *db.PodcastItem) bool {
 	}
 
 	if updated {
-		if err := db.UpdatePodcastItem(item); err != nil {
+		if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+			"id3_tags_json":     item.ID3TagsJSON,
+			"id3_chapters_json": item.ID3ChaptersJSON,
+			"chapters_json":     item.ChaptersJSON,
+			"chapters_type":     item.ChaptersType,
+		}); err != nil {
 			Logger.Warnw("id3 metadata update failed", "podcast_item_id", item.ID, "error", err)
 		}
 	}

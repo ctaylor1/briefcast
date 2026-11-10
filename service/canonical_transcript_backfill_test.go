@@ -23,7 +23,7 @@ func TestBackfillCanonicalTranscripts(t *testing.T) {
 	needsBackfill.CanonicalTranscript = ""
 	needsBackfill.CanonicalTranscriptVersion = 0
 	needsBackfill.CanonicalUpdatedAt = nil
-	if err := db.UpdatePodcastItem(&needsBackfill); err != nil {
+	if err := savePodcastItemFixture(&needsBackfill); err != nil {
 		t.Fatalf("failed to seed backfill target item: %v", err)
 	}
 
@@ -32,7 +32,7 @@ func TestBackfillCanonicalTranscripts(t *testing.T) {
 	alreadyCanonical.TranscriptJSON = `{"segments":[{"start":0.0,"end":1.0,"text":"preset"}]}`
 	alreadyCanonical.CanonicalTranscript = "SPEAKER_00: preset"
 	alreadyCanonical.CanonicalTranscriptVersion = canonicalTranscriptVersionCurrent
-	if err := db.UpdatePodcastItem(&alreadyCanonical); err != nil {
+	if err := savePodcastItemFixture(&alreadyCanonical); err != nil {
 		t.Fatalf("failed to seed already canonical item: %v", err)
 	}
 

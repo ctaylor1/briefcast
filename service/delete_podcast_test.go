@@ -50,7 +50,7 @@ func seedDownloadedEpisode(t *testing.T, dataDir string, podcast db.Podcast, tit
 	item := createServicePodcastItem(t, podcast, title, db.Downloaded)
 	dir := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcast.Title))
 	item.DownloadPath = writeAssetFile(t, dir, title+".mp3")
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("persist episode path: %v", err)
 	}
 	return item

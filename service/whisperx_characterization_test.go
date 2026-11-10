@@ -246,7 +246,7 @@ print(json.dumps({"provider":"whisperx", "segments_pre_align":segments,
 	}
 	past := time.Now().UTC().Add(-time.Minute)
 	failed.TranscriptNextAttempt = &past
-	if err := db.UpdatePodcastItem(&failed); err != nil {
+	if err := savePodcastItemFixture(&failed); err != nil {
 		t.Fatal(err)
 	}
 	if err := TranscribePendingEpisodes(); err != nil {
@@ -408,6 +408,13 @@ print(json.dumps({"segments":[{"text":"Uncommitted transcript."}]}))
 	const callback = "characterize_reject_available_transcript"
 	if err := db.DB.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
 		if tx.Statement.Table != "podcast_items" {
+			return
+		}
+		// Column-scoped writes pass a map; whole-row writes pass the struct.
+		if updates, ok := tx.Statement.Dest.(map[string]interface{}); ok {
+			if updates["transcript_status"] == "available" {
+				tx.AddError(errors.New("injected transcript write failure"))
+			}
 			return
 		}
 		field := tx.Statement.Schema.LookUpField("TranscriptStatus")

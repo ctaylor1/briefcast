@@ -540,7 +540,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	duePending.TranscriptStatus = "pending_whisperx"
 	duePending.TranscriptJSON = ""
 	duePending.TranscriptNextAttempt = nil
-	if err := db.UpdatePodcastItem(&duePending); err != nil {
+	if err := savePodcastItemFixture(&duePending); err != nil {
 		t.Fatalf("failed to update due pending item: %v", err)
 	}
 
@@ -550,7 +550,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	dueFailed.TranscriptJSON = ""
 	dueAt := now.Add(-1 * time.Minute)
 	dueFailed.TranscriptNextAttempt = &dueAt
-	if err := db.UpdatePodcastItem(&dueFailed); err != nil {
+	if err := savePodcastItemFixture(&dueFailed); err != nil {
 		t.Fatalf("failed to update due failed item: %v", err)
 	}
 
@@ -560,7 +560,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	futureFailed.TranscriptJSON = ""
 	futureAt := now.Add(15 * time.Minute).UTC().Truncate(time.Second)
 	futureFailed.TranscriptNextAttempt = &futureAt
-	if err := db.UpdatePodcastItem(&futureFailed); err != nil {
+	if err := savePodcastItemFixture(&futureFailed); err != nil {
 		t.Fatalf("failed to update future failed item: %v", err)
 	}
 
@@ -569,7 +569,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	dueProcessing.TranscriptStatus = "processing"
 	dueProcessing.TranscriptJSON = ""
 	dueProcessing.TranscriptNextAttempt = nil
-	if err := db.UpdatePodcastItem(&dueProcessing); err != nil {
+	if err := savePodcastItemFixture(&dueProcessing); err != nil {
 		t.Fatalf("failed to update due processing item: %v", err)
 	}
 
@@ -577,7 +577,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	ineligibleNoPath.DownloadPath = ""
 	ineligibleNoPath.TranscriptStatus = "pending_whisperx"
 	ineligibleNoPath.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&ineligibleNoPath); err != nil {
+	if err := savePodcastItemFixture(&ineligibleNoPath); err != nil {
 		t.Fatalf("failed to update ineligible no-path item: %v", err)
 	}
 
@@ -585,7 +585,7 @@ func TestCollectWhisperXQueueSnapshot(t *testing.T) {
 	ineligibleHasTranscript.DownloadPath = filepath.Join(t.TempDir(), "ineligible-transcript.mp3")
 	ineligibleHasTranscript.TranscriptStatus = "failed"
 	ineligibleHasTranscript.TranscriptJSON = `{"segments":[]}`
-	if err := db.UpdatePodcastItem(&ineligibleHasTranscript); err != nil {
+	if err := savePodcastItemFixture(&ineligibleHasTranscript); err != nil {
 		t.Fatalf("failed to update ineligible transcript item: %v", err)
 	}
 

@@ -48,7 +48,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	successItem.DownloadPath = successAudio
 	successItem.TranscriptStatus = "pending_whisperx"
 	successItem.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&successItem); err != nil {
+	if err := savePodcastItemFixture(&successItem); err != nil {
 		t.Fatalf("failed to update success item: %v", err)
 	}
 
@@ -56,7 +56,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	missingItem.DownloadPath = missingAudio
 	missingItem.TranscriptStatus = "pending_whisperx"
 	missingItem.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&missingItem); err != nil {
+	if err := savePodcastItemFixture(&missingItem); err != nil {
 		t.Fatalf("failed to update missing item: %v", err)
 	}
 
@@ -64,7 +64,7 @@ json.dump({"segments":[{"start":0.0,"end":1.0,"text":"ok"}]}, sys.stdout)
 	failedItem.DownloadPath = failAudio
 	failedItem.TranscriptStatus = "failed"
 	failedItem.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&failedItem); err != nil {
+	if err := savePodcastItemFixture(&failedItem); err != nil {
 		t.Fatalf("failed to update failed item: %v", err)
 	}
 
@@ -163,7 +163,7 @@ json.dump({"segments":[]}, sys.stdout)
 	item.DownloadPath = audioPath
 	item.TranscriptStatus = "pending_whisperx"
 	item.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to update lock test item: %v", err)
 	}
 
@@ -267,7 +267,7 @@ func TestDeletePodcastWithoutDeletingExternalFiles(t *testing.T) {
 
 	item.DownloadPath = audioPath
 	item.LocalImage = imagePath
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist external file paths: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestEpisodeDeletionSkipsPathsOutsideAssets(t *testing.T) {
 	item := createServicePodcastItem(t, podcast, "skip-outside-delete-item", db.Downloaded)
 	audioPath, _ := writeOutsideAssetFiles(t)
 	item.DownloadPath = audioPath
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist outside episode path: %v", err)
 	}
 
@@ -318,7 +318,7 @@ func TestEpisodeDeletionSkipsPathsOutsideAssets(t *testing.T) {
 	episodesAudio, episodesImage := writeOutsideAssetFiles(t)
 	itemEpisodes.DownloadPath = episodesAudio
 	itemEpisodes.LocalImage = episodesImage
-	if err := db.UpdatePodcastItem(&itemEpisodes); err != nil {
+	if err := savePodcastItemFixture(&itemEpisodes); err != nil {
 		t.Fatalf("failed to persist outside episode paths: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestEpisodeDeletionSkipsPathsOutsideAssets(t *testing.T) {
 	deleteAudio, deleteImage := writeOutsideAssetFiles(t)
 	itemDelete.DownloadPath = deleteAudio
 	itemDelete.LocalImage = deleteImage
-	if err := db.UpdatePodcastItem(&itemDelete); err != nil {
+	if err := savePodcastItemFixture(&itemDelete); err != nil {
 		t.Fatalf("failed to persist outside delete paths: %v", err)
 	}
 
@@ -381,7 +381,7 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	pendingItem := createServicePodcastItem(t, podcast, "pending-transcript-default", db.NotDownloaded)
 	pendingItem.TranscriptStatus = ""
 	pendingItem.TranscriptJSON = ""
-	if err := db.UpdatePodcastItem(&pendingItem); err != nil {
+	if err := savePodcastItemFixture(&pendingItem); err != nil {
 		t.Fatalf("failed to persist pending item: %v", err)
 	}
 	if err := SetPodcastItemAsDownloaded(pendingItem.ID, audioPath); err != nil {
@@ -415,7 +415,7 @@ func TestSetPodcastItemAsDownloadedTranscriptDefaults(t *testing.T) {
 	availableItem := createServicePodcastItem(t, podcast, "already-has-transcript", db.NotDownloaded)
 	availableItem.TranscriptStatus = "available"
 	availableItem.TranscriptJSON = `{"segments":[]}`
-	if err := db.UpdatePodcastItem(&availableItem); err != nil {
+	if err := savePodcastItemFixture(&availableItem); err != nil {
 		t.Fatalf("failed to persist available item: %v", err)
 	}
 	if err := SetPodcastItemAsDownloaded(availableItem.ID, audioPath); err != nil {
@@ -652,7 +652,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	}
 	item.DownloadPath = mediaPath
 	item.LocalImage = imagePath
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("failed to persist delete-episodes paths: %v", err)
 	}
 
@@ -691,7 +691,7 @@ func TestDeletePodcastAndEpisodeDeleteBranches(t *testing.T) {
 	}
 	deleteItem.DownloadPath = deleteMedia
 	deleteItem.LocalImage = deleteImage
-	if err := db.UpdatePodcastItem(&deleteItem); err != nil {
+	if err := savePodcastItemFixture(&deleteItem); err != nil {
 		t.Fatalf("failed to persist delete podcast item paths: %v", err)
 	}
 

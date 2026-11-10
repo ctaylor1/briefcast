@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
@@ -97,7 +96,7 @@ func TestSummaryJobRejectsConcurrentStartAndReportsFailures(t *testing.T) {
 	setupControllersTestDB(t)
 	_, item := createControllerPodcastAndItem(t)
 	item.CanonicalTranscript = "some podcast content"
-	if err := db.UpdatePodcastItem(&item); err != nil {
+	if err := savePodcastItemFixture(&item); err != nil {
 		t.Fatalf("save transcript: %v", err)
 	}
 

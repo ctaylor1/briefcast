@@ -336,7 +336,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 		t.Fatalf("failed to create local image file: %v", err)
 	}
 	toDelete.LocalImage = localImagePath
-	if err := db.UpdatePodcastItem(&toDelete); err != nil {
+	if err := savePodcastItemFixture(&toDelete); err != nil {
 		t.Fatalf("failed to persist local image path: %v", err)
 	}
 	if err := DeleteEpisodeFile(toDelete.ID); err != nil {
@@ -367,7 +367,7 @@ func TestCheckMissingFilesAndDeleteEpisodeFileBranches(t *testing.T) {
 	missingPath := filepath.Join(dataDir, assetAudioDir, sanitizeAssetName(podcast.Title), "not-present.mp3")
 	missingPathItem.DownloadPath = missingPath
 	missingPathItem.DownloadStatus = db.Downloaded
-	if err := db.UpdatePodcastItem(&missingPathItem); err != nil {
+	if err := savePodcastItemFixture(&missingPathItem); err != nil {
 		t.Fatalf("failed to persist missing path item: %v", err)
 	}
 	if err := DeleteEpisodeFile(missingPathItem.ID); err != nil {
