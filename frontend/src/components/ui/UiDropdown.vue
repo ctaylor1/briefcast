@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/vue";
 import { computed } from "vue";
+import UiDropdownFit from "./UiDropdownFit.vue";
 
 // A button that opens a panel of actions. Built on Headless UI's Popover, so it closes on
 // Escape, on a click outside, and after any button or link inside it is used.
@@ -38,9 +39,11 @@ function closeAfterAction(event: MouseEvent, close: () => void): void {
       <slot name="trigger" :open="open">{{ label }}</slot>
     </PopoverButton>
     <PopoverPanel v-slot="{ close }" :class="menuClasses">
-      <div @click="closeAfterAction($event, close)">
-        <slot :close="close" />
-      </div>
+      <UiDropdownFit>
+        <div @click="closeAfterAction($event, close)">
+          <slot :close="close" />
+        </div>
+      </UiDropdownFit>
     </PopoverPanel>
   </Popover>
 </template>

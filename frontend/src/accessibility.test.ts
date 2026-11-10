@@ -55,6 +55,11 @@ describe("component templates", () => {
         if (/\baria-label(ledby)?=|:aria-label(ledby)?=/.test(attrs)) {
           continue;
         }
+        // Hidden from assistive tech and the tab order on purpose: a duplicate of a named
+        // control next to it (e.g. a cover image that repeats the title link).
+        if (/\baria-hidden="true"/.test(attrs) && /\btabindex="-1"/.test(attrs)) {
+          continue;
+        }
         if (isIconOnly(inner)) {
           problems.push(`${relative(srcDir, file)}: <${tag}${attrs.replace(/\s+/g, " ").slice(0, 80)}>`);
         }

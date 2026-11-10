@@ -6,6 +6,7 @@ import DownloadsView from "../views/DownloadsView.vue";
 import EpisodesView from "../views/EpisodesView.vue";
 import LinksView from "../views/LinksView.vue";
 import PlayerView from "../views/PlayerView.vue";
+import PodcastDetailView from "../views/PodcastDetailView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import SummariesView from "../views/SummariesView.vue";
 
@@ -17,6 +18,12 @@ const router = createRouter({
       name: "dashboard",
       component: DashboardView,
       meta: { title: "Podcasts" },
+    },
+    {
+      path: "/podcasts/:id",
+      name: "podcast",
+      component: PodcastDetailView,
+      meta: { title: "Podcast" },
     },
     {
       path: "/episodes",
