@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Podcast } from "../../types/api";
 import { formatDate } from "../../lib/format";
+import { podcastImageUrl } from "../../lib/api/paths";
 import UiBadge from "../ui/UiBadge.vue";
 import UiCard from "../ui/UiCard.vue";
 import UiIconButton from "../ui/UiIconButton.vue";
@@ -23,7 +24,7 @@ const emit = defineEmits<{
 }>();
 
 function getPodcastImage(id: string): string {
-  return `/podcasts/${id}/image`;
+  return podcastImageUrl(id);
 }
 </script>
 

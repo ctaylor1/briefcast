@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { marked } from "marked";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -601,7 +602,7 @@ onBeforeUnmount(() => {
             <p v-if="readerLoadingSummary" class="meta-text">Loading summary...</p>
             <template v-else-if="readerSummaryHtml">
               <div class="reader__body-actions">
-                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="`/podcastitems/${readerItem.id}/summary?format=markdown-package`">Download Markdown package</a>
+                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="episodeMarkdownPackageUrl(readerItem.id, 'summary')">Download Markdown package</a>
                 <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendSummaryToObsidian">
                   Send summary to Obsidian
                 </button>
@@ -619,7 +620,7 @@ onBeforeUnmount(() => {
             <p v-if="readerLoadingTranscript" class="meta-text">Loading transcript...</p>
             <template v-else-if="readerTranscriptText">
               <div class="reader__body-actions">
-                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="`/podcastitems/${readerItem.id}/transcript?format=markdown-package`">Download Markdown package</a>
+                <a v-if="readerItem" class="reader__obsidian-btn reader__obsidian-btn--inline" :href="episodeMarkdownPackageUrl(readerItem.id, 'transcript')">Download Markdown package</a>
                 <button type="button" class="reader__obsidian-btn reader__obsidian-btn--inline" @click="sendTranscriptToObsidian">
                   Send transcript to Obsidian
                 </button>

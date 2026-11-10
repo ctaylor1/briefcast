@@ -19,3 +19,20 @@ describe("PlayerView", () => {
     assert.equal(server.requests.length, 0);
   });
 });
+
+describe("PlayerView item IDs", () => {
+  it("ignores IDs that are not record IDs", async () => {
+    const id = "3f2a8c1e-1b2c-4d5e-8f90-0123456789ab";
+    server = fakeServer({
+      [`GET /podcastitems/${id}`]: () => ({ ID: id, Title: "Valid", Podcast: { ID: "p", Title: "Show" }, PubDate: "", Duration: 10 }),
+      [`GET /podcastitems/${id}/chapters`]: () => ({ source: "", chapters: [] }),
+    });
+    const router = await makeRouter(`/player?itemIds=${id},a%2Fdelete,..%2F..%2Fsettings`);
+    const wrapper = mount(PlayerView, { global: { plugins: [router] } });
+    await flushPromises();
+    const paths = server.requests.map((r) => r.url);
+    assert.ok(paths.includes(`/podcastitems/${id}`), paths.join(", "));
+    assert.ok(paths.every((p) => !p.includes("delete") && !p.includes("settings")), paths.join(", "));
+    wrapper.unmount();
+  });
+});

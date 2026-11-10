@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
@@ -552,7 +553,7 @@ onMounted(() => {
             <button type="button" class="drawer-action-link" @click="sendToClaude">
               Open in Claude
             </button>
-            <a v-if="drawerItem" class="drawer-action-link" :href="`/podcastitems/${drawerItem.ID}/transcript?format=markdown-package`">Download Markdown package</a>
+            <a v-if="drawerItem" class="drawer-action-link" :href="episodeMarkdownPackageUrl(drawerItem.ID, 'transcript')">Download Markdown package</a>
             <button type="button" class="drawer-action-link" @click="sendTranscriptToObsidian">
               Send to Obsidian
             </button>
@@ -605,7 +606,7 @@ onMounted(() => {
           <p v-else-if="drawerSummaryStatus !== 'available'" class="meta-text">{{ drawerSummarySummary() }}</p>
           <div v-else class="stack-3">
             <div class="drawer-transcript-actions">
-              <a v-if="drawerItem" class="drawer-action-link" :href="`/podcastitems/${drawerItem.ID}/summary?format=markdown-package`">Download Markdown package</a>
+              <a v-if="drawerItem" class="drawer-action-link" :href="episodeMarkdownPackageUrl(drawerItem.ID, 'summary')">Download Markdown package</a>
             <button type="button" class="drawer-action-link" @click="sendSummaryToObsidian">
                 Send to Obsidian
               </button>

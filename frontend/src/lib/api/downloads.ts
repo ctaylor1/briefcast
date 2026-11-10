@@ -1,5 +1,6 @@
 import type { DownloadQueueResponse } from "../../types/api";
 import { httpClient } from "./http";
+import { apiPath } from "./paths";
 
 export const downloadsApi = {
   getQueue(limit?: number): Promise<DownloadQueueResponse> {
@@ -18,9 +19,9 @@ export const downloadsApi = {
     return httpClient.post<void>("/downloads/cancel");
   },
   cancelEpisode(id: string): Promise<void> {
-    return httpClient.post<void>(`/podcastitems/${id}/cancel`);
+    return httpClient.post<void>(apiPath`/podcastitems/${id}/cancel`);
   },
   resumeEpisode(id: string): Promise<void> {
-    return httpClient.post<void>(`/podcastitems/${id}/resume`);
+    return httpClient.post<void>(apiPath`/podcastitems/${id}/resume`);
   },
 };

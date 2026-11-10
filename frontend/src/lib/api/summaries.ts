@@ -1,5 +1,6 @@
 import type { SummariesResponse, SummarySorting } from "../../types/api";
 import { httpClient } from "./http";
+import { apiPath } from "./paths";
 
 export interface SummaryListQuery {
   page: number;
@@ -30,10 +31,10 @@ export const summariesApi = {
   },
 
   favorite(id: string): Promise<void> {
-    return httpClient.post(`/summaries/${id}/favorite`);
+    return httpClient.post(apiPath`/summaries/${id}/favorite`);
   },
 
   unfavorite(id: string): Promise<void> {
-    return httpClient.post(`/summaries/${id}/unfavorite`);
+    return httpClient.post(apiPath`/summaries/${id}/unfavorite`);
   },
 };

@@ -1,5 +1,6 @@
 import type { ChaptersResponse, EpisodeLinksResponse, EpisodeSorting, EpisodesResponse, PodcastItem, SummaryResponse, TranscriptResponse } from "../../types/api";
 import { httpClient } from "./http";
+import { apiPath } from "./paths";
 
 export interface EpisodeListQuery {
   page: number;
@@ -37,27 +38,27 @@ export const episodesApi = {
     return httpClient.get<EpisodesResponse>("/podcastitems", { params });
   },
   getById(id: string): Promise<PodcastItem> {
-    return httpClient.get<PodcastItem>(`/podcastitems/${id}`);
+    return httpClient.get<PodcastItem>(apiPath`/podcastitems/${id}`);
   },
   setPlayed(id: string, played: boolean): Promise<void> {
-    return httpClient.patch<void>(`/podcastitems/${id}/${played ? "markPlayed" : "markUnplayed"}`);
+    return httpClient.patch<void>(apiPath`/podcastitems/${id}/${played ? "markPlayed" : "markUnplayed"}`);
   },
   setBookmarked(id: string, bookmarked: boolean): Promise<void> {
-    return httpClient.patch<void>(`/podcastitems/${id}/${bookmarked ? "bookmark" : "unbookmark"}`);
+    return httpClient.patch<void>(apiPath`/podcastitems/${id}/${bookmarked ? "bookmark" : "unbookmark"}`);
   },
   queueDownload(id: string): Promise<void> {
-    return httpClient.post<void>(`/podcastitems/${id}/download`);
+    return httpClient.post<void>(apiPath`/podcastitems/${id}/download`);
   },
   getChapters(id: string): Promise<ChaptersResponse> {
-    return httpClient.get<ChaptersResponse>(`/podcastitems/${id}/chapters`);
+    return httpClient.get<ChaptersResponse>(apiPath`/podcastitems/${id}/chapters`);
   },
   getTranscript(id: string): Promise<TranscriptResponse> {
-    return httpClient.get<TranscriptResponse>(`/podcastitems/${id}/transcript`);
+    return httpClient.get<TranscriptResponse>(apiPath`/podcastitems/${id}/transcript`);
   },
   getLinks(id: string): Promise<EpisodeLinksResponse> {
-    return httpClient.get<EpisodeLinksResponse>(`/podcastitems/${encodeURIComponent(id)}/links`);
+    return httpClient.get<EpisodeLinksResponse>(apiPath`/podcastitems/${id}/links`);
   },
   getSummary(id: string): Promise<SummaryResponse> {
-    return httpClient.get<SummaryResponse>(`/podcastitems/${id}/summary`);
+    return httpClient.get<SummaryResponse>(apiPath`/podcastitems/${id}/summary`);
   },
 };

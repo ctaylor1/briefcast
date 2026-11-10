@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { episodeImageUrl } from "../../lib/api/paths";
 import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
 import type { PodcastItem } from "../../types/api";
 import EpisodeTrackControls from "./EpisodeTrackControls.vue";
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 }>();
 
 function getImage(id: string): string {
-  return `/podcastitems/${id}/image`;
+  return episodeImageUrl(id);
 }
 
 function downloadStatusLabel(status: number): string {

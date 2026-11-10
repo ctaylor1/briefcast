@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { episodeAudioUrl, episodeImageUrl } from "../lib/api/paths";
+import { parseRecordIds } from "../lib/ids";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import UiAlert from "../components/ui/UiAlert.vue";
@@ -56,45 +58,19 @@ const currentSource = computed(() => {
   if (!activeItem.value) {
     return "";
   }
-  return `/podcastitems/${activeItem.value.ID}/file`;
+  return episodeAudioUrl(activeItem.value.ID);
 });
 
 const activeImage = computed(() => {
   if (!activeItem.value) {
     return "";
   }
-  return `/podcastitems/${activeItem.value.ID}/image`;
+  return episodeImageUrl(activeItem.value.ID);
 });
 
+// Only well-formed record IDs are accepted from the URL; anything else is ignored.
 function parseItemIds(): string[] {
-  const ids: string[] = [];
-  const raw = route.query.itemIds;
-  if (typeof raw === "string") {
-    raw.split(",").forEach((value) => {
-      const trimmed = value.trim();
-      if (trimmed) {
-        ids.push(trimmed);
-      }
-    });
-  }
-  if (Array.isArray(raw)) {
-    raw.forEach((value) => {
-      if (!value) {
-        return;
-      }
-      value.split(",").forEach((inner) => {
-        const trimmed = inner.trim();
-        if (trimmed) {
-          ids.push(trimmed);
-        }
-      });
-    });
-  }
-  const single = route.query.itemId;
-  if (typeof single === "string" && single.trim()) {
-    ids.push(single.trim());
-  }
-  return Array.from(new Set(ids));
+  return parseRecordIds(route.query.itemIds, route.query.itemId);
 }
 
 function parseStartSeconds(): number | null {
@@ -478,7 +454,7 @@ onBeforeUnmount(() => {
               @click="playAt(index)"
             >
               <img
-                :src="`/podcastitems/${item.ID}/image`"
+                :src="episodeImageUrl(item.ID)"
                 :alt="item.Title"
                 class="player-queue__image"
               />
