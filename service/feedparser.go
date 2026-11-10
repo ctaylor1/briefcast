@@ -113,17 +113,10 @@ func resolvePython() (string, error) {
 	return "", fmt.Errorf("python interpreter not found; set %s or install python", feedparserPythonEnv)
 }
 
+// helperCommandEnv is the environment for Python helpers that parse untrusted
+// input: the allow-listed variables plus a sanitized LOG_OUTPUT.
 func helperCommandEnv() []string {
-	base := os.Environ()
-	env := make([]string, 0, len(base)+1)
-	for _, entry := range base {
-		if strings.HasPrefix(entry, logOutputEnv+"=") {
-			continue
-		}
-		env = append(env, entry)
-	}
-	env = append(env, logOutputEnv+"="+sanitizeHelperLogOutput(os.Getenv(logOutputEnv)))
-	return env
+	return append(helperBaseEnv(), logOutputEnv+"="+sanitizeHelperLogOutput(os.Getenv(logOutputEnv)))
 }
 
 func sanitizeHelperLogOutput(raw string) string {

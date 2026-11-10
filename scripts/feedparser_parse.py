@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import io
 import json
 import logging
 import sys
@@ -51,7 +52,9 @@ def main():
     try:
         raw = sys.stdin.buffer.read()
         logger.debug("parsing feed payload", extra=log_extra({"input_bytes": len(raw)}))
-        parsed = feedparser.parse(raw)
+        # feedparser treats a str or bytes argument that looks like a path or
+        # URL as something to open; a file object is always parsed as content.
+        parsed = feedparser.parse(io.BytesIO(raw))
         payload = {
             "feed": _convert(parsed.feed),
             "entries": _convert(parsed.entries),

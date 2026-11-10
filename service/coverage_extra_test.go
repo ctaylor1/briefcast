@@ -920,7 +920,7 @@ func TestSetAllEpisodesToDownloadSuccess(t *testing.T) {
 	feedScript := writeTempScript(t, scriptDir, "feedparser_stub.py", feedparserStub)
 	t.Setenv("FEEDPARSER_PYTHON", pythonPath)
 	t.Setenv("FEEDPARSER_SCRIPT", feedScript)
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, feedScript, server.URL)
 
 	podcast := db.Podcast{
 		Title: "set-all-episodes",

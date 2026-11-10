@@ -340,11 +340,8 @@ func llmChatCompletionsURL(baseURL string) (string, error) {
 
 func llmHTTPClient(cfg LLMConfig) *http.Client {
 	client := &http.Client{
-		Transport: outboundHTTPTransport(outboundPurposeLLM),
-		CheckRedirect: func(r *http.Request, _ []*http.Request) error {
-			_, err := validateOutboundURL(r.URL.String(), outboundPurposeLLM)
-			return err
-		},
+		Transport:     outboundHTTPTransport(outboundPurposeLLM),
+		CheckRedirect: checkOutboundRedirect(outboundPurposeLLM),
 	}
 	if cfg.TimeoutSecs > 0 {
 		client.Timeout = time.Duration(cfg.TimeoutSecs) * time.Second

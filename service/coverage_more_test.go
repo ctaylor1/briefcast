@@ -478,7 +478,7 @@ import json
 import os
 import sys
 
-base = os.environ.get("TEST_BASE_URL", "")
+base = open(__file__ + ".base").read().strip()
 payload = {
   "feed": {
     "title": "Coverage Feed",
@@ -516,7 +516,7 @@ payload = {
 json.dump(payload, sys.stdout)
 `)
 
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, feedScript, server.URL)
 	t.Setenv(feedparserPythonEnv, pythonPath)
 	t.Setenv(feedparserScriptEnv, feedScript)
 	t.Setenv("LLM_ENABLED", "true")

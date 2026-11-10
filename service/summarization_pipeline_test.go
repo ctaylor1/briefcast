@@ -47,14 +47,14 @@ func TestAddPodcastItemsQueuesUnavailableFeedTranscriptsAndUsesSettingsModel(t *
 	script := writeTempScript(t, t.TempDir(), "feedparser_summary_pipeline.py", `import json
 import os
 import sys
-base = os.environ["TEST_BASE_URL"]
+base = open(__file__ + ".base").read().strip()
 json.dump({"feed": {"title": "Test feed"}, "entries": [
   {"guid": "good", "title": "Good", "transcripts": [{"url": base + "/good.txt", "type": "text/plain"}]},
   {"guid": "empty", "title": "Empty", "transcripts": [{"url": base + "/empty.txt", "type": "text/plain"}]},
   {"guid": "missing", "title": "Missing", "transcripts": [{"url": base + "/missing.txt", "type": "text/plain"}]}
 ]}, sys.stdout)
 `)
-	t.Setenv("TEST_BASE_URL", server.URL)
+	setStubBaseURL(t, script, server.URL)
 	t.Setenv(feedparserPythonEnv, pythonPath)
 	t.Setenv(feedparserScriptEnv, script)
 	t.Setenv("LLM_ENABLED", "true")

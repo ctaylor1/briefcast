@@ -294,94 +294,85 @@ func CreateNfoFile(podcast *db.Podcast) error {
 	return os.WriteFile(finalPath, []byte(toPersist), 0o644)
 }
 
-// DownloadPodcastCoverImage handles the corresponding operation.
+// DownloadPodcastCoverImage saves a podcast's cover image.
 func DownloadPodcastCoverImage(link string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
-	client := httpClient()
-	req, err := getRequest(link)
-	if err != nil {
-		logError("error creating request", err, "url", link)
-		return "", err
-	}
-
-	resp, err := doRequestWithHostLimit(client, req)
-	if err != nil {
-		logError("error getting response", err, "url", link)
-		return "", err
-	}
-
-	fileName := getFileName(link, "folder", ".jpg")
-	folder := createImagesFolderIfNotExists(podcastName)
-
-	finalPath := path.Join(folder, fileName)
-	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
-		changeOwnership(finalPath)
-		return finalPath, nil
-	}
-
-	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
-	file, err := os.Create(finalPath)
-	if err != nil {
-		logError("error creating file", err, "path", finalPath, "url", link)
-		return "", err
-	}
-	defer resp.Body.Close()
-	_, erra := io.Copy(file, resp.Body)
-	defer file.Close()
-	if erra != nil {
-		logError("error saving file", erra, "path", finalPath, "url", link)
-		return "", erra
-	}
-	changeOwnership(finalPath)
-	return finalPath, nil
+	finalPath := path.Join(createImagesFolderIfNotExists(podcastName), getFileName(link, "folder", ".jpg"))
+	return downloadImageFile(link, finalPath)
 }
 
-// DownloadImage handles the corresponding operation.
+// DownloadImage saves an episode image under the podcast's image folder.
 func DownloadImage(link string, episodeID string, podcastName string) (string, error) {
 	if link == "" {
 		return "", errors.New("Download path empty")
 	}
-	client := httpClient()
+	finalPath := path.Join(createImagesFolderIfNotExists(podcastName), getFileName(link, episodeID, ".jpg"))
+	return downloadImageFile(link, finalPath)
+}
+
+// maxImageDownloadBytes caps one image download; artwork is far smaller, and an
+// unbounded response could fill the disk.
+var maxImageDownloadBytes int64 = 20 << 20
+
+// downloadImageFile saves link to finalPath unless the file already exists. It
+// requires a 2xx response, caps the size and writes through a temporary file,
+// so an error page or a cut-off response is never kept as an image.
+func downloadImageFile(link, finalPath string) (string, error) {
+	if info, err := os.Stat(finalPath); err == nil && !info.IsDir() {
+		changeOwnership(finalPath)
+		return finalPath, nil
+	}
 	req, err := getRequest(link)
 	if err != nil {
 		logError("error creating request", err, "url", link)
 		return "", err
 	}
-
-	resp, err := doRequestWithHostLimit(client, req)
+	resp, err := doRequestWithHostLimit(httpClient(), req)
 	if err != nil {
 		logError("error getting response", err, "url", link)
 		return "", err
 	}
-
-	fileName := getFileName(link, episodeID, ".jpg")
-	imageFolder := createImagesFolderIfNotExists(podcastName)
-	finalPath := path.Join(imageFolder, fileName)
-
-	if _, err := os.Stat(finalPath); !os.IsNotExist(err) {
-		changeOwnership(finalPath)
-		return finalPath, nil
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", &DownloadHTTPError{StatusCode: resp.StatusCode, Status: resp.Status, URL: link}
+	}
+	if resp.ContentLength > maxImageDownloadBytes {
+		return "", fmt.Errorf("image is %d bytes, over the %d byte limit: %s", resp.ContentLength, maxImageDownloadBytes, link)
 	}
 
+	partial := finalPath + ".partial"
 	// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
-	file, err := os.Create(finalPath)
+	file, err := os.Create(partial)
 	if err != nil {
-		logError("error creating file", err, "path", finalPath, "url", link)
+		logError("error creating file", err, "path", partial, "url", link)
 		return "", err
 	}
-	defer resp.Body.Close()
-	_, erra := io.Copy(file, resp.Body)
-	defer file.Close()
-	if erra != nil {
-		logError("error saving file", erra, "path", finalPath, "url", link)
-		return "", erra
+	written, copyErr := io.Copy(file, io.LimitReader(resp.Body, maxImageDownloadBytes+1))
+	closeErr := file.Close()
+	switch {
+	case copyErr != nil:
+		err = copyErr
+	case closeErr != nil:
+		err = closeErr
+	case written > maxImageDownloadBytes:
+		err = fmt.Errorf("image is over the %d byte limit: %s", maxImageDownloadBytes, link)
+	case written == 0:
+		err = fmt.Errorf("image response was empty: %s", link)
+	}
+	if err == nil {
+		err = os.Rename(partial, finalPath)
+	}
+	if err != nil {
+		_ = os.Remove(partial)
+		logError("error saving image", err, "path", finalPath, "url", link)
+		return "", err
 	}
 	changeOwnership(finalPath)
 	return finalPath, nil
-
 }
+
 func changeOwnership(path string) {
 	uid, err1 := strconv.Atoi(os.Getenv("PUID"))
 	gid, err2 := strconv.Atoi(os.Getenv("PGID"))
@@ -626,11 +617,8 @@ func addFileToTarWriterAs(filePath string, entryName string, tarWriter *tar.Writ
 func httpClient() *http.Client {
 	timeoutSeconds := getEnvInt(httpTimeoutEnv, defaultHTTPTimeoutSeconds)
 	client := http.Client{
-		Transport: outboundHTTPTransport(outboundPurposeHTTP),
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			_, err := validateOutboundURL(r.URL.String(), outboundPurposeHTTP)
-			return err
-		},
+		Transport:     outboundHTTPTransport(outboundPurposeHTTP),
+		CheckRedirect: checkOutboundRedirect(outboundPurposeHTTP),
 	}
 	if timeoutSeconds > 0 {
 		client.Timeout = time.Duration(timeoutSeconds) * time.Second

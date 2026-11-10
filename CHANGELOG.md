@@ -36,9 +36,14 @@ All notable changes to this project will be documented in this file.
 - Two episodes of one podcast with the same title, such as "Trailer", no longer share one audio file. When the plain file name belongs to another episode, the episode ID is added to the name.
 - Resuming a download now continues only a partial file that this episode started from the same URL. Ownership is recorded in a `.briefcast-partial.json` sidecar that is removed on completion. The resume sends `If-Range` when the server gave a validator, so a file that changed on the server, for example with re-inserted ads, is downloaded again instead of being stitched together. Partial files from before this release are downloaded again from the start.
 - Requesting a download of an episode that is already downloading no longer starts a second download or resets the first one's state.
+- Episode and cover images: a failed or non-2xx response is no longer saved as an image, downloads over 20 MB are refused, response bodies are always closed, and an image already on disk is not fetched again.
+- Outbound requests stop after 10 redirects; the custom redirect checks had removed Go's default limit. Each outbound purpose now shares one connection pool instead of building a new transport per request.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
+
+### Security
+- The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.
 
 ## [1.9.4] - 2026-07-11
 
