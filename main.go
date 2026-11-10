@@ -137,6 +137,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.PATCH("/podcastitems/:id/bookmark", controllers.BookmarkPodcastItem)
 	router.PATCH("/podcastitems/:id/unbookmark", controllers.UnbookmarkPodcastItem)
 	router.PATCH("/podcastitems/:id", controllers.PatchPodcastItemByID)
+	router.PATCH("/podcastitems/:id/position", controllers.PatchPodcastItemPosition)
 	router.POST("/podcastitems/:id/download", controllers.DownloadPodcastItem)
 	router.GET("/podcastitems/:id/chapters", controllers.GetPodcastItemChapters)
 	router.GET("/podcastitems/:id/transcript", controllers.GetPodcastItemTranscript)

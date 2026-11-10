@@ -93,6 +93,7 @@ func TestMutatingRoutesUseCorrectHTTPMethods(t *testing.T) {
 		{"PATCH", "/podcastitems/:id/unbookmark"},
 		{"POST", "/podcastitems/:id/download"},
 		{"DELETE", "/podcastitems/:id/delete"},
+		{"PATCH", "/podcastitems/:id/position"},
 	}
 
 	registered := make(map[string]bool)

@@ -1,4 +1,5 @@
 import { toast } from "../lib/toast";
+import { parseTranscript, type TranscriptAsset, type TranscriptSegment } from "../lib/transcript";
 import { computed, ref } from "vue";
 import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
@@ -9,8 +10,6 @@ import {
 import type { Chapter, ChaptersResponse, PodcastItem, ShowNoteLink, SummaryResponse, TranscriptResponse } from "../types/api";
 
 type DrawerTab = "overview" | "chapters" | "transcript" | "summary" | "links";
-type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
-type TranscriptAsset = { url?: string; type?: string; language?: string };
 
 export function useEpisodeDrawer() {
   const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
@@ -227,44 +226,10 @@ export function useEpisodeDrawer() {
       drawerItem.value.IsSummaryFavorited = response.isFavorited;
     }
     drawerCanonicalTranscript.value = response.canonicalTranscript ?? "";
-    const transcript = response.transcript;
-    if (transcript && typeof transcript === "object" && !Array.isArray(transcript)) {
-      const maybeSegments = (transcript as { segments?: Array<Record<string, unknown>> }).segments;
-      if (Array.isArray(maybeSegments)) {
-        drawerTranscriptSegments.value = maybeSegments
-          .map((segment) => ({
-            start: Number(segment.start ?? segment.start_time ?? 0),
-            end: Number(segment.end ?? segment.end_time ?? 0),
-            text: String(segment.text ?? segment.transcript ?? "").trim(),
-            speaker: typeof segment.speaker === "string" ? segment.speaker : undefined,
-          }))
-          .filter((segment) => segment.text.length > 0);
-        return;
-      }
-    }
-
-    if (Array.isArray(transcript)) {
-      const assets = transcript
-        .filter((asset) => asset && typeof asset === "object")
-        .map((asset) => asset as Record<string, unknown>);
-      const contentAsset = assets.find((asset) => typeof asset.content === "string" && asset.content.trim().length > 0);
-      if (contentAsset && typeof contentAsset.content === "string") {
-        drawerTranscriptText.value = contentAsset.content;
-      }
-      drawerTranscriptAssets.value = assets.map((asset) => ({
-        url: typeof asset.url === "string" ? asset.url : undefined,
-        type: typeof asset.type === "string" ? asset.type : undefined,
-        language: typeof asset.language === "string" ? asset.language : undefined,
-      }));
-      return;
-    }
-
-    if (typeof transcript === "string") {
-      drawerTranscriptText.value = transcript;
-    }
-    if (!drawerTranscriptText.value && drawerCanonicalTranscript.value) {
-      drawerTranscriptText.value = drawerCanonicalTranscript.value;
-    }
+    const parsed = parseTranscript(response);
+    drawerTranscriptSegments.value = parsed.segments;
+    drawerTranscriptAssets.value = parsed.assets;
+    drawerTranscriptText.value = parsed.text;
   }
 
   async function fetchSummary(id: string): Promise<void> {

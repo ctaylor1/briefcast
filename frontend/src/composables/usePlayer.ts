@@ -1,6 +1,6 @@
 import { computed, reactive, watch } from "vue";
 import { episodesApi, getErrorMessage, podcastsApi } from "../lib/api";
-import { episodeAudioUrl, episodeImageUrl } from "../lib/api/paths";
+import { apiPath, episodeAudioUrl, episodeImageUrl } from "../lib/api/paths";
 import { buildSponsorSegments } from "../lib/sponsor";
 import type { Chapter, PodcastItem } from "../types/api";
 
@@ -13,6 +13,12 @@ export const SKIP_FORWARD_SECONDS = 30;
 // "Previous" restarts the episode when more than this much has played.
 const RESTART_THRESHOLD_SECONDS = 3;
 const RATE_KEY = "briefcast-playback-rate";
+// Resume: a saved position is used when it is past the first few seconds and not right
+// at the end. Positions are saved on pause, on switching episodes, every so often while
+// playing, and when the page is hidden.
+export const RESUME_MIN_SECONDS = 10;
+export const RESUME_END_MARGIN_SECONDS = 30;
+export const POSITION_SAVE_INTERVAL_MS = 15000;
 
 function readRate(): number {
   try {
@@ -50,6 +56,8 @@ let detachListeners: (() => void) | null = null;
 let lastAutoSkipStart: number | null = null;
 // Latest wins: a track load that has been superseded stops before it touches the element.
 let loadGeneration = 0;
+let lastSavedAt = 0;
+let lastSavedPosition = -1;
 
 const current = computed<PodcastItem | null>(() => state.queue[state.index] ?? null);
 const hasNext = computed(() => state.index >= 0 && state.index < state.queue.length - 1);
@@ -149,6 +157,9 @@ function onTimeUpdate(): void {
   }
   state.currentTime = audio.currentTime;
   updatePositionState();
+  if (state.playing && Date.now() - lastSavedAt >= POSITION_SAVE_INTERVAL_MS) {
+    void savePosition();
+  }
   if (!autoSkipEnabled.value) {
     return;
   }
@@ -172,6 +183,11 @@ function onDuration(): void {
 
 function onEnded(): void {
   const item = current.value;
+  if (item) {
+    // Finished: the next play starts from the beginning.
+    void savePosition(0);
+    state.currentTime = 0;
+  }
   if (item && !item.IsPlayed) {
     item.IsPlayed = true;
     episodesApi.setPlayed(item.ID, true).catch(() => {
@@ -203,7 +219,13 @@ export function attach(element: HTMLAudioElement): () => void {
     ["loadedmetadata", onDuration],
     ["durationchange", onDuration],
     ["play", () => (state.playing = true)],
-    ["pause", () => (state.playing = false)],
+    [
+      "pause",
+      () => {
+        state.playing = false;
+        void savePosition();
+      },
+    ],
     ["waiting", () => (state.buffering = true)],
     ["playing", () => (state.buffering = false)],
     ["canplay", () => (state.buffering = false)],
@@ -262,9 +284,14 @@ async function loadTrack(index: number, options: { startSeconds?: number; autopl
   if (!item) {
     return;
   }
+  if (current.value && current.value.ID !== item.ID) {
+    void savePosition();
+  }
   loadGeneration += 1;
   const generation = loadGeneration;
-  const start = options.startSeconds && options.startSeconds > 0 ? options.startSeconds : 0;
+  lastSavedPosition = -1;
+  lastSavedAt = Date.now();
+  const start = options.startSeconds !== undefined ? Math.max(0, options.startSeconds) : resumePosition(item);
   state.index = index;
   state.currentTime = start;
   state.duration = item.Duration || 0;
@@ -292,6 +319,75 @@ async function loadTrack(index: number, options: { startSeconds?: number; autopl
   if (options.autoplay !== false && generation === loadGeneration) {
     await play();
   }
+}
+
+// --- Resume -----------------------------------------------------------------------------
+
+function resumePosition(item: PodcastItem): number {
+  const saved = item.PlaybackPositionSeconds ?? 0;
+  const length = item.Duration || 0;
+  if (saved < RESUME_MIN_SECONDS) {
+    return 0;
+  }
+  if (length > 0 && saved > length - RESUME_END_MARGIN_SECONDS) {
+    return 0;
+  }
+  return saved;
+}
+
+// Best effort: a failed save only costs the resume point, so it is not reported.
+async function savePosition(position?: number): Promise<void> {
+  const item = current.value;
+  if (!item) {
+    return;
+  }
+  const seconds = Math.floor(position ?? state.currentTime);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds === lastSavedPosition) {
+    return;
+  }
+  lastSavedPosition = seconds;
+  lastSavedAt = Date.now();
+  item.PlaybackPositionSeconds = seconds;
+  try {
+    await episodesApi.savePosition(item.ID, seconds);
+  } catch {
+    // ignore
+  }
+}
+
+// When the tab is hidden or closed an ordinary request may be cut off; keepalive lets the
+// browser finish it.
+function savePositionOnHide(): void {
+  const item = current.value;
+  if (!item || !state.playing && state.currentTime === 0) {
+    return;
+  }
+  const seconds = Math.floor(state.currentTime);
+  if (seconds === lastSavedPosition) {
+    return;
+  }
+  lastSavedPosition = seconds;
+  item.PlaybackPositionSeconds = seconds;
+  try {
+    void fetch(apiPath`/podcastitems/${item.ID}/position`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ positionSeconds: seconds }),
+      keepalive: true,
+      credentials: "same-origin",
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+}
+
+if (typeof document !== "undefined" && typeof window !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      savePositionOnHide();
+    }
+  });
+  window.addEventListener("pagehide", savePositionOnHide);
 }
 
 // --- Commands ---------------------------------------------------------------------------

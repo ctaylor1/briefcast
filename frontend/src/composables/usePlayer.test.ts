@@ -23,6 +23,9 @@ function routes(extra: Record<string, () => unknown> = {}) {
 }
 
 beforeEach(() => {
+  // The player writes resume positions onto the queued items; start each test clean.
+  A.PlaybackPositionSeconds = null;
+  B.PlaybackPositionSeconds = null;
   audio = makeAudio();
   detach = player.attach(audio);
 });

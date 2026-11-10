@@ -58,6 +58,11 @@ export const episodesApi = {
   getLinks(id: string): Promise<EpisodeLinksResponse> {
     return httpClient.get<EpisodeLinksResponse>(apiPath`/podcastitems/${id}/links`);
   },
+  savePosition(id: string, positionSeconds: number): Promise<void> {
+    return httpClient.patch<void, { positionSeconds: number }>(apiPath`/podcastitems/${id}/position`, {
+      positionSeconds: Math.max(0, Math.floor(positionSeconds)),
+    });
+  },
   getSummary(id: string): Promise<SummaryResponse> {
     return httpClient.get<SummaryResponse>(apiPath`/podcastitems/${id}/summary`);
   },

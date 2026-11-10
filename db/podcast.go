@@ -77,6 +77,10 @@ type PodcastItem struct {
 
 	IsPlayed bool `gorm:"default:false"`
 
+	// PlaybackPositionSeconds is where listening stopped, for resuming. Nil until the
+	// episode has been played in the web player; 0 after it finished.
+	PlaybackPositionSeconds *int `gorm:"column:playback_position_seconds"`
+
 	BookmarkDate time.Time
 
 	LocalImage string
