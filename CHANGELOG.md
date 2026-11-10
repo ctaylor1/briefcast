@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Request bodies are capped at 1 MiB, except OPML uploads, which keep their own limit. Larger bodies get `413`.
 - **Upgrade note:** the app now refuses to start when a database migration fails, and runs no later migrations. It used to log the failure and serve on a half-migrated schema. Before upgrading, check the last startup log for `database migration failed` lines; a migration that has been failing quietly will now stop startup.
 - `RELEASE.ps1 deploy -Target app` now requires a restore point when it replaces a running app: pass the folder holding the backup with `-RecoveryDir`, or pass `-NoRestorePoint` to deploy without one. The rollback record notes which.
+- Episode image and audio requests, search, the retention job and the file-size job now read only the columns they use, not whole episode rows with transcripts. The settings row is no longer read on every request. The file-size job handles at most 200 episodes per run.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.

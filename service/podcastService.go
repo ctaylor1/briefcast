@@ -543,9 +543,15 @@ func shouldQueueInitialBackCatalogEpisode(setting *db.Setting, mode string, inde
 }
 
 // UpdateAllFileSizes handles the corresponding operation.
+// fileSizeBatchLimit bounds one run of UpdateAllFileSizes. Episodes that are
+// not downloaded need a HEAD request each, so an unbounded run on a large new
+// library could take hours; the rest are picked up by later runs.
+const fileSizeBatchLimit = 200
+
 func UpdateAllFileSizes() {
-	items, err := db.GetAllPodcastItemsWithoutSize()
+	items, err := db.GetPodcastItemsWithoutSize(fileSizeBatchLimit)
 	if err != nil {
+		Logger.Warnw("could not list episodes without a file size", "error", err)
 		return
 	}
 	for _, item := range *items {

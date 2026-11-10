@@ -57,7 +57,7 @@ var enrichSearchResults = service.EnrichSearchResults
 
 // AddPage handles the corresponding operation.
 func AddPage(c *gin.Context) {
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 	c.HTML(http.StatusOK, "addPodcast.html", gin.H{"title": "Add Podcast", "setting": setting, "searchOptions": searchOptions})
 }
 
@@ -65,7 +65,7 @@ func AddPage(c *gin.Context) {
 func HomePage(c *gin.Context) {
 	//var podcasts []db.Podcast
 	podcasts := service.GetAllPodcasts("")
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 	c.HTML(http.StatusOK, "index.html", gin.H{"title": "Briefcast", "podcasts": podcasts, "setting": setting})
 }
 
@@ -86,7 +86,7 @@ func PodcastPage(c *gin.Context) {
 				if count = pagination.Count; count == 0 {
 					count = 10
 				}
-				setting := c.MustGet("setting").(*db.Setting)
+				setting := settingFromContext(c)
 				totalCount := len(podcast.PodcastItems)
 				totalPages := int(math.Ceil(float64(totalCount) / float64(count)))
 				nextPage, previousPage := 0, 0
@@ -189,7 +189,7 @@ func PlayerPage(c *gin.Context) {
 			controllerLogger.Warnw("failed to load latest episodes for player page", "error", err)
 		}
 	}
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 
 	c.HTML(http.StatusOK, "player.html", gin.H{
 		"title":          title,
@@ -205,7 +205,7 @@ func PlayerPage(c *gin.Context) {
 // SettingsPage handles the corresponding operation.
 func SettingsPage(c *gin.Context) {
 
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 	diskStats, _ := db.GetPodcastEpisodeDiskStats()
 	c.HTML(http.StatusOK, "settings.html", gin.H{
 		"setting":   setting,
@@ -220,7 +220,7 @@ func BackupsPage(c *gin.Context) {
 
 	files, err := service.GetAllBackupFiles()
 	var allFiles []interface{}
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 
 	for _, file := range files {
 		arr := strings.Split(file, string(os.PathSeparator))
@@ -269,7 +269,7 @@ func AllEpisodesPage(c *gin.Context) {
 		return
 	}
 	filter.VerifyPaginationValues()
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 	podcasts := service.GetAllPodcasts("")
 	tags, _ := db.GetAllTags("")
 	toReturn := gin.H{
@@ -308,7 +308,7 @@ func AllTagsPage(c *gin.Context) {
 	if err := db.GetPaginatedTags(page, count,
 		&tags, &totalCount); err == nil {
 
-		setting := c.MustGet("setting").(*db.Setting)
+		setting := settingFromContext(c)
 		totalPages := math.Ceil(float64(totalCount) / float64(count))
 		nextPage, previousPage := 0, 0
 		if float64(page) < totalPages {

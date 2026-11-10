@@ -43,9 +43,38 @@ func GetAllPodcastItems(podcasts *[]PodcastItem) error {
 
 // GetAllPodcastItemsWithoutSize handles the corresponding operation.
 func GetAllPodcastItemsWithoutSize() (*[]PodcastItem, error) {
+	return GetPodcastItemsWithoutSize(0)
+}
+
+// GetPodcastItemsWithoutSize lists up to limit episodes (0 for all) whose size
+// is unknown, newest first, reading only the columns a size check needs.
+func GetPodcastItemsWithoutSize(limit int) (*[]PodcastItem, error) {
 	var podcasts []PodcastItem
-	result := DB.Where("file_size<=?", 0).Order("pub_date desc").Find(&podcasts)
+	query := DB.Select("id", "download_status", "download_path", "file_url", "pub_date").
+		Where("file_size<=?", 0).Order("pub_date desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	result := query.Find(&podcasts)
 	return &podcasts, result.Error
+}
+
+// PodcastItemMedia is the subset of an episode the media and image routes serve.
+type PodcastItemMedia struct {
+	ID           string
+	Image        string
+	LocalImage   string
+	DownloadPath string
+	FileURL      string
+}
+
+// GetPodcastItemMediaByID loads only the columns needed to serve an episode's
+// audio or image, so a Range request does not read the transcript.
+func GetPodcastItemMediaByID(id string) (PodcastItemMedia, error) {
+	var media PodcastItemMedia
+	result := DB.Model(&PodcastItem{}).Select("id", "image", "local_image", "download_path", "file_url").
+		Where("id = ?", id).Take(&media)
+	return media, result.Error
 }
 
 func getSortOrder(sorting model.EpisodeSort) string {

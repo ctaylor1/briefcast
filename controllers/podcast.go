@@ -521,9 +521,7 @@ func GetPodcastItemImageByID(c *gin.Context) {
 
 	if c.ShouldBindUri(&searchByIDQuery) == nil {
 
-		var podcast db.PodcastItem
-
-		err := db.GetPodcastItemByID(searchByIDQuery.ID, &podcast)
+		podcast, err := db.GetPodcastItemMediaByID(searchByIDQuery.ID)
 		if err == nil {
 			if localAssetFileExists(podcast.LocalImage) {
 				c.File(podcast.LocalImage)
@@ -564,9 +562,7 @@ func GetPodcastItemFileByID(c *gin.Context) {
 
 	if c.ShouldBindUri(&searchByIDQuery) == nil {
 
-		var podcast db.PodcastItem
-
-		err := db.GetPodcastItemByID(searchByIDQuery.ID, &podcast)
+		podcast, err := db.GetPodcastItemMediaByID(searchByIDQuery.ID)
 		if err == nil {
 			if localAssetFileExists(podcast.DownloadPath) {
 				c.Header("Content-Type", GetFileContentType(podcast.DownloadPath))
@@ -792,7 +788,7 @@ func GetTagByID(c *gin.Context) {
 }
 
 func getBaseURL(c *gin.Context) string {
-	setting := c.MustGet("setting").(*db.Setting)
+	setting := settingFromContext(c)
 	if setting.BaseURL == "" {
 		url := location.Get(c)
 		return fmt.Sprintf("%s://%s", url.Scheme, url.Host)

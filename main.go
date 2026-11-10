@@ -75,7 +75,7 @@ func buildRouter() *gin.Engine {
 	r.Use(logging.RequestLoggerMiddleware())
 	r.Use(gin.Recovery())
 	r.Use(limitRequestBody(defaultMaxRequestBodyBytes))
-	r.Use(setupSettings())
+	r.Use(clacksOverhead())
 	r.Use(location.Default())
 
 	// Legacy HTML templates removed; modern Vue app is the only UI.
@@ -201,13 +201,23 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.GET("/rss", controllers.GetRss)
 	router.GET("/ws", controllers.DefaultHub.Handler)
 }
+
+// setupSettings puts the settings row in the request context. It is no longer
+// installed globally; handlers that need settings read them on demand.
 func setupSettings() gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		setting := db.GetOrCreateSetting()
 		c.Set("setting", setting)
 		c.Writer.Header().Set("X-Clacks-Overhead", "GNU Terry Pratchett")
+		c.Next()
+	}
+}
 
+// clacksOverhead sets the header every response has carried, without the
+// per-request settings read that setupSettings did.
+func clacksOverhead() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("X-Clacks-Overhead", "GNU Terry Pratchett")
 		c.Next()
 	}
 }
