@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **Upgrade note:** `HOST_PORT` now takes a port number only. A value such as `127.0.0.1:18080` makes Compose fail with an `invalid IP address` error; set `HOST_BIND` and `HOST_PORT` separately.
 - `DELETE /podcasts/:id/podcast` now keeps the podcast's folders on disk. It removes only the database rows, as the route name says. Use `DELETE /podcasts/:id` to remove files too.
 - `LOG_OUTPUT` now defaults to `stdout` in `docker-compose.yml`. The previous default, `both`, was not a keyword: logs went to a file named `both` inside the container and never reached `docker logs`.
+- The HTTP server now has a 10-second header read timeout and a 2-minute idle timeout, and shuts down cleanly on `SIGTERM` or Ctrl+C, giving in-flight requests up to 10 seconds. `docker stop` no longer waits for the kill timeout. Streams have no write timeout.
+- Request bodies are capped at 1 MiB, except OPML uploads, which keep their own limit. Larger bodies get `413`.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
@@ -20,6 +22,8 @@ All notable changes to this project will be documented in this file.
 - Fixed deleting a tagged podcast on Postgres. The delete failed on a foreign key after its episodes were already gone. On SQLite it left orphaned rows in `podcast_tags`.
 - `cmd/migrate_to_pg` now copies `show_note_links`, `link_targets` and `prompt_versions`, which it used to leave behind while reporting success. It also runs in one transaction, refuses a target that already has data, skips orphaned tag links, and stops before writing if episodes or Markdown revisions are orphaned.
 - Local transcription (`WHISPERX_BACKEND=local`) no longer deletes audio when an error message mentions a missing file or unreadable audio; a missing model or ffmpeg produced the same text. An episode is reset for re-download only when its audio file is confirmed missing, and other failures, including unexpected stat errors, schedule a retry.
+- Podcast Index search gives up after 15 seconds instead of hanging on a stalled upstream, and goes through the outbound URL policy like other outbound requests.
+- A panic in request middleware, such as settings loading, now returns `500` instead of dropping the connection.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

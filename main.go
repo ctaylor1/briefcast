@@ -55,17 +55,22 @@ func main() {
 	service.SafeGo("startup configuration log", assetEnv)
 	service.SafeGo("cron scheduler", intiCron)
 
-	if err := r.Run(); err != nil {
+	srv := newHTTPServer(r)
+	appLogger.Infow("http server listening", "addr", srv.Addr)
+	if err := serveUntilSignal(srv, appLogger); err != nil {
 		appLogger.Fatalw("http server terminated", "error", err)
 	}
-
+	appLogger.Infow("http server stopped")
 }
 
 func buildRouter() *gin.Engine {
 	r := gin.New()
+	// The request logger stays outermost so it records the 500 that Recovery
+	// writes; Recovery wraps every other middleware and handler.
 	r.Use(logging.RequestLoggerMiddleware())
-	r.Use(setupSettings())
 	r.Use(gin.Recovery())
+	r.Use(limitRequestBody(defaultMaxRequestBodyBytes))
+	r.Use(setupSettings())
 	r.Use(location.Default())
 
 	// Legacy HTML templates removed; modern Vue app is the only UI.
