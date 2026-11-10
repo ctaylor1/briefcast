@@ -790,7 +790,7 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2);
   padding: var(--space-1) var(--space-3);
-  color: var(--color-text-link, var(--color-text-primary));
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   cursor: pointer;
   text-decoration: none;

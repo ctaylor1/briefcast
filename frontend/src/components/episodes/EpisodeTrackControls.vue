@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { isEpisodeFavorited } from "../../lib/bookmarks";
+import { DownloadStatus } from "../../lib/episodeStatus";
 import type { PodcastItem } from "../../types/api";
 import UiTooltip from "../ui/UiTooltip.vue";
 
@@ -18,9 +19,11 @@ const emit = defineEmits<{
 
 const isPlayed = computed(() => props.item.IsPlayed);
 const isBookmarked = computed(() => isEpisodeFavorited(props.item));
-const isDownloading = computed(() => props.item.DownloadStatus === 1);
-const isDownloaded = computed(() => props.item.DownloadStatus === 2);
-const canCancelDownload = computed(() => props.item.DownloadStatus === 0 || props.item.DownloadStatus === 1);
+const isDownloading = computed(() => props.item.DownloadStatus === DownloadStatus.Downloading);
+const isDownloaded = computed(() => props.item.DownloadStatus === DownloadStatus.Downloaded);
+const canCancelDownload = computed(
+  () => props.item.DownloadStatus === DownloadStatus.Queued || props.item.DownloadStatus === DownloadStatus.Downloading,
+);
 
 const playedLabel = computed(() => (isPlayed.value ? "Mark as unplayed" : "Mark as played"));
 const bookmarkLabel = computed(() => (isBookmarked.value ? "Remove favorite" : "Favorite"));

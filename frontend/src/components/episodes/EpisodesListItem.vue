@@ -1,6 +1,17 @@
 <script setup lang="ts">
+import {
+  downloadStatusLabel,
+  downloadStatusTone,
+  progressAriaText,
+  progressAriaValue,
+  progressLabel,
+  progressPercent,
+  hasKnownTotal,
+  isDownloading,
+  transcriptPill,
+} from "../../lib/episodeStatus";
 import { episodeImageUrl } from "../../lib/api/paths";
-import { formatBytes, formatDateTime, formatDuration } from "../../lib/format";
+import { formatDateTime, formatDuration } from "../../lib/format";
 import type { PodcastItem } from "../../types/api";
 import EpisodeTrackControls from "./EpisodeTrackControls.vue";
 import UiBadge from "../ui/UiBadge.vue";
@@ -24,87 +35,6 @@ function getImage(id: string): string {
   return episodeImageUrl(id);
 }
 
-function downloadStatusLabel(status: number): string {
-  switch (status) {
-    case 0:
-      return "Queued";
-    case 1:
-      return "Downloading";
-    case 2:
-      return "Downloaded";
-    case 3:
-      return "Not queued";
-    case 4:
-      return "Paused";
-    default:
-      return "Unknown";
-  }
-}
-
-function downloadStatusTone(status: number): "neutral" | "info" | "success" | "warning" {
-  switch (status) {
-    case 0:
-      return "warning";
-    case 1:
-      return "info";
-    case 2:
-      return "success";
-    case 3:
-      return "neutral";
-    case 4:
-      return "warning";
-    default:
-      return "neutral";
-  }
-}
-
-function transcriptPill(status: string): { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger"; visible: boolean } {
-  switch (status) {
-    case "available":
-      return { label: "Transcript ready", tone: "success", visible: true };
-    case "processing":
-      return { label: "Transcript in progress", tone: "info", visible: true };
-    case "failed":
-      return { label: "Transcript failed", tone: "danger", visible: true };
-    default:
-      if (status.startsWith("pending_")) {
-        return { label: "Transcript queued", tone: "warning", visible: true };
-      }
-      return { label: "Transcript missing", tone: "neutral", visible: false };
-  }
-}
-
-function progressPercent(item: PodcastItem): number {
-  if (item.DownloadTotalBytes <= 0) {
-    return 0;
-  }
-  return Math.min(100, Math.round((item.DownloadedBytes / item.DownloadTotalBytes) * 100));
-}
-
-function progressLabel(item: PodcastItem): string {
-  if (item.DownloadTotalBytes > 0) {
-    return `${progressPercent(item)}% (${formatBytes(item.DownloadedBytes)} / ${formatBytes(item.DownloadTotalBytes)})`;
-  }
-  if (item.DownloadedBytes > 0) {
-    return `${formatBytes(item.DownloadedBytes)} downloaded`;
-  }
-  return "Downloading...";
-}
-
-function hasKnownTotal(item: PodcastItem): boolean {
-  return item.DownloadTotalBytes > 0;
-}
-
-function progressAriaValue(item: PodcastItem): number | undefined {
-  if (!hasKnownTotal(item)) {
-    return undefined;
-  }
-  return progressPercent(item);
-}
-
-function progressAriaText(item: PodcastItem): string {
-  return `Download progress for ${item.Title}: ${progressLabel(item)}`;
-}
 </script>
 
 <template>
@@ -163,7 +93,7 @@ function progressAriaText(item: PodcastItem): string {
         </div>
       </div>
       <p class="episode-list-item__summary">{{ props.item.Summary || "No summary available." }}</p>
-      <div v-if="props.item.DownloadStatus === 1" class="stack-1">
+      <div v-if="isDownloading(props.item)" class="stack-1">
         <div
           class="episode-list-item__progress-track"
           role="progressbar"

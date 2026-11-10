@@ -11,6 +11,7 @@ import UiCard from "../components/ui/UiCard.vue";
 import UiDialog from "../components/ui/UiDialog.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { formatDateTime } from "../lib/format";
+import { DownloadStatus, isDownloaded, isDownloading, isPaused } from "../lib/episodeStatus";
 
 const infoMessage = ref("");
 const actionError = ref("");
@@ -19,10 +20,6 @@ const stoppingAllBusy = ref(false);
 const undoCancelItem = ref<PodcastItem | null>(null);
 const queueSort = ref<DownloadQueueSort>("download_date_desc");
 let undoCancelTimer: number | undefined;
-const DOWNLOAD_STATUS_QUEUED = 0;
-const DOWNLOAD_STATUS_DOWNLOADING = 1;
-const DOWNLOAD_STATUS_DOWNLOADED = 2;
-const DOWNLOAD_STATUS_PAUSED = 4;
 const QUEUE_REFRESH_MS = 15000;
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 type DownloadQueueSort =
@@ -54,18 +51,6 @@ const {
 } = useDownloadQueue();
 
 let queueInterval: number | undefined;
-
-function isPaused(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_PAUSED;
-}
-
-function isDownloading(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADING;
-}
-
-function isDownloaded(item: PodcastItem): boolean {
-  return item.DownloadStatus === DOWNLOAD_STATUS_DOWNLOADED;
-}
 
 function queueStatusLabel(item: PodcastItem): string {
   if (isDownloaded(item)) {
@@ -111,7 +96,7 @@ function queueSortPriority(item: PodcastItem): number {
   if (isDownloading(item)) {
     return 0;
   }
-  if (item.DownloadStatus === DOWNLOAD_STATUS_QUEUED) {
+  if (item.DownloadStatus === DownloadStatus.Queued) {
     return 1;
   }
   if (isPaused(item)) {

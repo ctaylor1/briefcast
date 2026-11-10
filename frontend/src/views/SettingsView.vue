@@ -2078,24 +2078,24 @@ onUnmounted(() => {
 .prompt-version-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-3, 0.75rem);
+  gap: var(--space-3);
 }
 
 .prompt-version-item {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
-  padding: var(--spacing-3, 0.75rem);
+  border-radius: var(--radius-3);
+  padding: var(--space-3);
 }
 
 .prompt-version-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-2, 0.5rem);
+  margin-bottom: var(--space-2);
 }
 
 .prompt-version-date {
-  font-size: var(--font-sm-size, 0.875rem);
+  font-size: var(--font-body-size);
   color: var(--color-text-secondary);
 }
 
@@ -2103,7 +2103,7 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: var(--font-sm-size, 0.875rem);
+  font-size: var(--font-body-size);
   color: var(--color-text-primary);
   max-height: 12rem;
   overflow-y: auto;

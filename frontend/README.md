@@ -1,6 +1,6 @@
 # Briefcast Frontend
 
-Vue 3 + Vite + TypeScript + Tailwind CSS frontend for Briefcast.
+Vue 3 + Vite + TypeScript frontend for Briefcast. Styling is plain CSS built on the design tokens in `src/style.css`.
 
 ## Component system
 
@@ -12,7 +12,7 @@ This app now uses a lightweight design system built from reusable UI primitives 
 - `UiBadge`
 - `UiDialog` (Headless UI powered, accessible modal/dialog)
 
-Class composition is centralized via `src/lib/cn.ts` (`clsx` + `tailwind-merge`), so component variants stay consistent.
+Class composition is centralized via `src/lib/cn.ts` (`clsx`), so component variants stay consistent.
 
 ## Typed API client
 

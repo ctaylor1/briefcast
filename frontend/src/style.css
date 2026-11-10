@@ -853,6 +853,10 @@ img {
   padding: var(--space-6);
 }
 
+.dialog-panel--wide {
+  width: min(100%, 720px);
+}
+
 .dialog-header {
   display: flex;
   align-items: flex-start;
