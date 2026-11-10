@@ -840,6 +840,13 @@ func DownloadMissingEpisodes() error {
 			_ = SetPodcastItemAsNotDownloaded(item.ID, db.Deleted)
 			return
 		}
+		release, started := beginEpisodeDownload(item.ID)
+		if !started {
+			// Another download of this episode is running; leave its state alone.
+			jobLogger.Infow("skipping episode already downloading", "podcast_item_id", item.ID)
+			return
+		}
+		defer release()
 
 		if err := SetPodcastItemAsDownloading(item.ID); err != nil {
 			jobLogger.Warnw("failed to mark episode downloading", "podcast_item_id", item.ID, "error", err)
@@ -1055,6 +1062,13 @@ func DownloadSingleEpisode(podcastItemID string) error {
 	if DownloadsPaused() {
 		return errors.New("downloads are paused")
 	}
+	release, started := beginEpisodeDownload(podcastItem.ID)
+	if !started {
+		// A second request must not reset the state of the download that is running.
+		Logger.Infow("download already in progress", "podcast_item_id", podcastItem.ID)
+		return ErrDownloadInProgress
+	}
+	defer release()
 	if err := SetPodcastItemAsDownloading(podcastItemID); err != nil {
 		Logger.Warnw("failed to mark episode downloading", "podcast_item_id", podcastItemID, "error", err)
 	}

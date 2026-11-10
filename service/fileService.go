@@ -77,16 +77,29 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		fileName = fmt.Sprintf("%s-%s", prefix, fileName)
 	}
 	folder := createAudioFolderIfNotExists(podcastName)
-	finalPath := path.Join(folder, fileName)
-
-	var resumeOffset int64
-	if info, statErr := os.Stat(finalPath); statErr == nil {
-		resumeOffset = info.Size()
+	owner := downloadID
+	if owner == "" {
+		owner = "url:" + link
 	}
-	// If a partial file already exists, request the remaining bytes.
-	// Callers treat non-2xx responses as hard failures and reset item state.
-	if resumeOffset > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
+	finalPath, releasePath := resolveEpisodeDownloadPath(downloadID, owner, folder, fileName)
+	defer releasePath()
+	sidecarPath := finalPath + downloadSidecarSuffix
+
+	// Resume only a partial file this episode started from this URL, as recorded
+	// in its sidecar. Anything else at the path is replaced, never appended to.
+	var resumeOffset int64
+	if sidecar, ok := readDownloadSidecar(sidecarPath); ok && sidecar.PodcastItemID == downloadID && sidecar.URL == link {
+		if info, statErr := os.Stat(finalPath); statErr == nil {
+			resumeOffset = info.Size()
+		}
+		if resumeOffset > 0 {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
+			// With a validator the server sends the whole file (200) instead of
+			// the rest of a different one, for example after ads are re-inserted.
+			if validator := sidecar.ifRangeValidator(); validator != "" {
+				req.Header.Set("If-Range", validator)
+			}
+		}
 	}
 
 	resp, err := doRequestWithHostLimit(client, req)
@@ -99,6 +112,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		_ = resp.Body.Close()
 		if resumeOffset > 0 && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
 			// Some hosts reject stale resume offsets (416). Drop the partial file and retry once.
+			_ = os.Remove(sidecarPath)
 			if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
 				Logger.Warnw("failed to reset partial file after range rejection", "path", finalPath, "error", removeErr)
 			} else {
@@ -116,8 +130,17 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.OpenFile(finalPath, os.O_WRONLY|os.O_APPEND, 0o644)
 	} else {
-		// Servers that ignore range requests can still succeed with a full-body response.
+		// Servers that ignore range requests, or whose file changed, send the full body.
 		resumeOffset = 0
+		if sidecarErr := writeDownloadSidecar(sidecarPath, downloadSidecar{
+			PodcastItemID: downloadID,
+			URL:           link,
+			ETag:          resp.Header.Get("ETag"),
+			LastModified:  resp.Header.Get("Last-Modified"),
+		}); sidecarErr != nil {
+			// The download still works without the sidecar; it just cannot resume.
+			Logger.Warnw("could not record download ownership; this download will not resume", "path", sidecarPath, "error", sidecarErr)
+		}
 		// #nosec G304 -- finalPath is derived from sanitized filename + configured data directory.
 		file, err = os.Create(finalPath)
 	}
@@ -130,6 +153,7 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		_ = file.Close()
 		if removeFileOnReturn {
 			_ = os.Remove(finalPath)
+			_ = os.Remove(sidecarPath)
 		}
 	}()
 
@@ -191,6 +215,9 @@ func Download(downloadID string, link string, episodeTitle string, podcastName s
 		return "", fmt.Errorf("download incomplete: got %d of %d bytes for %s", downloadedBytes, totalBytes, link)
 	}
 
+	if removeErr := os.Remove(sidecarPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		Logger.Warnw("could not remove download sidecar", "path", sidecarPath, "error", removeErr)
+	}
 	changeOwnership(finalPath)
 	return finalPath, nil
 

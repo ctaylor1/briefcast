@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
 - `SQLITE_JOURNAL_MODE=wal` opts a SQLite database into WAL mode, so reads no longer block writes. It is off by default; see the README for the disk and backup caveats.
+- Migration `2026_11_09_01_00_AddPodcastItemsDownloadPathIndex` indexes `podcast_items.download_path`, so the ownership check reads no transcripts. It is additive.
 
 ### Fixed
 - The missing-file check no longer resets episodes when storage is unavailable. It skips the pass when the data directory cannot be read, treats only "file does not exist" as missing, and changes nothing when more than half of a library of 20 or more episodes looks missing (`MISSING_FILES_MAX_PERCENT`).
@@ -31,6 +32,9 @@ All notable changes to this project will be documented in this file.
 - A summary is no longer generated from a transcript that failed to save.
 - Deleting a podcast now removes its episodes, their Markdown revisions and show-note links, its tag links and the podcast in one database transaction, before touching any files. A failure no longer leaves a podcast with some or all of its episodes gone. File removal happens afterwards on a best-effort basis; failures are logged.
 - Scheduled backups now archive a consistent `VACUUM INTO` snapshot of the configured SQLite database, wherever `DATABASE_URL` points. Previously they copied the live `$CONFIG/briefcast.db` file. Write and close errors are reported, a failed backup leaves no archive, and Postgres deployments no longer collect empty archives. Pruning keeps the newest five backup archives and leaves other files in the folder alone.
+- Two episodes of one podcast with the same title, such as "Trailer", no longer share one audio file. When the plain file name belongs to another episode, the episode ID is added to the name.
+- Resuming a download now continues only a partial file that this episode started from the same URL. Ownership is recorded in a `.briefcast-partial.json` sidecar that is removed on completion. The resume sends `If-Range` when the server gave a validator, so a file that changed on the server, for example with re-inserted ads, is downloaded again instead of being stitched together. Partial files from before this release are downloaded again from the start.
+- Requesting a download of an episode that is already downloading no longer starts a second download or resets the first one's state.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.

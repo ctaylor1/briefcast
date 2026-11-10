@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 )
@@ -88,4 +89,50 @@ func IsDownloadPaused(id string) bool {
 	_, exists := downloadPauseKeys[id]
 	downloadPauseMu.RUnlock()
 	return exists
+}
+
+// ErrDownloadInProgress reports that the episode is already being downloaded.
+var ErrDownloadInProgress = errors.New("download already in progress")
+
+var (
+	inFlightMu       sync.Mutex
+	inFlightEpisodes = make(map[string]struct{})
+	inFlightPaths    = make(map[string]string)
+)
+
+// beginEpisodeDownload marks an episode as downloading in this process. It
+// returns false when a download of the same episode is already running.
+func beginEpisodeDownload(id string) (release func(), ok bool) {
+	if id == "" {
+		return func() {}, true
+	}
+	inFlightMu.Lock()
+	defer inFlightMu.Unlock()
+	if _, busy := inFlightEpisodes[id]; busy {
+		return nil, false
+	}
+	inFlightEpisodes[id] = struct{}{}
+	return func() {
+		inFlightMu.Lock()
+		delete(inFlightEpisodes, id)
+		inFlightMu.Unlock()
+	}, true
+}
+
+// claimDownloadPath reserves a file path for one download. It returns false
+// when another download already holds the path.
+func claimDownloadPath(filePath, owner string) (release func(), ok bool) {
+	inFlightMu.Lock()
+	defer inFlightMu.Unlock()
+	if holder, held := inFlightPaths[filePath]; held && holder != owner {
+		return nil, false
+	}
+	inFlightPaths[filePath] = owner
+	return func() {
+		inFlightMu.Lock()
+		if inFlightPaths[filePath] == owner {
+			delete(inFlightPaths, filePath)
+		}
+		inFlightMu.Unlock()
+	}, true
 }

@@ -340,6 +340,17 @@ type DownloadedItemPath struct {
 	DownloadPath string
 }
 
+// GetOtherPodcastItemIDByDownloadPath returns the ID of an episode other than
+// excludeID whose download_path is filePath, or "" when there is none.
+func GetOtherPodcastItemIDByDownloadPath(filePath string, excludeID string) (string, error) {
+	var ids []string
+	result := DB.Model(&PodcastItem{}).Where("download_path = ? AND id <> ?", filePath, excludeID).Limit(1).Pluck("id", &ids)
+	if result.Error != nil || len(ids) == 0 {
+		return "", result.Error
+	}
+	return ids[0], nil
+}
+
 // GetDownloadedItemPaths lists downloaded episodes without loading their transcripts.
 func GetDownloadedItemPaths() ([]DownloadedItemPath, error) {
 	var paths []DownloadedItemPath

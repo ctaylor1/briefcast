@@ -307,6 +307,12 @@ where id in (
 		Name:  "2026_11_06_01_01_AddPodcastItemsOpenCheckpointIndex",
 		Query: "create index if not exists idx_podcast_items_open_checkpoint on podcast_items(transcript_status) where transcript_checkpoint_json <> ''",
 	},
+	{
+		// Downloads check whether another episode already owns a file path.
+		// Without an index that check would scan every row, transcripts included.
+		Name:  "2026_11_09_01_00_AddPodcastItemsDownloadPathIndex",
+		Query: "create index if not exists idx_podcast_items_download_path on podcast_items(download_path)",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)
