@@ -108,16 +108,18 @@ function clear(): void {
 </template>
 
 <style scoped>
+/* Headless UI renders the popover root, button and panel, so this component's scoped
+   attribute does not reach them; they are styled through the wrapper with :deep(). */
 .podcast-filter {
   display: grid;
   gap: var(--space-2);
 }
 
-.podcast-filter__popover {
+.podcast-filter :deep(.podcast-filter__popover) {
   position: relative;
 }
 
-.podcast-filter__trigger {
+.podcast-filter :deep(.podcast-filter__trigger) {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--color-border);
@@ -141,7 +143,7 @@ function clear(): void {
   text-overflow: ellipsis;
 }
 
-.podcast-filter__panel {
+.podcast-filter :deep(.podcast-filter__panel) {
   position: absolute;
   top: calc(100% + var(--space-2));
   left: 0;

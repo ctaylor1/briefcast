@@ -1122,37 +1122,10 @@ img {
   gap: var(--space-1);
 }
 
-.app-topbar__title {
-  margin: 0;
-  font-size: 18px;
-  line-height: 24px;
-}
-
 .app-topbar__actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.breadcrumbs {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-caption-size);
-  color: var(--color-text-secondary);
-}
-
-.breadcrumbs span::after {
-  content: "/";
-  margin-left: var(--space-2);
-  color: var(--color-text-tertiary);
-}
-
-.breadcrumbs span:last-child::after {
-  content: "";
-  margin: 0;
 }
 
 .app-main {
@@ -1185,13 +1158,6 @@ img {
   gap: var(--space-1);
 }
 
-.app-nav__section-title {
-  margin: var(--space-4) var(--space-2) var(--space-2);
-  color: var(--color-text-tertiary);
-  font-size: var(--font-caption-size);
-  letter-spacing: 0.05em;
-}
-
 .app-nav__link {
   min-height: 44px;
   border-radius: var(--radius-2);
@@ -1219,18 +1185,6 @@ img {
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
-}
-
-.app-nav__text {
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
-.app-nav__meta {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .app-sidebar__toggle {
@@ -1451,56 +1405,6 @@ img {
   color: #f9a8d4;
 }
 
-.app-user-trigger {
-  min-height: 40px;
-  padding-inline: var(--space-3);
-}
-
-.app-user-label {
-  display: none;
-}
-
-.app-user-menu {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.app-user-menu__heading {
-  margin: 0;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-caption-size);
-  padding: var(--space-1) var(--space-2);
-}
-
-.app-user-menu__item {
-  width: 100%;
-  min-height: 40px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--color-text-primary);
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  cursor: pointer;
-}
-
-.app-user-menu__item:hover {
-  background: var(--color-hover);
-}
-
-.app-user-menu__theme-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.app-user-menu__meta {
-  margin: var(--space-2) var(--space-2) 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line-height);
-}
-
 .table-wrap {
   overflow: auto;
 }
@@ -1662,9 +1566,7 @@ img {
     width: 220px;
   }
 
-  .app-sidebar:not([data-expanded="true"]) .app-nav__label,
-  .app-sidebar:not([data-expanded="true"]) .app-nav__section-title,
-  .app-sidebar:not([data-expanded="true"]) .app-nav__meta {
+  .app-sidebar:not([data-expanded="true"]) .app-nav__label {
     display: none;
   }
 
@@ -1681,9 +1583,6 @@ img {
     justify-content: space-between;
   }
 
-  .app-user-label {
-    display: inline;
-  }
 
   .app-bottom-tabs {
     display: none;
@@ -1700,9 +1599,7 @@ img {
     padding-inline: var(--space-3);
   }
 
-  .app-sidebar .app-nav__label,
-  .app-sidebar .app-nav__section-title,
-  .app-sidebar .app-nav__meta {
+  .app-sidebar .app-nav__label {
     display: initial;
   }
 
@@ -1989,4 +1886,29 @@ html.has-player {
   margin: var(--space-1) 0;
   border: 0;
   border-top: 1px solid var(--color-border);
+}
+
+/* Navigation: five destinations; "Most referenced" sits under Library. */
+.app-nav__link--sub {
+  min-height: 32px;
+  font-size: var(--font-caption-size);
+}
+
+.app-sidebar[data-expanded="true"] .app-nav__link--sub {
+  padding-left: var(--space-8);
+}
+
+.app-topbar__logo {
+  height: 28px;
+  width: auto;
+}
+
+.app-topbar__add-label {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .app-topbar__add-label {
+    display: inline;
+  }
 }

@@ -15,6 +15,9 @@ import UiSelect from "../components/ui/UiSelect.vue";
 import { formatDateTime } from "../lib/format";
 import { DownloadStatus, isDownloaded, isDownloading, isPaused } from "../lib/episodeStatus";
 
+// Inside the Activity page the page header is the Activity one.
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
+
 const player = usePlayer();
 const confirmStopAllOpen = ref(false);
 const stoppingAllBusy = ref(false);
@@ -342,7 +345,7 @@ onUnmounted(() => {
 
 <template>
   <section class="downloads-page stack-4">
-    <header class="page-header">
+    <header v-if="!embedded" class="page-header">
       <h2 class="section-title">Download queue</h2>
       <p class="section-subtitle">
         Track queue progress, pause downloads, and stop individual jobs.
