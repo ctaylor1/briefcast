@@ -549,6 +549,101 @@ func TestStateFaultIsSignalledOnceWithItsCause(t *testing.T) {
 	}
 }
 
+// Hourly GC used to re-touch every pruned job under the global mutex forever.
+// A tombstone is skipped once its cleanup is durably finished, and a crash
+// between the tombstone commit and file deletion is still repaired.
+func TestPruneFinishesTombstonesOnceAndSkipsThem(t *testing.T) {
+	logs := &lockedBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cfg, request, output := workerFixture(t)
+	w := openTestWorker(t, cfg, successRunner(output))
+	done, interrupted := uuid.NewString(), uuid.NewString()
+	digests := map[string]string{}
+	for _, id := range []string{done, interrupted} {
+		submitTest(t, w, id, request)
+		waitState(t, w, id, "succeeded")
+		raw, err := w.Result(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result transcription.JobResult
+		if err = json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.Ack(id, result.ResultSHA256); err != nil {
+			t.Fatal(err)
+		}
+		digests[id] = result.ResultSHA256
+	}
+	// Crash image: the tombstone was committed but no file was deleted yet.
+	w.mu.Lock()
+	r, err := w.store.get(interrupted)
+	if err == nil {
+		r.Pruned = true
+		err = w.store.save(r, false)
+	}
+	w.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(w.store.resultPath(interrupted)); err != nil {
+		t.Fatal("fixture lost the result before pruning")
+	}
+	later := time.Now().Add(8 * 24 * time.Hour)
+	if err = w.PruneAcknowledged(later); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{done, interrupted} {
+		if _, err = os.Stat(w.store.resultPath(id)); !os.IsNotExist(err) {
+			t.Fatalf("pruned result file kept: %v", err)
+		}
+		if _, err = os.Stat(w.store.jobDir(id)); err != nil {
+			t.Fatal("job directory removed; an older worker's GC fails without it")
+		}
+		w.mu.Lock()
+		r, err = w.store.get(id)
+		w.mu.Unlock()
+		if err != nil || !r.Pruned || !r.PruneComplete {
+			t.Fatalf("tombstone not finished: %+v %v", r, err)
+		}
+		if _, err = w.Ack(id, digests[id]); err != nil {
+			t.Fatal("tombstone lost ACK")
+		}
+		if _, err = w.Result(id); !errors.Is(err, errGone) {
+			t.Fatal("pruned result still served")
+		}
+	}
+	// A finished tombstone is skipped: a file planted in its directory survives.
+	sentinel := filepath.Join(w.store.jobDir(done), "stdout.json")
+	if err = os.WriteFile(sentinel, []byte("planted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.PruneAcknowledged(later.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(sentinel); err != nil {
+		t.Fatal("finished tombstone was pruned again")
+	}
+	if err = os.Remove(sentinel); err != nil {
+		t.Fatal(err)
+	}
+	// Restart: recovery skips finished tombstones.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err = w.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restarted := openTestWorker(t, cfg, successRunner(output))
+	if _, err = restarted.Ack(done, digests[done]); err != nil {
+		t.Fatal("tombstone lost across restart")
+	}
+	if strings.Contains(logs.String(), "worker_artifact_cleanup_failed") {
+		t.Fatalf("restart warned about pruned jobs: %s", logs.String())
+	}
+}
+
 func TestStateOwnershipAndRecoveryBudget(t *testing.T) {
 	cfg, request, output := workerFixture(t)
 	w := openTestWorker(t, cfg, successRunner(output))

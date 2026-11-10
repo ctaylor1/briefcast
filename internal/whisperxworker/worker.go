@@ -600,6 +600,9 @@ func (w *Worker) recover(ctx context.Context) error {
 		return err
 	}
 	for _, r := range records {
+		if r.PruneComplete {
+			continue // a finished tombstone has no result or artifacts left to verify or clean
+		}
 		if r.Status.State == "succeeded" && !r.Pruned {
 			if _, err = w.resultLocked(r); err != nil {
 				return fmt.Errorf("durable result verification failed for %s", r.Status.JobID)
