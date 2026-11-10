@@ -19,6 +19,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestMainPackageIsOneFile guards the image build. The Dockerfile, the legacy
+// Dockerfile and the install docs build the app with `go build ./main.go`,
+// which compiles that one file. Code in another non-test file of this package
+// passes `go build ./...` but breaks the image.
+func TestMainPackageIsOneFile(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if name != "main.go" {
+			t.Errorf("%s: put package main code in main.go; `go build ./main.go` does not compile other files", name)
+		}
+	}
+}
+
 // TestAuthRouterGroup handles the corresponding operation.
 func TestAuthRouterGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
