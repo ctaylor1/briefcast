@@ -8,12 +8,10 @@ import UiCard from "../ui/UiCard.vue";
 
 const props = defineProps<{
   item: PodcastItem;
-  playingEpisodeId: string | null;
 }>();
 
 const emit = defineEmits<{
   (event: "play", item: PodcastItem): void;
-  (event: "stop-playback", item: PodcastItem): void;
   (event: "toggle-played", item: PodcastItem): void;
   (event: "toggle-bookmark", item: PodcastItem): void;
   (event: "queue-download", item: PodcastItem): void;
@@ -148,9 +146,7 @@ function progressAriaText(item: PodcastItem): string {
         <div class="episode-list-item__actions">
           <EpisodeTrackControls
             :item="props.item"
-            :is-playing-track="props.playingEpisodeId === props.item.ID"
             @play="emit('play', props.item)"
-            @stop-playback="emit('stop-playback', props.item)"
             @toggle-played="emit('toggle-played', props.item)"
             @toggle-bookmark="emit('toggle-bookmark', props.item)"
             @queue-download="emit('queue-download', props.item)"

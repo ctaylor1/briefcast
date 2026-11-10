@@ -6,12 +6,10 @@ import UiTooltip from "../ui/UiTooltip.vue";
 
 const props = defineProps<{
   item: PodcastItem;
-  isPlayingTrack: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: "play", item: PodcastItem): void;
-  (event: "stop-playback", item: PodcastItem): void;
   (event: "toggle-played", item: PodcastItem): void;
   (event: "toggle-bookmark", item: PodcastItem): void;
   (event: "queue-download", item: PodcastItem): void;
@@ -54,19 +52,6 @@ function queueDownload(): void {
         @click="emit('play', props.item)"
       >
         <span class="track-control__glyph" aria-hidden="true">▶</span>
-      </button>
-    </UiTooltip>
-
-    <UiTooltip text="Stop">
-      <button
-        type="button"
-        class="track-control"
-        :class="{ 'track-control--active': isPlayingTrack }"
-        aria-label="Stop"
-        :disabled="!isPlayingTrack"
-        @click="emit('stop-playback', props.item)"
-      >
-        <span class="track-control__glyph" aria-hidden="true">⏹</span>
       </button>
     </UiTooltip>
 

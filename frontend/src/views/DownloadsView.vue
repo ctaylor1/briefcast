@@ -69,7 +69,7 @@ function isDownloaded(item: PodcastItem): boolean {
 
 function queueStatusLabel(item: PodcastItem): string {
   if (isDownloaded(item)) {
-    return "Download Completed";
+    return "Download completed";
   }
   if (isDownloading(item)) {
     return "Downloading";
@@ -403,14 +403,14 @@ onUnmounted(() => {
           label="Sort"
           @update:model-value="queueSort = $event as DownloadQueueSort"
         >
-          <option value="download_date_desc">Download Date (Desc)</option>
-          <option value="download_date_asc">Download Date (Asc)</option>
-          <option value="title_asc">Alphabetical (A-Z)</option>
-          <option value="title_desc">Alphabetical Z-A</option>
-          <option value="podcast_asc">Podcast (A-Z)</option>
-          <option value="status">Status (Active First)</option>
-          <option value="progress_desc">Progress (High-Low)</option>
-          <option value="progress_asc">Progress (Low-High)</option>
+          <option value="download_date_desc">Download date (newest first)</option>
+          <option value="download_date_asc">Download date (oldest first)</option>
+          <option value="title_asc">Title (A–Z)</option>
+          <option value="title_desc">Title (Z–A)</option>
+          <option value="podcast_asc">Podcast (A–Z)</option>
+          <option value="status">Status (active first)</option>
+          <option value="progress_desc">Progress (high to low)</option>
+          <option value="progress_asc">Progress (low to high)</option>
         </UiSelect>
         <div class="downloads-filters__status">
           <span class="ui-label">Queue status</span>

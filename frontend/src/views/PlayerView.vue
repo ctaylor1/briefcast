@@ -163,7 +163,7 @@ async function loadItems(): Promise<void> {
         (left, right) => (order.get(left.ID) ?? 0) - (order.get(right.ID) ?? 0),
       );
     } else {
-      errorMessage.value = "No items specified for playback.";
+      // Nothing requested: the template shows the "Nothing queued" empty state.
       return;
     }
 

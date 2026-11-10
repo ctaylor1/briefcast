@@ -2,13 +2,17 @@
 import UiButton from "../ui/UiButton.vue";
 import UiCard from "../ui/UiCard.vue";
 
-defineProps<{
-  page: number;
-  totalPages: number;
-  totalCount: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-}>();
+withDefaults(
+  defineProps<{
+    page: number;
+    totalPages: number;
+    totalCount: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+    noun?: string;
+  }>(),
+  { noun: "episodes" },
+);
 
 const emit = defineEmits<{
   (event: "first"): void;
@@ -20,7 +24,7 @@ const emit = defineEmits<{
 <template>
   <UiCard padding="md" tone="subtle" class="episodes-pagination">
     <p class="meta-text">
-      Showing page {{ page }} of {{ totalPages || 1 }} ({{ totalCount }} episodes)
+      Showing page {{ page }} of {{ totalPages || 1 }} ({{ totalCount }} {{ noun }})
     </p>
     <div class="episodes-pagination__actions">
       <UiButton size="sm" variant="outline" :disabled="!hasPrevious" @click="emit('first')">

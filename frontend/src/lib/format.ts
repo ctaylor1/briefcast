@@ -9,12 +9,13 @@ export function formatDate(value?: string | null): string {
   return parsed.toLocaleDateString();
 }
 
+// Date and time to the minute. Seconds are noise in lists and tables.
 export function formatDateTime(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return "Unknown";
   }
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function formatDuration(seconds: number): string {

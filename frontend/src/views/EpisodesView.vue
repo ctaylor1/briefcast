@@ -28,7 +28,6 @@ const errorMessage = ref("");
 const infoMessage = ref("");
 const items = ref<PodcastItem[]>([]);
 const podcastOptions = ref<Podcast[]>([]);
-const playingEpisodeId = ref<string | null>(null);
 
 const {
   drawerOpen,
@@ -282,16 +281,6 @@ function openPlayer(item: PodcastItem): void {
       itemIds: item.ID,
     },
   });
-  playingEpisodeId.value = item.ID;
-}
-
-function stopPlayback(item: PodcastItem): void {
-  if (playingEpisodeId.value !== item.ID) {
-    return;
-  }
-
-  playingEpisodeId.value = null;
-  infoMessage.value = "Playback stopped.";
 }
 
 function openPlayerAt(item: PodcastItem, startSeconds: number): void {
@@ -415,9 +404,7 @@ onMounted(() => {
           v-for="item in items"
           :key="item.ID"
           :item="item"
-          :playing-episode-id="playingEpisodeId"
           @play="openPlayer"
-          @stop-playback="stopPlayback"
           @toggle-played="togglePlayed"
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"
@@ -429,9 +416,7 @@ onMounted(() => {
       <div class="episodes-list-desktop">
         <EpisodesTable
           :items="items"
-          :playing-episode-id="playingEpisodeId"
           @play="openPlayer"
-          @stop-playback="stopPlayback"
           @toggle-played="togglePlayed"
           @toggle-bookmark="toggleBookmark"
           @queue-download="queueDownload"

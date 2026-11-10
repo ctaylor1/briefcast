@@ -12,6 +12,7 @@ import UiInput from "../components/ui/UiInput.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { episodesApi, getErrorMessage, podcastsApi, settingsApi } from "../lib/api";
 import { summariesApi } from "../lib/api/summaries";
+import { readerKeyAction } from "../lib/keyboard";
 import { formatDate } from "../lib/format";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
@@ -272,13 +273,6 @@ function closeReader(): void {
   readerItem.value = null;
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  const tagName = target.tagName;
-  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
-}
-
 async function moveReader(delta: number): Promise<void> {
   if (!readerOpen.value || readerLoadingSummary.value) return;
   const currentIndex = readerItemIndex.value;
@@ -292,21 +286,14 @@ async function moveReader(delta: number): Promise<void> {
 
 function onReaderKeydown(event: KeyboardEvent): void {
   if (!readerOpen.value) return;
-  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
-  if (isEditableTarget(event.target)) return;
-
-  if (event.key === "ArrowDown" || event.key === "j" || event.key === "J") {
-    event.preventDefault();
+  const action = readerKeyAction(event);
+  if (!action) return;
+  event.preventDefault();
+  if (action === "next") {
     void moveReader(1);
-    return;
-  }
-  if (event.key === "ArrowUp" || event.key === "k" || event.key === "K") {
-    event.preventDefault();
+  } else if (action === "previous") {
     void moveReader(-1);
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
+  } else {
     closeReader();
   }
 }
@@ -742,8 +729,8 @@ onBeforeUnmount(() => {
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
-            <option value="title_asc">Title A-Z</option>
-            <option value="title_desc">Title Z-A</option>
+            <option value="title_asc">Title (A–Z)</option>
+            <option value="title_desc">Title (Z–A)</option>
             <option value="shortest">Shortest read</option>
             <option value="longest">Longest read</option>
           </UiSelect>
@@ -852,6 +839,7 @@ onBeforeUnmount(() => {
       </div>
 
       <EpisodesPagination
+        noun="summaries"
         :page="filter.page"
         :total-pages="filter.totalPages"
         :total-count="filter.totalCount"
