@@ -245,8 +245,6 @@ Each backlog item should include:
 
 - `internal/sanitize` (vendored fork).
 - `internal/whisperxworker` journal, checkpoint and guardian code (fail-closed by design).
-- `RELEASE_RESET.ps1`, `RELEASE_RUN.ps1`, `RELEASE_BUILD.ps1` (legacy and destructive;
-  never run them).
 - `.env`, `secrets/`, `config/`, `assets/`, `logs/`, `worker-state/`, `worker-cache/`.
 
 ### Local conventions to preserve

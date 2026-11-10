@@ -47,6 +47,7 @@ All notable changes to this project will be documented in this file.
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
 - The unrouted legacy HTML page handlers, the `client/` templates and the bundled legacy libraries under `webassets/` (Vue 2, axios and others). The web app at `/app` is unaffected. Only `webassets/blank.png`, which RSS feeds use as default artwork, remains.
+- The legacy `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1` and `RELEASE_RESET.ps1` scripts. After one typed "yes", the reset script deleted the database, backups and media without checking for errors. Use `RELEASE.ps1`; see RELEASE.md.
 
 ### Security
 - The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.

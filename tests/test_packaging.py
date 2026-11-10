@@ -500,3 +500,10 @@ def test_app_deploy_without_restore_point_needs_explicit_override(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "without a restore point" in (result.stderr + result.stdout)
     assert rollback["restore_point"] is None
+
+
+def test_legacy_release_scripts_are_removed():
+    # They could wipe the database, backups and media after one typed "yes",
+    # with no exit-code checks. RELEASE.ps1 replaces them and refuses resets.
+    for name in ["RELEASE_BUILD.ps1", "RELEASE_RUN.ps1", "RELEASE_RESET.ps1"]:
+        assert not (ROOT / name).exists(), name
