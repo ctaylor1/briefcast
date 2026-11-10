@@ -22,6 +22,11 @@ for (const key of Object.getOwnPropertyNames(window)) {
   }
 }
 
+// Node has its own Event and CustomEvent, which jsdom refuses to dispatch. DOM tests need
+// jsdom's.
+globalThis.Event = window.Event;
+globalThis.CustomEvent = window.CustomEvent;
+
 // jsdom has no media playback. Tests that need different behaviour override these.
 window.HTMLMediaElement.prototype.play = function play() {
   return Promise.resolve();

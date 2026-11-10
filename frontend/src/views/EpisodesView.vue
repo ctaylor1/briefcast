@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { usePlayer } from "../composables/usePlayer";
 import { toast } from "../lib/toast";
 import { createLatest } from "../lib/latest";
 import UiIcon from "../components/ui/UiIcon.vue";
 import { episodeMarkdownPackageUrl } from "../lib/api/paths";
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useEpisodeDrawer } from "../composables/useEpisodeDrawer";
 import EpisodeLinksPanel from "../components/episodes/EpisodeLinksPanel.vue";
@@ -24,8 +25,8 @@ import { formatDuration } from "../lib/format";
 import { isSponsorChapter } from "../lib/sponsor";
 import type { EpisodeSorting, EpisodeTriState, Podcast, PodcastItem } from "../types/api";
 
+const player = usePlayer();
 const route = useRoute();
-const router = useRouter();
 
 const isLoading = ref(true);
 const errorMessage = ref("");
@@ -279,24 +280,14 @@ async function cancelDownload(item: PodcastItem): Promise<void> {
   }
 }
 
+// Plays in the persistent player bar; the user stays on this page.
 function openPlayer(item: PodcastItem): void {
-  void router.push({
-    path: "/player",
-    query: {
-      itemIds: item.ID,
-    },
-  });
+  void player.playEpisode(item);
 }
 
 function openPlayerAt(item: PodcastItem, startSeconds: number): void {
   const normalizedStart = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
-  void router.push({
-    path: "/player",
-    query: {
-      itemIds: item.ID,
-      start: normalizedStart.toString(),
-    },
-  });
+  void player.playEpisodeAt(item, normalizedStart);
 }
 
 watch(

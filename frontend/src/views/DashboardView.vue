@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePlayer } from "../composables/usePlayer";
 import { toast } from "../lib/toast";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
@@ -13,6 +14,7 @@ import { useStatusMessage } from "../composables/useStatusMessage";
 import { getErrorMessage, podcastsApi } from "../lib/api";
 import type { Podcast } from "../types/api";
 
+const player = usePlayer();
 const isLoading = ref(true);
 const {
   errorMessage,
@@ -56,13 +58,9 @@ const activeDownloads = computed(() =>
   sortedPodcasts.value.reduce((sum, podcast) => sum + podcast.DownloadingEpisodesCount, 0),
 );
 
+// Queues the podcast's episodes, newest first, in the player bar.
 function openPlayerScreen(podcastId: string): void {
-  void router.push({
-    path: "/player",
-    query: {
-      podcastId,
-    },
-  });
+  void player.playPodcast(podcastId);
 }
 
 function requestDelete(podcast: Podcast): void {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from "vue-router";
 import AppNav from "./components/AppNav.vue";
+import PlayerBar from "./components/player/PlayerBar.vue";
 import UiToastRegion from "./components/ui/UiToastRegion.vue";
 </script>
 
@@ -12,5 +13,6 @@ import UiToastRegion from "./components/ui/UiToastRegion.vue";
       </div>
     </main>
   </AppNav>
+  <PlayerBar />
   <UiToastRegion />
 </template>

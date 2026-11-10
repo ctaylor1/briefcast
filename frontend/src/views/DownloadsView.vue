@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { usePlayer } from "../composables/usePlayer";
 import { toast } from "../lib/toast";
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { useDownloadQueue } from "../composables/useDownloadQueue";
 import { getErrorMessage } from "../lib/api";
 import type { PodcastItem } from "../types/api";
@@ -15,6 +15,7 @@ import UiSelect from "../components/ui/UiSelect.vue";
 import { formatDateTime } from "../lib/format";
 import { DownloadStatus, isDownloaded, isDownloading, isPaused } from "../lib/episodeStatus";
 
+const player = usePlayer();
 const confirmStopAllOpen = ref(false);
 const stoppingAllBusy = ref(false);
 const undoCancelItem = ref<PodcastItem | null>(null);
@@ -31,7 +32,6 @@ type DownloadQueueSort =
   | "status"
   | "progress_desc"
   | "progress_asc";
-const router = useRouter();
 
 const {
   queueItems,
@@ -322,12 +322,7 @@ function queueProgressAriaText(item: PodcastItem): string {
 }
 
 function openPlayer(item: PodcastItem): void {
-  void router.push({
-    path: "/player",
-    query: {
-      itemIds: item.ID,
-    },
-  });
+  void player.playEpisode(item);
 }
 
 onMounted(() => {
