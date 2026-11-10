@@ -124,20 +124,7 @@ func run(args []string) error {
 	go func() { stopped <- server.ListenAndServe() }()
 	gcTicker := time.NewTicker(time.Hour)
 	defer gcTicker.Stop()
-	var serveErr error
-serveLoop:
-	for {
-		select {
-		case <-ctx.Done():
-			break serveLoop
-		case serveErr = <-stopped:
-			break serveLoop
-		case <-gcTicker.C:
-			if err = worker.PruneAcknowledged(time.Now().UTC()); err != nil {
-				slog.Error("worker_gc_failed")
-			}
-		}
-	}
+	serveErr := serveUntilStopped(ctx, stopped, worker.Faulted(), gcTicker.C, func() error { return worker.PruneAcknowledged(time.Now().UTC()) })
 	shutdown, stopShutdown := context.WithTimeout(context.Background(), *grace)
 	defer stopShutdown()
 	shutdownErr := server.Shutdown(shutdown)
@@ -150,6 +137,31 @@ serveLoop:
 	}
 	return errors.Join(serveErr, shutdownErr, closeErr)
 }
+
+// errWorkerFault ends serve after a state fault. The worker's Close error
+// carries the cause; the non-zero exit lets the restart policy run recovery.
+var errWorkerFault = errors.New("worker state unavailable; exiting for recovery")
+
+// serveUntilStopped blocks until a signal, a server error or a state fault.
+// GC failures are logged with their cause and do not stop serving.
+func serveUntilStopped(ctx context.Context, stopped <-chan error, faulted <-chan struct{}, gc <-chan time.Time, prune func() error) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-stopped:
+			return err
+		case <-faulted:
+			slog.Error("worker_exiting_on_state_fault")
+			return errWorkerFault
+		case <-gc:
+			if err := prune(); err != nil {
+				slog.Error("worker_gc_failed", "error", err)
+			}
+		}
+	}
+}
+
 func splitModels(s string) []string {
 	values := []string{}
 	for _, value := range strings.Split(s, ",") {

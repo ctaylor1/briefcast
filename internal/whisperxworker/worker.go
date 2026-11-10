@@ -48,6 +48,7 @@ type Worker struct {
 	mu          sync.Mutex
 	active      map[string]context.CancelFunc
 	fault       error
+	faulted     chan struct{} // closed on the first fault; nil for offline maintenance
 	stopping    bool
 	wake        chan struct{}
 	done        chan struct{}
@@ -64,7 +65,7 @@ func Open(ctx context.Context, cfg Config, runner Runner) (_ *Worker, err error)
 	if err != nil {
 		return nil, err
 	}
-	w := &Worker{cfg: cfg, runner: runner, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), tokenDigest: token}
+	w := &Worker{cfg: cfg, runner: runner, active: map[string]context.CancelFunc{}, faulted: make(chan struct{}), wake: make(chan struct{}, 1), done: make(chan struct{}), tokenDigest: token}
 	w.metrics = newWorkerMetrics(w)
 	w.store, err = openStore(cfg.StateDir)
 	if err != nil {
@@ -118,12 +119,31 @@ func (w *Worker) notify() {
 	default:
 	}
 }
+
+// unavailable records a sticky state fault; callers hold w.mu. The first fault
+// is kept as the cause and closes Faulted so serve can exit for recovery.
 func (w *Worker) unavailable(err error) {
-	w.fault = err
+	if w.fault == nil {
+		w.fault = err
+		if w.faulted != nil {
+			close(w.faulted)
+		}
+	}
 	for _, cancel := range w.active {
 		cancel()
 	}
-	slog.Error("worker_state_unavailable")
+	slog.Error("worker_state_unavailable", "error", err)
+}
+
+// Faulted is closed once the worker hits a state fault it cannot recover from
+// while running. The process should exit so its restart policy runs recovery.
+func (w *Worker) Faulted() <-chan struct{} { return w.faulted }
+
+// Fault returns the first recorded state fault, or nil.
+func (w *Worker) Fault() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fault
 }
 func terminal(state string) bool {
 	return state == "succeeded" || state == "failed" || state == "cancelled"

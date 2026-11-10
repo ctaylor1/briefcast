@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -491,6 +492,60 @@ func TestStorageFailuresCannotClaimAcceptanceOrSuccess(t *testing.T) {
 				t.Fatal("published undurable result")
 			}
 		})
+	}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// A storage fault must be reported (with its cause) so serve can exit and the
+// restart policy can run recovery, instead of leaving jobs "running" forever.
+func TestStateFaultIsSignalledOnceWithItsCause(t *testing.T) {
+	logs := &lockedBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cfg, request, output := workerFixture(t)
+	w := openTestWorker(t, cfg, successRunner(output))
+	if _, err := w.store.db.Exec("CREATE TRIGGER reject_write BEFORE UPDATE ON jobs WHEN NEW.state='succeeded' BEGIN SELECT RAISE(ABORT,'injected'); END"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-w.Faulted():
+		t.Fatal("faulted before any fault")
+	default:
+	}
+	submitTest(t, w, uuid.NewString(), request)
+	select {
+	case <-w.Faulted():
+	case <-time.After(5 * time.Second):
+		t.Fatal("state fault was not signalled")
+	}
+	first := w.Fault()
+	if first == nil || !strings.Contains(first.Error(), "injected") {
+		t.Fatalf("fault cause lost: %v", first)
+	}
+	w.mu.Lock()
+	w.unavailable(errors.New("later consequence")) // must not close twice
+	w.mu.Unlock()
+	if w.Fault() != first {
+		t.Fatal("later fault replaced the first cause")
+	}
+	if !strings.Contains(logs.String(), "worker_state_unavailable") || !strings.Contains(logs.String(), "injected") {
+		t.Fatalf("fault cause not logged: %s", logs.String())
 	}
 }
 
