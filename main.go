@@ -329,10 +329,18 @@ func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency in
 	})
 }
 
+// runStartupJobs clears stale job locks before starting the stats warmup.
+// Started first, the warmup's long read held the database past the busy
+// timeout and made the lock reset fail with "database is locked".
+func runStartupJobs(unlockAllJobs func(), startStatsWarmup func()) {
+	unlockAllJobs()
+	startStatsWarmup()
+}
+
 func intiCron() {
 	appLogger := logging.Sugar()
 	checkFrequency := resolveCheckFrequency(os.Getenv("CHECK_FREQUENCY"), appLogger)
-	service.UnlockAllJobs()
+	runStartupJobs(service.UnlockAllJobs, service.StartPipelineStatsWarmup)
 
 	scheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 	whisperxFrequency := resolveWhisperXFrequency(checkFrequency, os.Getenv("WHISPERX_CHECK_FREQUENCY"), appLogger)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"sync/atomic"
+	"time"
 
 	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/internal/feedmeta"
@@ -10,6 +11,18 @@ import (
 )
 
 var linkBackfillRunning atomic.Bool
+
+// The backfill writes one transaction per episode. Back to back, those writes
+// left other SQLite writers (the per-minute transcription job) unable to get
+// the lock within their busy timeout for the whole run. Pausing for longer than
+// SQLite's longest busy-handler sleep (100 ms) every few writes lets them in.
+const (
+	linkBackfillYieldEvery = 20
+	linkBackfillYieldFor   = 250 * time.Millisecond
+)
+
+// linkBackfillPause is a seam for tests.
+var linkBackfillPause = time.Sleep
 
 // GetLinkBackfillRunning reports whether a link backfill is in progress.
 func GetLinkBackfillRunning() bool {
@@ -55,11 +68,16 @@ func BackfillShowNoteLinks() (succeeded int, skipped int, err error) {
 		"extraction_version", feedmeta.LinkExtractionVersion,
 	)
 
+	writes := 0
 	for i := range items {
 		if withLinks[items[i].ID] && !needsExtraction[items[i].ID] {
 			skipped++
 			continue
 		}
+		if writes > 0 && writes%linkBackfillYieldEvery == 0 {
+			linkBackfillPause(linkBackfillYieldFor)
+		}
+		writes++
 
 		plainText := strip.StripTags(items[i].SummaryHTML)
 		saved, saveErr := persistShowNoteLinks(items[i].PodcastID, items[i].ID, items[i].SummaryHTML, plainText)
