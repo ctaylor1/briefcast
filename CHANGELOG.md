@@ -18,11 +18,16 @@ All notable changes to this project will be documented in this file.
 - Feed refresh no longer calls the LLM. Episodes that arrive with a feed transcript are summarized by the summary backfill, which starts after the refresh adds them. If a summary job is already running, the backfill runs again when that job ends. The refresh job also renews its 2-hour lease while it runs, and a renewal can no longer revive a lock that was just released.
 - **Upgrade note (deletes rows; back up first):** migrations `2026_11_09_02_00` to `02_03` remove duplicate episodes, meaning the same podcast and GUID, which a refresh racing "download all" could create. They then add a unique index on `(podcast_id, guid)` for episodes that have a GUID. The kept row is the one with a transcript, then a download, then a summary, then the oldest. Show-note links and Markdown revisions of the removed rows are deleted with them. Files on disk are not touched. To undo, restore the backup taken before the upgrade.
 - `POST /podcasts/:id/download` now answers `202` as soon as it has checked that the podcast exists, and queues the episodes in the background. It used to re-read the feed inside the request, which could hang on a slow host. A missing podcast gets `404`.
+- **Upgrade note (UI):** navigation is now Library, Episodes, Summaries, Activity and Settings. `/downloads` and `/about` redirect to Activity and Settings. The Library table view and the in-page Summaries reader are removed. The stored theme `auto` now follows the system setting; the clock schedule is its own mode.
+- Settings has section links and one save bar instead of a Save button per card. Episode rows are compact at every width, and Downloads shows cards below 1200px.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
 - `SQLITE_JOURNAL_MODE=wal` opts a SQLite database into WAL mode, so reads no longer block writes. It is off by default; see the README for the disk and backup caveats.
 - Migration `2026_11_09_01_00_AddPodcastItemsDownloadPathIndex` indexes `podcast_items.download_path`, so the ownership check reads no transcripts. It is additive.
+- A persistent player bar with a scrubber, skip and speed controls, and chapter marks. Playback continues across pages. A Now playing view shows chapters, the transcript and show notes. Episodes resume where you stopped; this adds a nullable `playback_position_seconds` column and `PATCH /podcastitems/:id/position`.
+- A podcast page, one routed episode page with Summary, Transcript, Chapters and Links tabs, and an Activity page for downloads, the work queue and logs.
+- Theme modes System, Light, Dark and Schedule, applied before the first paint. Toast notifications replace page-top messages and browser alerts.
 
 ### Fixed
 - The missing-file check no longer resets episodes when storage is unavailable. It skips the pass when the data directory cannot be read, treats only "file does not exist" as missing, and changes nothing when more than half of a library of 20 or more episodes looks missing (`MISSING_FILES_MAX_PERCENT`).
@@ -48,11 +53,14 @@ All notable changes to this project will be documented in this file.
 - The show-note link backfill pauses for 250 ms after every 20 episodes it writes. On SQLite, the per-minute transcription job could not get the lock for the whole of a backfill (about 8 minutes on 5,000 episodes).
 - WebSocket messages over 64 KiB now close the connection instead of being buffered without limit.
 - Summarizing an episode that was deleted after it was loaded no longer writes an orphaned Markdown revision on SQLite, or fails on a foreign key on Postgres.
+- Accessibility: icon buttons have names, toggles announce their state, labels point at their own fields (all fields used to share one id), menus close on Escape or an outside click, and arrow keys scroll the summary reader again.
+- Settings and alternate feeds no longer save blank values after a failed load; the newest request wins when several are in flight; the player honours a start time; and IDs are encoded in request paths.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
 - The unrouted legacy HTML page handlers, the `client/` templates and the bundled legacy libraries under `webassets/` (Vue 2, axios and others). The web app at `/app` is unaffected. Only `webassets/blank.png`, which RSS feeds use as default artwork, remains.
 - The legacy `RELEASE_BUILD.ps1`, `RELEASE_RUN.ps1` and `RELEASE_RESET.ps1` scripts. After one typed "yes", the reset script deleted the database, backups and media without checking for errors. Use `RELEASE.ps1`; see RELEASE.md.
+- Tailwind CSS and `tailwind-merge`, which nothing used.
 
 ### Security
 - The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.
