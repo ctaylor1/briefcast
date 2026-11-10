@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Added a startup warning when `PASSWORD` is empty.
 
 ### Fixed
+- The missing-file check no longer resets episodes when storage is unavailable. It skips the pass when the data directory cannot be read, treats only "file does not exist" as missing, and changes nothing when more than half of a library of 20 or more episodes looks missing (`MISSING_FILES_MAX_PERCENT`).
 - Removed the horizontal scrollbar that the Podcasts, Episodes and Downloads tables showed at full window width. Tables now scroll sideways only when their columns do not fit.
 - Reduced `database is locked` errors on SQLite. Two queries that run about once a minute read through every stored transcript and held the lock for seconds; two new indexes on `podcast_items` take them to about a millisecond.
 - Fixed deleting a tagged podcast on Postgres. The delete failed on a foreign key after its episodes were already gone. On SQLite it left orphaned rows in `podcast_tags`.

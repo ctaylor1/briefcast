@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -896,26 +897,80 @@ func DownloadMissingEpisodes() error {
 // CheckMissingFiles handles the corresponding operation.
 func CheckMissingFiles() error {
 	items, err := db.GetDownloadedItemPaths()
-	setting := db.GetOrCreateSetting()
-
 	if err != nil {
 		return err
 	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	// An unavailable data root (unmounted volume, permission fault) makes every
+	// file look missing. Skip the pass instead of resetting the whole library.
+	if root := resolveAssetsDir(); root != "" {
+		info, statErr := missingFileStat(root)
+		if statErr != nil {
+			return fmt.Errorf("missing-file check skipped: data directory unavailable: %w", statErr)
+		}
+		if !info.IsDir() {
+			return errors.New("missing-file check skipped: data directory is not a directory")
+		}
+	}
+
+	missing := make([]db.DownloadedItemPath, 0)
 	for _, item := range items {
-		fileExists := FileExists(item.DownloadPath)
-		if !fileExists {
-			if setting.DontDownloadDeletedFromDisk {
-				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.Deleted); setErr != nil {
-					Logger.Warnw("failed to mark missing file episode deleted", "podcast_item_id", item.ID, "error", setErr)
-				}
-			} else {
-				if setErr := SetPodcastItemAsNotDownloaded(item.ID, db.NotDownloaded); setErr != nil {
-					Logger.Warnw("failed to requeue missing file episode", "podcast_item_id", item.ID, "error", setErr)
-				}
-			}
+		_, statErr := missingFileStat(item.DownloadPath)
+		switch {
+		case statErr == nil:
+		case errors.Is(statErr, fs.ErrNotExist):
+			missing = append(missing, item)
+		default:
+			// Only "does not exist" proves a file is gone. Any other error is unknown.
+			Logger.Warnw("could not check episode file; leaving its state unchanged", "podcast_item_id", item.ID, "error", statErr)
+		}
+	}
+
+	maxPercent := missingFilesMaxPercent()
+	if len(items) >= missingFilesBreakerMinItems && len(missing)*100 > len(items)*maxPercent {
+		Logger.Errorw("missing-file check found too many missing files and changed nothing; "+
+			"if the files were removed on purpose, raise "+missingFilesMaxPercentEnv,
+			"missing", len(missing), "downloaded", len(items), "max_percent", maxPercent)
+		return fmt.Errorf("missing-file check aborted: %d of %d downloaded files look missing (limit %d%%)", len(missing), len(items), maxPercent)
+	}
+
+	status := db.NotDownloaded
+	if db.GetOrCreateSetting().DontDownloadDeletedFromDisk {
+		status = db.Deleted
+	}
+	for _, item := range missing {
+		if setErr := SetPodcastItemAsNotDownloaded(item.ID, status); setErr != nil {
+			Logger.Warnw("failed to update episode whose file is missing", "podcast_item_id", item.ID, "download_status", status, "error", setErr)
 		}
 	}
 	return nil
+}
+
+const (
+	missingFilesMaxPercentEnv     = "MISSING_FILES_MAX_PERCENT"
+	missingFilesDefaultMaxPercent = 50
+	// The breaker only applies to libraries this size or larger, so a small
+	// library can still lose most of its files legitimately.
+	missingFilesBreakerMinItems = 20
+)
+
+// missingFileStat is a seam so tests can inject stat errors.
+var missingFileStat = os.Stat
+
+func missingFilesMaxPercent() int {
+	raw := strings.TrimSpace(os.Getenv(missingFilesMaxPercentEnv))
+	if raw == "" {
+		return missingFilesDefaultMaxPercent
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > 100 {
+		Logger.Warnw("invalid "+missingFilesMaxPercentEnv+", using default", "value", raw, "default", missingFilesDefaultMaxPercent)
+		return missingFilesDefaultMaxPercent
+	}
+	return value
 }
 
 // DeleteEpisodeFile handles the corresponding operation.
