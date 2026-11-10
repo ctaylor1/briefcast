@@ -3,8 +3,9 @@ import { httpClient } from "./http";
 import { apiPath } from "./paths";
 
 export const podcastsApi = {
-  list(): Promise<Podcast[]> {
-    return httpClient.get<Podcast[]>("/podcasts");
+  // The server answers null, not [], when the library is empty.
+  async list(): Promise<Podcast[]> {
+    return (await httpClient.get<Podcast[] | null>("/podcasts")) ?? [];
   },
   items(id: string): Promise<PodcastItem[]> {
     return httpClient.get<PodcastItem[]>(apiPath`/podcasts/${id}/items`);
