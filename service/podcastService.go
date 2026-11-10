@@ -274,8 +274,15 @@ func getItunesImageURL(body []byte) string {
 func AddPodcast(url string) (db.Podcast, error) {
 	var podcast db.Podcast
 	err := db.GetPodcastByURL(url, &podcast)
+	if err == nil {
+		return podcast, &model.PodcastAlreadyExistsError{URL: url}
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// A failed lookup is not proof the podcast exists.
+		return db.Podcast{}, fmt.Errorf("%w: %w", ErrPodcastStore, err)
+	}
 	setting := db.GetOrCreateSetting()
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	{
 		parsed, body, err := FetchFeedWithFeedparser(url)
 		if err != nil {
 			Logger.Errorw("Error adding podcast", "url", url, "error", err)
@@ -300,9 +307,10 @@ func AddPodcast(url string) (db.Podcast, error) {
 			podcast.Image = getItunesImageURL(body)
 		}
 
-		err = db.CreatePodcast(&podcast)
-		if err != nil {
-			return db.Podcast{}, err
+		if existing, exists, createErr := createPodcastOnce(&podcast); createErr != nil {
+			return db.Podcast{}, fmt.Errorf("%w: %w", ErrPodcastStore, createErr)
+		} else if exists {
+			return existing, &model.PodcastAlreadyExistsError{URL: url}
 		}
 
 		_, coverErr := DownloadPodcastCoverImage(podcast.Image, podcast.Title)
@@ -315,15 +323,47 @@ func AddPodcast(url string) (db.Podcast, error) {
 				Logger.Warnw("Failed to create podcast NFO", "podcast", podcast.Title, "error", nfoErr)
 			}
 		}
-		return podcast, err
+		return podcast, nil
 	}
+}
 
-	return podcast, &model.PodcastAlreadyExistsError{URL: url}
+// ErrPodcastStore reports that reading or writing podcasts failed; callers
+// answer it as a server error, not as bad input.
+var ErrPodcastStore = errors.New("podcast storage failed")
 
+var (
+	// addPodcastMu makes the exists-check and the insert one step, so two adds
+	// of the same URL cannot both create a podcast.
+	addPodcastMu sync.Mutex
+	// podcastItemsMu serializes AddPodcastItems per podcast, so a refresh and a
+	// "download all" cannot both insert the same new episodes.
+	podcastItemsMu sync.Map
+)
+
+func createPodcastOnce(podcast *db.Podcast) (db.Podcast, bool, error) {
+	addPodcastMu.Lock()
+	defer addPodcastMu.Unlock()
+	var existing db.Podcast
+	err := db.GetPodcastByURL(podcast.URL, &existing)
+	if err == nil {
+		return existing, true, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return db.Podcast{}, false, err
+	}
+	return db.Podcast{}, false, db.CreatePodcast(podcast)
+}
+
+func lockPodcastItems(podcastID string) func() {
+	value, _ := podcastItemsMu.LoadOrStore(podcastID, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // AddPodcastItems handles the corresponding operation.
 func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
+	defer lockPodcastItems(podcast.ID)()
 	parsed, _, err := FetchFeedWithFeedparser(podcast.URL)
 	if err != nil {
 		return err
@@ -476,6 +516,11 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				TranscriptCheckpointJSON:   "",
 			}
 			if createErr := db.CreatePodcastItem(&podcastItem); createErr != nil {
+				if exists, _ := db.PodcastItemExistsWithGUID(podcast.ID, guid); exists && guid != "" {
+					// Another writer added it first; the unique index kept one row.
+					Logger.Infow("episode already stored", "podcast_id", podcast.ID, "episode_guid", guid)
+					continue
+				}
 				Logger.Errorw("failed to persist podcast item", "podcast_id", podcast.ID, "episode_guid", guid, "error", createErr)
 				if firstItemErr == nil {
 					firstItemErr = createErr

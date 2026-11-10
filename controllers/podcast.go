@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -768,6 +769,9 @@ func AddPodcast(c *gin.Context) {
 		} else {
 			if v, ok := err.(*model.PodcastAlreadyExistsError); ok {
 				c.JSON(409, gin.H{"message": v.Error()})
+			} else if errors.Is(err, service.ErrPodcastStore) {
+				controllerLogger.Errorw("failed to add podcast", "url", addPodcastData.URL, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not save the podcast"})
 			} else {
 				controllerLogger.Warnw("failed to add podcast", "url", addPodcastData.URL, "error", err)
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

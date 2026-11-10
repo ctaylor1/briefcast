@@ -313,6 +313,51 @@ where id in (
 		Name:  "2026_11_09_01_00_AddPodcastItemsDownloadPathIndex",
 		Query: "create index if not exists idx_podcast_items_download_path on podcast_items(download_path)",
 	},
+	{
+		// Upgrade note: the next three migrations delete duplicate episodes
+		// (same podcast and GUID) that a refresh racing "download all" could
+		// create. Take a backup first; restoring it is the way back. The kept
+		// row is the one with a transcript, then a download, then a summary,
+		// then the oldest. Links and Markdown revisions of the removed rows go
+		// first, because SQLite does not enforce the foreign keys.
+		Name: "2026_11_09_02_00_DeleteLinksOfDuplicatePodcastItems",
+		Query: "delete from show_note_links where podcast_item_id in (" +
+			"select id from (select id, " +
+			"row_number() over (partition by podcast_id, " +
+			"guid order by case when transcript_json <> '' then 0 else 1 end, " +
+			"case when download_status = 2 then 0 else 1 end, " +
+			"case when llm_summary <> '' then 0 else 1 end, " +
+			"created_at, " +
+			"id) as rn from podcast_items where guid <> '') ranked where rn > 1" + ")",
+	},
+	{
+		Name: "2026_11_09_02_01_DeleteMarkdownRevisionsOfDuplicatePodcastItems",
+		Query: "delete from markdown_revisions where episode_id in (" +
+			"select id from (select id, " +
+			"row_number() over (partition by podcast_id, " +
+			"guid order by case when transcript_json <> '' then 0 else 1 end, " +
+			"case when download_status = 2 then 0 else 1 end, " +
+			"case when llm_summary <> '' then 0 else 1 end, " +
+			"created_at, " +
+			"id) as rn from podcast_items where guid <> '') ranked where rn > 1" + ")",
+	},
+	{
+		Name: "2026_11_09_02_02_DeleteDuplicatePodcastItems",
+		Query: "delete from podcast_items where id in (" +
+			"select id from (select id, " +
+			"row_number() over (partition by podcast_id, " +
+			"guid order by case when transcript_json <> '' then 0 else 1 end, " +
+			"case when download_status = 2 then 0 else 1 end, " +
+			"case when llm_summary <> '' then 0 else 1 end, " +
+			"created_at, " +
+			"id) as rn from podcast_items where guid <> '') ranked where rn > 1" + ")",
+	},
+	{
+		// One row per episode GUID within a podcast. Episodes without a GUID
+		// are not covered.
+		Name:  "2026_11_09_02_03_AddPodcastItemsPodcastGUIDUniqueIndex",
+		Query: "create unique index if not exists idx_podcast_items_podcast_guid on podcast_items (podcast_id, guid) where guid <> ''",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

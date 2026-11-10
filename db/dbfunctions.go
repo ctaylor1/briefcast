@@ -621,6 +621,14 @@ func CreatePodcast(podcast *Podcast) error {
 	return tx.Error
 }
 
+// PodcastItemExistsWithGUID reports whether the podcast already has an episode
+// with this GUID.
+func PodcastItemExistsWithGUID(podcastID, guid string) (bool, error) {
+	var count int64
+	err := DB.Model(&PodcastItem{}).Where("podcast_id = ? AND guid = ?", podcastID, guid).Count(&count).Error
+	return count > 0, err
+}
+
 // CreatePodcastItem handles the corresponding operation.
 func CreatePodcastItem(podcastItem *PodcastItem) error {
 	tx := DB.Omit("Podcast").Create(&podcastItem)
