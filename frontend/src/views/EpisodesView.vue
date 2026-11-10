@@ -7,9 +7,8 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import EpisodesFilters from "../components/episodes/EpisodesFilters.vue";
-import EpisodesListItem from "../components/episodes/EpisodesListItem.vue";
+import EpisodeRow from "../components/episodes/EpisodeRow.vue";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
-import EpisodesTable from "../components/episodes/EpisodesTable.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiCard from "../components/ui/UiCard.vue";
@@ -338,31 +337,21 @@ onMounted(() => {
     </UiCard>
 
     <div v-else class="stack-3">
-      <div class="episodes-list-mobile stack-3">
-        <EpisodesListItem
-          v-for="item in items"
-          :key="item.ID"
-          :item="item"
-          @play="openPlayer"
-          @toggle-played="togglePlayed"
-          @toggle-bookmark="toggleBookmark"
-          @queue-download="queueDownload"
-          @cancel-download="cancelDownload"
-          @open-details="openDetails"
-        />
-      </div>
-
-      <div class="episodes-list-desktop">
-        <EpisodesTable
-          :items="items"
-          @play="openPlayer"
-          @toggle-played="togglePlayed"
-          @toggle-bookmark="toggleBookmark"
-          @queue-download="queueDownload"
-          @cancel-download="cancelDownload"
-          @open-details="openDetails"
-        />
-      </div>
+      <UiCard padding="none">
+        <ul class="episode-rows">
+          <EpisodeRow
+            v-for="item in items"
+            :key="item.ID"
+            :item="item"
+            @play="openPlayer"
+            @toggle-played="togglePlayed"
+            @toggle-bookmark="toggleBookmark"
+            @queue-download="queueDownload"
+            @cancel-download="cancelDownload"
+            @open-details="openDetails"
+          />
+        </ul>
+      </UiCard>
     </div>
 
     <EpisodesPagination
@@ -398,9 +387,6 @@ onMounted(() => {
   height: 18px;
 }
 
-.episodes-list-desktop {
-  display: none;
-}
 
 
 
@@ -440,13 +426,10 @@ onMounted(() => {
 }
 
 
-@media (min-width: 1200px) {
-  .episodes-list-mobile {
-    display: none;
-  }
 
-  .episodes-list-desktop {
-    display: block;
-  }
+.episode-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 </style>
