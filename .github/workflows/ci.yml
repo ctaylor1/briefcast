@@ -15,18 +15,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
           cache: true
 
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go format
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Go test
         run: go test ./...
-      - name: Split transcription contracts and recovery with race detector
-        run: go test -race ./internal/transcription/... ./internal/whisperxworker/... ./service/...
+
+      - name: Go test with race detector
+        run: go test -race ./...
+
+      - name: Go vulnerability check
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   frontend-quality:
     runs-on: ubuntu-latest
@@ -35,10 +51,10 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: npm
@@ -57,15 +73,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.14"
 
       - name: Setup just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@66f567e72f7d264686a8d5f09f38f0829b4feb80 # just
 
       - name: Python quality gate (just)
         run: just ci-python
+
+      # The dev environment audit above does not cover what the images ship.
+      - name: Audit shipped Python lock files
+        run: |
+          for lock in docker/app/requirements.lock docker/whisperx/requirements-cpu.lock docker/whisperx/requirements-cu128.lock; do
+            echo "Auditing $lock"
+            uv run pip-audit --disable-pip --require-hashes -r "$lock"
+          done

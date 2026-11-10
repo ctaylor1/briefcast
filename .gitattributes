@@ -1,6 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# gofmt expects LF; CI checks formatting, so Go sources are LF on every checkout.
+*.go text eol=lf
+
 # These examples reference exact file-byte hashes, including line endings.
 /docs/podcast-markdown/** text eol=lf
 
