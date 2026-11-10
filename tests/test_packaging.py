@@ -454,15 +454,29 @@ def _run_app_deploy(tmp_path, extra_args):
         "-Version 1.0.0 -EnvFile $EnvFile -BuildDir $BuildDir -SkipVerify @splat\n"
     )
     result = subprocess.run(
-        [PWSH, "-NoLogo", "-NoProfile", "-File", str(harness), str(fixture_root), str(env_file),
-         str(tmp_path), str(log), old_id, new_id, *extra_args],
+        [
+            PWSH,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(harness),
+            str(fixture_root),
+            str(env_file),
+            str(tmp_path),
+            str(log),
+            old_id,
+            new_id,
+            *extra_args,
+        ],
         capture_output=True,
         text=True,
     )
     calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
     rollback_path = tmp_path / "rollback-briefcast-app-disabled.json"
     rollback = (
-        json.loads(rollback_path.read_text(encoding="utf-8-sig")) if rollback_path.exists() else None
+        json.loads(rollback_path.read_text(encoding="utf-8-sig"))
+        if rollback_path.exists()
+        else None
     )
     return result, calls, rollback
 
@@ -491,7 +505,10 @@ def test_app_deploy_records_its_restore_point(tmp_path):
     (recovery / "briefcast_backup.tar.gz").write_bytes(b"backup")
     result, calls, rollback = _run_app_deploy(tmp_path / "run", [str(recovery)])
     assert result.returncode == 0, result.stderr
-    assert any(c[-6:] == ["up", "-d", "--no-build", "--no-deps", "--force-recreate", "briefcast"] for c in calls)
+    assert any(
+        c[-6:] == ["up", "-d", "--no-build", "--no-deps", "--force-recreate", "briefcast"]
+        for c in calls
+    )
     assert rollback["restore_point"] == str(recovery.resolve())
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-STUB = '''
+STUB = """
 import io, json, os
 
 class _Result:
@@ -22,7 +22,7 @@ def parse(source):
         json.dump({"file_like": hasattr(source, "read"), "type": type(source).__name__,
                    "content": source.read().decode() if hasattr(source, "read") else None}, f)
     return _Result()
-'''
+"""
 
 
 def test_payload_is_parsed_as_content_not_opened_as_a_path(tmp_path):
