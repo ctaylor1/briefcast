@@ -4,6 +4,7 @@ import { marked } from "marked";
 import { sanitizeHtml } from "../lib/sanitize";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import EpisodesPagination from "../components/episodes/EpisodesPagination.vue";
+import PodcastFilter from "../components/ui/PodcastFilter.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiBadge from "../components/ui/UiBadge.vue";
 import UiButton from "../components/ui/UiButton.vue";
@@ -89,8 +90,8 @@ const readerPosition = computed(() => {
   return `${readerItemIndex.value + 1} of ${items.value.length}`;
 });
 
-const sortedPodcastOptions = computed(() =>
-  [...podcastOptions.value].sort((a, b) => a.Title.localeCompare(b.Title)),
+const podcastFilterOptions = computed(() =>
+  podcastOptions.value.map((podcast) => ({ id: podcast.ID, title: podcast.Title })),
 );
 
 const hasActiveFilters = computed(
@@ -377,15 +378,6 @@ function scrollToHeading(id: string): void {
   if (el) {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-}
-
-function podcastFilterLabel(): string {
-  if (filter.podcastIds.length === 0) return "All podcasts";
-  if (filter.podcastIds.length === 1) {
-    const found = podcastOptions.value.find((p) => p.ID === filter.podcastIds[0]);
-    return found?.Title ?? "1 podcast";
-  }
-  return `${filter.podcastIds.length} podcasts`;
 }
 
 function sendSummaryToObsidian(): void {
@@ -687,40 +679,12 @@ onBeforeUnmount(() => {
             @update:model-value="filter.q = $event"
           />
 
-          <div class="summaries-filters__podcast-filter">
-            <label class="ui-label" for="summaries-podcast-filter-trigger">Show</label>
-            <details class="summaries-filters__podcast-dropdown">
-              <summary id="summaries-podcast-filter-trigger" class="summaries-filters__podcast-trigger">
-                <span class="summaries-filters__podcast-label">{{ podcastFilterLabel() }}</span>
-                <span class="meta-text">
-                  {{ filter.podcastIds.length === 0 ? "No filter" : `${filter.podcastIds.length} selected` }}
-                </span>
-              </summary>
-              <div class="summaries-filters__podcast-panel">
-                <ul class="summaries-filters__podcast-list visually-scrollable">
-                  <li v-for="podcast in sortedPodcastOptions" :key="podcast.ID">
-                    <label class="summaries-filters__podcast-option">
-                      <input
-                        type="checkbox"
-                        :checked="filter.podcastIds.includes(podcast.ID)"
-                        @change="
-                          filter.podcastIds.includes(podcast.ID)
-                            ? (filter.podcastIds = filter.podcastIds.filter((id) => id !== podcast.ID))
-                            : (filter.podcastIds = [...filter.podcastIds, podcast.ID])
-                        "
-                      />
-                      <span>{{ podcast.Title }}</span>
-                    </label>
-                  </li>
-                </ul>
-                <div class="summaries-filters__podcast-actions">
-                  <UiButton size="sm" variant="ghost" :disabled="filter.podcastIds.length === 0" @click="filter.podcastIds = []">
-                    Clear
-                  </UiButton>
-                </div>
-              </div>
-            </details>
-          </div>
+          <PodcastFilter
+            label="Show"
+            :options="podcastFilterOptions"
+            :model-value="filter.podcastIds"
+            @update:model-value="filter.podcastIds = $event"
+          />
 
           <UiSelect
             :model-value="filter.sorting"
@@ -1346,100 +1310,6 @@ onBeforeUnmount(() => {
 
 .summaries-filters__favorites-toggle:has(input:checked) svg {
   color: var(--color-favorite);
-}
-
-.summaries-filters__podcast-filter {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.summaries-filters__podcast-dropdown {
-  position: relative;
-}
-
-.summaries-filters__podcast-dropdown > summary {
-  list-style: none;
-}
-
-.summaries-filters__podcast-dropdown > summary::-webkit-details-marker {
-  display: none;
-}
-
-.summaries-filters__podcast-trigger {
-  min-height: 48px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  cursor: pointer;
-}
-
-.summaries-filters__podcast-label {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.summaries-filters__podcast-panel {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  left: 0;
-  right: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-bg-primary);
-  padding: var(--space-3);
-  z-index: 30;
-  display: grid;
-  gap: var(--space-2);
-}
-
-.summaries-filters__podcast-dropdown:not([open]) .summaries-filters__podcast-panel {
-  display: none;
-}
-
-.summaries-filters__podcast-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--space-1);
-  max-height: 220px;
-  overflow: auto;
-}
-
-.summaries-filters__podcast-option {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-2);
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.summaries-filters__podcast-option:hover {
-  background: var(--color-hover);
-}
-
-.summaries-filters__podcast-option input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  flex: 0 0 20px;
-  accent-color: var(--color-accent);
-}
-
-.summaries-filters__podcast-actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 /* ═══════════════════════════════════════════════════════════════

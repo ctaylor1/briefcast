@@ -524,27 +524,25 @@ onBeforeUnmount(() => {
             <span class="meta-text">{{ commandHint }}</span>
           </button>
 
-          <UiDropdown align="end">
+          <UiDropdown align="end" button-class="ui-button ui-button--ghost ui-button--sm app-user-trigger">
             <template #trigger>
-              <button type="button" class="ui-button ui-button--ghost ui-button--sm app-user-trigger">
-                <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    v-for="stroke in iconStrokes('user')"
-                    :key="stroke"
-                    :d="stroke"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <span class="app-user-label">Menu</span>
-              </button>
+              <svg class="app-nav__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  v-for="stroke in iconStrokes('user')"
+                  :key="stroke"
+                  :d="stroke"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span class="app-user-label">Menu</span>
             </template>
             <nav class="app-user-menu" aria-label="User menu">
               <p class="app-user-menu__heading">Quick actions</p>
-              <button type="button" class="app-user-menu__item app-user-menu__theme-btn" @click="cycleTheme">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <button type="button" class="app-user-menu__item app-user-menu__theme-btn" data-keep-open @click="cycleTheme">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="5" />
                   <line x1="12" y1="1" x2="12" y2="3" />
                   <line x1="12" y1="21" x2="12" y2="23" />
