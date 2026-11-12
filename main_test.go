@@ -420,8 +420,8 @@ func TestResolveWhisperXFrequency(t *testing.T) {
 
 // TestRunCronJob handles the corresponding operation.
 func TestRunCronJob(t *testing.T) {
-	runCronJob("success", func() error { return nil })
-	runCronJob("failure", func() error { return errors.New("boom") })
+	runCronJob("success", func(*zap.SugaredLogger) error { return nil })
+	runCronJob("failure", func(*zap.SugaredLogger) error { return errors.New("boom") })
 }
 
 // TestScheduleCronJobs handles the corresponding operation.
@@ -439,7 +439,7 @@ func TestScheduleCronJobs(t *testing.T) {
 	var backupCalls int
 
 	jobs := cronJobSet{
-		RefreshEpisodes: func() error {
+		RefreshEpisodes: func(*zap.SugaredLogger) error {
 			refreshCalls++
 			return nil
 		},
@@ -447,7 +447,7 @@ func TestScheduleCronJobs(t *testing.T) {
 			missingCalls++
 			return errors.New("missing failure")
 		},
-		ApplyRetentionPolicies: func() error {
+		ApplyRetentionPolicies: func(*zap.SugaredLogger) error {
 			retentionCalls++
 			return nil
 		},
@@ -461,7 +461,7 @@ func TestScheduleCronJobs(t *testing.T) {
 			imagesCalls++
 			return nil
 		},
-		TranscribePendingEpisode: func() error {
+		TranscribePendingEpisode: func(*zap.SugaredLogger) error {
 			transcribeCalls++
 			return nil
 		},

@@ -228,26 +228,28 @@ func clacksOverhead() gin.HandlerFunc {
 	}
 }
 
+// cronJobSet holds the scheduled jobs. The three that take a logger log their
+// details to the scheduler's job logger, so each run has one job_id.
 type cronJobSet struct {
-	RefreshEpisodes          func() error
+	RefreshEpisodes          func(*zap.SugaredLogger) error
 	CheckMissingFiles        func() error
-	ApplyRetentionPolicies   func() error
+	ApplyRetentionPolicies   func(*zap.SugaredLogger) error
 	UnlockMissedJobs         func()
 	UpdateAllFileSizes       func()
 	DownloadMissingImages    func() error
-	TranscribePendingEpisode func() error
+	TranscribePendingEpisode func(*zap.SugaredLogger) error
 	CreateBackup             func() (string, error)
 }
 
 var defaultCronJobs = cronJobSet{
-	RefreshEpisodes:          service.RefreshEpisodes,
+	RefreshEpisodes:          service.RefreshEpisodesJob,
 	CheckMissingFiles:        service.CheckMissingFiles,
-	ApplyRetentionPolicies:   service.ApplyRetentionPolicies,
+	ApplyRetentionPolicies:   service.ApplyRetentionPoliciesJob,
 	UnlockMissedJobs:         service.UnlockMissedJobs,
 	UpdateAllFileSizes:       service.UpdateAllFileSizes,
 	DownloadMissingImages:    service.DownloadMissingImages,
-	TranscribePendingEpisode: service.TranscribePendingEpisodes,
-	CreateBackup:             service.CreateBackup,
+	TranscribePendingEpisode: service.TranscribePendingEpisodesJob,
+	CreateBackup:             service.CreateBackupIfDue,
 }
 
 func resolveRunningVersion() string {
@@ -294,45 +296,45 @@ func resolveWhisperXFrequency(checkFrequency int, raw string, appLogger *zap.Sug
 	return whisperxFrequency
 }
 
-func runCronJob(name string, fn func() error) {
-	jobLogger, _ := logging.NewJobSugar(name)
+// runCronJob logs the run through service.RunJob, once, and records it for
+// the scheduled-job metrics.
+func runCronJob(name string, job func(*zap.SugaredLogger) error) {
 	start := time.Now()
-	jobLogger.Infow("job_started")
-
-	err := fn()
+	err := service.RunJob(name, job)
 	telemetry.ObserveScheduledJob(name, err, time.Since(start))
-	if err != nil {
-		jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "error", err)
-		return
-	}
-	jobLogger.Infow("job_completed", "duration_ms", time.Since(start).Milliseconds())
 }
 
 func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency int, jobs cronJobSet, appLogger *zap.SugaredLogger) {
-	add := func(spec, name string, fn func() error) {
-		if _, err := scheduler.AddFunc(spec, func() { runCronJob(name, fn) }); err != nil {
+	add := func(spec, name string, job func(*zap.SugaredLogger) error) {
+		if _, err := scheduler.AddFunc(spec, func() { runCronJob(name, job) }); err != nil {
 			appLogger.Errorw("failed to schedule cron job", "job_name", name, "spec", spec, "error", err)
 		}
+	}
+	// plain adapts a job that does no logging of its own.
+	plain := func(fn func() error) func(*zap.SugaredLogger) error {
+		return func(*zap.SugaredLogger) error { return fn() }
 	}
 
 	minutes := fmt.Sprintf("@every %dm", checkFrequency)
 	add(minutes, "RefreshEpisodes", jobs.RefreshEpisodes)
-	add(minutes, "CheckMissingFiles", jobs.CheckMissingFiles)
+	add(minutes, "CheckMissingFiles", plain(jobs.CheckMissingFiles))
 	add("@every 24h", "RetentionCleanup", jobs.ApplyRetentionPolicies)
-	add(fmt.Sprintf("@every %dm", checkFrequency*2), "UnlockMissedJobs", func() error {
+	add(fmt.Sprintf("@every %dm", checkFrequency*2), "UnlockMissedJobs", plain(func() error {
 		jobs.UnlockMissedJobs()
 		return nil
-	})
-	add(fmt.Sprintf("@every %dm", checkFrequency*3), "UpdateAllFileSizes", func() error {
+	}))
+	add(fmt.Sprintf("@every %dm", checkFrequency*3), "UpdateAllFileSizes", plain(func() error {
 		jobs.UpdateAllFileSizes()
 		return nil
-	})
-	add(minutes, "DownloadMissingImages", jobs.DownloadMissingImages)
+	}))
+	add(minutes, "DownloadMissingImages", plain(jobs.DownloadMissingImages))
 	add(fmt.Sprintf("@every %dm", whisperxFrequency), "TranscribePendingEpisodes", jobs.TranscribePendingEpisode)
-	add("@every 48h", "CreateBackup", func() error {
+	// Hourly, but it backs up only when the newest archive is older than
+	// service.BackupInterval, so restarts no longer postpone backups.
+	add("@every 1h", "CreateBackup", plain(func() error {
 		_, err := jobs.CreateBackup()
 		return err
-	})
+	}))
 }
 
 // runStartupJobs clears stale job locks before starting the stats warmup.

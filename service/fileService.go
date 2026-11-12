@@ -519,7 +519,7 @@ func CreateBackup() (string, error) {
 		return "", err
 	}
 
-	backupFileName := backupArchivePrefix + backupNow().Format("2006.01.02_150405") + backupArchiveSuffix
+	backupFileName := backupArchivePrefix + backupNow().Format(backupArchiveTimeLayout) + backupArchiveSuffix
 	folder := createConfigFolderIfNotExists("backups")
 	tarballFilePath := filepath.Join(folder, backupFileName)
 	snapshotPath := tarballFilePath + ".db.partial"
@@ -546,6 +546,49 @@ func CreateBackup() (string, error) {
 	Logger.Infow("backup created", "file", backupFileName, "duration_ms", time.Since(started).Milliseconds())
 	deleteOldBackup()
 	return backupFileName, nil
+}
+
+// BackupInterval is the longest the scheduled backup lets the newest archive
+// age before it makes another.
+const BackupInterval = 48 * time.Hour
+
+const backupArchiveTimeLayout = "2006.01.02_150405"
+
+// CreateBackupIfDue makes a backup when there is no scheduled archive or the
+// newest is older than BackupInterval, and returns "" when none was due. The
+// scheduler calls it every hour. It used to run CreateBackup "@every 48h",
+// which counts from the app's start, so restarts kept postponing backups.
+// Scheduled backups cover SQLite only, so on Postgres it does nothing.
+func CreateBackupIfDue() (string, error) {
+	if db.CurrentDriver() != db.DriverSQLite {
+		return "", nil
+	}
+	newest, err := newestBackupTime()
+	if err != nil {
+		return "", err
+	}
+	if !newest.IsZero() && backupNow().Sub(newest) < BackupInterval {
+		return "", nil
+	}
+	return CreateBackup()
+}
+
+// newestBackupTime reads the time from the newest archive's name; the zero
+// time means there is none.
+func newestBackupTime() (time.Time, error) {
+	files, err := GetAllBackupFiles()
+	if err != nil {
+		return time.Time{}, err
+	}
+	var newest time.Time
+	for _, file := range files {
+		name := filepath.Base(file)
+		stamp := strings.TrimSuffix(strings.TrimPrefix(name, backupArchivePrefix), backupArchiveSuffix)
+		if at, parseErr := time.ParseInLocation(backupArchiveTimeLayout, stamp, time.UTC); parseErr == nil && at.After(newest) {
+			newest = at
+		}
+	}
+	return newest, nil
 }
 
 // writeBackupTarball archives source under entryName, checking every close so a

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
-	"github.com/ctaylor1/briefcast/internal/logging"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -175,8 +174,15 @@ func LoadWhisperXConfig() WhisperXConfig {
 	return cfg
 }
 
-// TranscribePendingEpisodes handles the corresponding operation.
+// TranscribePendingEpisodes transcribes queued episodes as one logged job (see
+// RunJob).
 func TranscribePendingEpisodes() error {
+	return RunJob(transcriptJobName, TranscribePendingEpisodesJob)
+}
+
+// TranscribePendingEpisodesJob is TranscribePendingEpisodes' work. It logs
+// details to jobLogger and leaves the run's start and outcome to RunJob.
+func TranscribePendingEpisodesJob(jobLogger *zap.SugaredLogger) error {
 	cfg := LoadWhisperXConfig()
 	if !cfg.Enabled {
 		return nil
@@ -185,22 +191,21 @@ func TranscribePendingEpisodes() error {
 	if err != nil {
 		return err
 	}
-	return transcribePendingEpisodes(context.Background(), cfg, backend)
+	return transcribePendingEpisodesWith(context.Background(), cfg, backend, jobLogger)
 }
 
 func transcribePendingEpisodes(ctx context.Context, cfg WhisperXConfig, backend transcriptionBackend) error {
+	return RunJob(transcriptJobName, func(jobLogger *zap.SugaredLogger) error {
+		return transcribePendingEpisodesWith(ctx, cfg, backend, jobLogger)
+	})
+}
+
+func transcribePendingEpisodesWith(ctx context.Context, cfg WhisperXConfig, backend transcriptionBackend, jobLogger *zap.SugaredLogger) error {
 	if !cfg.Enabled {
 		return nil
 	}
 
-	jobLogger, _ := logging.NewJobSugar("TranscribePendingEpisodes")
-	start := time.Now()
-	jobLogger.Infow("job_started")
-	defer func() {
-		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
-	}()
-
-	jobLock, acquired, lockErr := db.TryLock("TranscribePendingEpisodes", cfg.LockDurationMins)
+	jobLock, acquired, lockErr := db.TryLock(transcriptJobName, cfg.LockDurationMins)
 	if lockErr != nil {
 		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
 		return lockErr
@@ -860,4 +865,16 @@ func transcriptResultModel(output []byte, fallback string) string {
 		}
 	}
 	return model
+}
+
+// transcriptResumedFromCheckpoint reports whether the worker continued the job
+// from a checkpoint, as its result metadata records (the protocol requires the
+// field). An unreadable result counts as not resumed.
+func transcriptResumedFromCheckpoint(output []byte) bool {
+	var result struct {
+		Metadata struct {
+			ResumedFromCheckpoint bool `json:"resumed_from_checkpoint"`
+		} `json:"metadata"`
+	}
+	return json.Unmarshal(output, &result) == nil && result.Metadata.ResumedFromCheckpoint
 }

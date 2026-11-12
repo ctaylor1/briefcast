@@ -230,7 +230,7 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 	if item.TranscriptCheckpointJSON != string(raw) || item.TranscriptJSON != text || item.TranscriptStatus != "available" {
 		return errRemoteOwnership
 	}
-	recordTranscriptionCompleted(&item, e, lastStatus, started)
+	recordTranscriptionCompleted(&item, e, lastStatus, started, transcriptResumedFromCheckpoint(result.Transcript))
 	ackErr := acknowledgeRemoteItem(ctx, b, l, &item, e)
 	if err = l.check(); err != nil {
 		return errors.Join(ackErr, err)

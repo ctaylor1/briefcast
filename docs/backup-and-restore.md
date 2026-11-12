@@ -4,7 +4,7 @@ This runbook describes the implemented application/worker backup boundaries. It 
 
 ## What scheduled backups contain
 
-`service/fileService.go:CreateBackup` runs every 48 hours and writes a tar.gz under `$CONFIG/backups`. It keeps the newest five `briefcast_backup_*.tar.gz` archives; other files in that folder are not listed or pruned.
+`service/fileService.go:CreateBackup` writes a tar.gz under `$CONFIG/backups`. The scheduler checks every hour and backs up when the newest archive is more than 48 hours old, judged by the time in its name, so restarts do not postpone backups. It keeps the newest five `briefcast_backup_*.tar.gz` archives; other files in that folder are not listed or pruned.
 
 | Database | Current scheduled behavior | Required recovery method |
 | --- | --- | --- |
