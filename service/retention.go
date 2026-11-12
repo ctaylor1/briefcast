@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ctaylor1/briefcast/db"
-	"github.com/ctaylor1/briefcast/internal/logging"
+	"go.uber.org/zap"
 )
 
 var retentionNow = func() time.Time {
@@ -21,15 +21,13 @@ var retentionNow = func() time.Time {
 // This ordering keeps behavior deterministic across runs and avoids conflicting
 // deletes when multiple retention knobs are enabled.
 func ApplyRetentionPolicies() error {
-	const jobName = "RetentionCleanup"
-	jobLogger, _ := logging.NewJobSugar(jobName)
-	start := retentionNow()
-	jobLogger.Infow("job_started")
-	defer func() {
-		jobLogger.Infow("job_finished", "duration_ms", retentionNow().Sub(start).Milliseconds())
-	}()
+	return RunJob(retentionJobName, ApplyRetentionPoliciesJob)
+}
 
-	jobLock, acquired, lockErr := db.TryLock(jobName, 120)
+// ApplyRetentionPoliciesJob is ApplyRetentionPolicies' work. It logs details to
+// jobLogger and leaves the run's start and outcome to RunJob.
+func ApplyRetentionPoliciesJob(jobLogger *zap.SugaredLogger) error {
+	jobLock, acquired, lockErr := db.TryLock(retentionJobName, 120)
 	if lockErr != nil {
 		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
 		return lockErr

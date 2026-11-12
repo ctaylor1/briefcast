@@ -21,6 +21,7 @@ import (
 	"github.com/ctaylor1/briefcast/internal/telemetry"
 	"github.com/ctaylor1/briefcast/model"
 	strip "github.com/grokify/html-strip-tags-go"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -1150,17 +1151,15 @@ func DownloadSingleEpisode(podcastItemID string) error {
 	return err
 }
 
-// RefreshEpisodes handles the corresponding operation.
+// RefreshEpisodes refreshes every feed as one logged job (see RunJob).
 func RefreshEpisodes() error {
-	const jobName = "RefreshEpisodes"
-	jobLogger, _ := logging.NewJobSugar(jobName)
-	start := time.Now()
-	jobLogger.Infow("job_started")
-	defer func() {
-		jobLogger.Infow("job_finished", "duration_ms", time.Since(start).Milliseconds())
-	}()
+	return RunJob(refreshJobName, RefreshEpisodesJob)
+}
 
-	jobLock, acquired, lockErr := db.TryLock(jobName, refreshLockMinutes)
+// RefreshEpisodesJob is RefreshEpisodes' work. It logs details to jobLogger and
+// leaves the run's start and outcome to RunJob.
+func RefreshEpisodesJob(jobLogger *zap.SugaredLogger) error {
+	jobLock, acquired, lockErr := db.TryLock(refreshJobName, refreshLockMinutes)
 	if lockErr != nil {
 		jobLogger.Errorw("job_lock_acquire_failed", "error", lockErr)
 		return lockErr
@@ -1233,12 +1232,6 @@ func RefreshEpisodes() error {
 		}
 	})
 
-	if firstErr != nil {
-		jobLogger.Errorw("job_completed_with_errors", "error", firstErr)
-		return firstErr
-	}
-
-	jobLogger.Infow("job_completed_successfully")
 	return firstErr
 }
 
