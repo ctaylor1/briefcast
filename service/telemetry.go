@@ -290,7 +290,10 @@ func recordTranscriptionStarted(item *db.PodcastItem, e *remoteEnvelope, stage s
 		"attempt", e.Attempt, "stage", stage, "retry_count", item.TranscriptRetryCount)
 }
 
-func recordTranscriptionCompleted(item *db.PodcastItem, e *remoteEnvelope, last transcription.JobStatus, started time.Time) {
+// recordTranscriptionCompleted logs and counts a committed transcript. resumed is
+// the worker's own record (transcriptResumedFromCheckpoint); the job status
+// cannot tell, because its checkpoint progress is set for every job.
+func recordTranscriptionCompleted(item *db.PodcastItem, e *remoteEnvelope, last transcription.JobStatus, started time.Time, resumed bool) {
 	queue, processing := transcriptionTimings(last)
 	endToEnd := time.Since(started)
 	audio := last.TotalSeconds
@@ -305,7 +308,7 @@ func recordTranscriptionCompleted(item *db.PodcastItem, e *remoteEnvelope, last 
 	logging.Sugar().Infow("transcription_completed", "podcast_item_id", item.ID, "podcast_id", item.PodcastID, "job_id", e.JobID,
 		"attempt", e.Attempt, "audio_seconds", audio, "worker_queue_ms", queue.Milliseconds(), "processing_ms", processing.Milliseconds(),
 		"end_to_end_ms", endToEnd.Milliseconds(), "speed_x", fmt.Sprintf("%.1f", speed),
-		"resumed_from_checkpoint", last.Checkpoint.ResumeFromJobID != nil || last.Checkpoint.CompletedSeconds > 0)
+		"resumed_from_checkpoint", resumed)
 }
 
 func recordTranscriptionProblem(item *db.PodcastItem, e *remoteEnvelope, problem *remoteError, status, stage string, retries int, next *time.Time) {

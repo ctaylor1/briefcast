@@ -861,3 +861,15 @@ func transcriptResultModel(output []byte, fallback string) string {
 	}
 	return model
 }
+
+// transcriptResumedFromCheckpoint reports whether the worker continued the job
+// from a checkpoint, as its result metadata records (the protocol requires the
+// field). An unreadable result counts as not resumed.
+func transcriptResumedFromCheckpoint(output []byte) bool {
+	var result struct {
+		Metadata struct {
+			ResumedFromCheckpoint bool `json:"resumed_from_checkpoint"`
+		} `json:"metadata"`
+	}
+	return json.Unmarshal(output, &result) == nil && result.Metadata.ResumedFromCheckpoint
+}
