@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ctaylor1/briefcast/db"
 )
 
 // The scheduled backup ran "@every 48h", counted from the app's start, so the
@@ -13,6 +15,9 @@ import (
 // older than BackupInterval, however often the app restarted.
 func TestCreateBackupIfDueBacksUpOnlyWhenTheNewestArchiveIsOld(t *testing.T) {
 	setupRetentionTestDB(t)
+	if db.CurrentDriver() != db.DriverSQLite {
+		t.Skip("scheduled backups cover SQLite only")
+	}
 	start := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 	previous := backupNow
 	t.Cleanup(func() { backupNow = previous })
