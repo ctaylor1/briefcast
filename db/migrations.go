@@ -358,6 +358,30 @@ where id in (
 		Name:  "2026_11_09_02_03_AddPodcastItemsPodcastGUIDUniqueIndex",
 		Query: "create unique index if not exists idx_podcast_items_podcast_guid on podcast_items (podcast_id, guid) where guid <> ''",
 	},
+	{
+		// The work-queue snapshot (Activity page) counts and lists episodes by
+		// whether they have a transcript or a summary. Testing transcript_json,
+		// canonical_transcript or llm_summary for emptiness reads every stored
+		// transcript: 48 s on a production copy. These partial indexes let those
+		// queries answer from the index. Each query must keep its index's
+		// condition word for word (see service/repair_work.go).
+		Name:  "2026_11_12_01_00_AddPodcastItemsNoTranscriptWorkIndex",
+		Query: "create index if not exists idx_podcast_items_no_transcript_work on podcast_items(transcript_status, download_status, download_path, transcript_next_attempt, updated_at, id) where transcript_json is null or transcript_json = ''",
+	},
+	{
+		// Partial on "has a summary", not "has none": an index on "has none"
+		// also matches the summary-missing queries, and SQLite picks it over
+		// idx_podcast_items_summary_missing because it is narrower, then reads
+		// every transcript to test the rest.
+		Name:  "2026_11_12_01_01_AddPodcastItemsWithSummaryIndex",
+		Query: "create index if not exists idx_podcast_items_with_summary on podcast_items(llm_summary_status) where llm_summary is not null and llm_summary <> ''",
+	},
+	{
+		// Also holds the columns the queue shows for these episodes, so listing
+		// them never reads the columns stored after the transcript.
+		Name:  "2026_11_12_01_02_AddPodcastItemsSummaryMissingIndex",
+		Query: "create index if not exists idx_podcast_items_summary_missing on podcast_items(llm_summary_status, updated_at, id, transcript_status, llm_summary_error, llm_summary_model) where canonical_transcript is not null and canonical_transcript <> '' and (llm_summary is null or llm_summary = '')",
+	},
 }
 
 var addColumnIfNotExistsRe = regexp.MustCompile(`(?i)alter\s+table\s+(\S+)\s+add\s+column\s+if\s+not\s+exists\s+(\S+)`)

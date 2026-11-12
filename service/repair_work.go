@@ -19,6 +19,32 @@ const (
 	transcriptJobName     = "TranscribePendingEpisodes"
 )
 
+// Conditions shared by the work-queue queries and the partial indexes that serve
+// them (db migrations 2026_11_12_01_*). A query meant to use one of those indexes
+// must contain the index's condition word for word. Otherwise SQLite tests it by
+// reading every stored transcript, holding the database lock while it does: the
+// snapshot took 48 s on a copy of a production database before these indexes.
+const (
+	noTranscriptJSONCondition = "(transcript_json IS NULL OR transcript_json = '')"
+	hasCanonicalCondition     = "canonical_transcript IS NOT NULL AND canonical_transcript <> ''"
+	noSummaryCondition        = "(llm_summary IS NULL OR llm_summary = '')"
+	hasSummaryCondition       = "llm_summary IS NOT NULL AND llm_summary <> ''"
+)
+
+var (
+	transcriptWorkStatuses = []string{"pending_whisperx", "processing", "failed"}
+	summaryRetryStatuses   = []string{"processing", "failed"}
+
+	// workQueueItemColumns are what queue items show. They leave out the stored
+	// transcripts, checkpoint and summary, which can be megabytes per episode.
+	workQueueItemColumns = []string{
+		"id", "podcast_id", "title", "pub_date", "updated_at", "download_status", "download_path",
+		"transcript_status", "transcript_progress_pct", "transcript_progress_stage", "transcript_retry_count",
+		"transcript_next_attempt", "transcript_last_error", "transcript_model",
+		"llm_summary_status", "llm_summary_error", "llm_summary_model",
+	}
+)
+
 var (
 	ErrRepairWorkAlreadyRunning = errors.New("repair work is already running")
 
@@ -290,10 +316,25 @@ func ForceFailedTranscriptRetriesDue(now time.Time) (int, error) {
 func buildSummaryQueueCounts() (WorkQueueSummaryCounts, error) {
 	var counts WorkQueueSummaryCounts
 	var err error
-	if counts.Complete, err = countPodcastItems(db.DB.Model(&db.PodcastItem{}).
-		Where("llm_summary_status = ? OR (llm_summary IS NOT NULL AND llm_summary <> '')", "available")); err != nil {
+	total, err := countPodcastItems(db.DB.Model(&db.PodcastItem{}))
+	if err != nil {
 		return counts, err
 	}
+	available, err := countPodcastItems(db.DB.Model(&db.PodcastItem{}).Where("llm_summary_status = ?", "available"))
+	if err != nil {
+		return counts, err
+	}
+	withSummary, err := countPodcastItems(hasSummaryQuery())
+	if err != nil {
+		return counts, err
+	}
+	withSummaryAvailable, err := countPodcastItems(hasSummaryQuery().Where("COALESCE(llm_summary_status, '') = ?", "available"))
+	if err != nil {
+		return counts, err
+	}
+	// Complete is "status available or has a summary": both sets, less the
+	// episodes in each, so that no stored summary or transcript is read.
+	counts.Complete = available + withSummary - withSummaryAvailable
 	if counts.Processing, err = countPodcastItems(db.DB.Model(&db.PodcastItem{}).
 		Where("llm_summary_status = ?", "processing")); err != nil {
 		return counts, err
@@ -308,11 +349,14 @@ func buildSummaryQueueCounts() (WorkQueueSummaryCounts, error) {
 	if counts.EligibleForBackfill, err = countSummaryBackfillEligible(); err != nil {
 		return counts, err
 	}
-	if counts.BlockedNoTranscript, err = countPodcastItems(db.DB.Model(&db.PodcastItem{}).
-		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(canonical_transcript IS NULL OR canonical_transcript = '')")); err != nil {
+	// No summary and no transcript. Every episode either has a summary or
+	// matches noSummaryCondition, so this is the episodes without a summary
+	// less those with a transcript.
+	noSummaryWithTranscript, err := countPodcastItems(summaryCandidateQuery())
+	if err != nil {
 		return counts, err
 	}
+	counts.BlockedNoTranscript = total - withSummary - noSummaryWithTranscript
 	return counts, nil
 }
 
@@ -320,12 +364,23 @@ func buildTranscriptQueueCounts(now time.Time) (WorkQueueTranscriptCounts, error
 	var counts WorkQueueTranscriptCounts
 	var err error
 	baseNoTranscript := func() *gorm.DB {
-		return db.DB.Model(&db.PodcastItem{}).Where("(transcript_json IS NULL OR transcript_json = '')")
+		return db.DB.Model(&db.PodcastItem{}).Where(noTranscriptJSONCondition)
 	}
-	if counts.Complete, err = countPodcastItems(db.DB.Model(&db.PodcastItem{}).
-		Where("transcript_status = ? OR (transcript_json IS NOT NULL AND transcript_json <> '')", "available")); err != nil {
+	total, err := countPodcastItems(db.DB.Model(&db.PodcastItem{}))
+	if err != nil {
 		return counts, err
 	}
+	noTranscript, err := countPodcastItems(baseNoTranscript())
+	if err != nil {
+		return counts, err
+	}
+	availableWithoutTranscript, err := countPodcastItems(baseNoTranscript().Where("transcript_status = ?", "available"))
+	if err != nil {
+		return counts, err
+	}
+	// Complete is "status available or has a transcript", split as in
+	// buildSummaryQueueCounts so that no stored transcript is read.
+	counts.Complete = total - noTranscript + availableWithoutTranscript
 	if counts.Queued, err = countPodcastItems(baseNoTranscript().Where("transcript_status = ?", "pending_whisperx")); err != nil {
 		return counts, err
 	}
@@ -351,40 +406,135 @@ func buildTranscriptQueueCounts(now time.Time) (WorkQueueTranscriptCounts, error
 	return counts, nil
 }
 
+type workQueueCandidate struct {
+	ID        string
+	UpdatedAt time.Time
+}
+
+// summaryMissingColumns come from idx_podcast_items_summary_missing or from the
+// start of the row, so listing these episodes reads no stored transcript.
+var summaryMissingColumns = []string{
+	"id", "podcast_id", "title", "pub_date", "updated_at",
+	"transcript_status", "llm_summary_status", "llm_summary_error", "llm_summary_model",
+}
+
+// buildWorkQueueItems lists the most recently updated episodes that need a
+// transcript or a summary. Three index-backed queries pick them; a single OR
+// query that loaded whole rows used to read every stored transcript instead.
+// The two summary queries split its condition "has a transcript, and either no
+// summary and an empty status, or a processing or failed status".
 func buildWorkQueueItems(limit int) ([]WorkQueueItem, error) {
 	queryLimit := limit * 4
 	if queryLimit < 100 {
 		queryLimit = 100
 	}
 
-	var items []db.PodcastItem
-	result := db.DB.Preload("Podcast").
-		Where(
-			db.DB.Where("transcript_status IN ?", []string{"pending_whisperx", "processing", "failed"}).
-				Where("(transcript_json IS NULL OR transcript_json = '')"),
-		).
-		Or(
-			db.DB.Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
-				Where("(llm_summary IS NULL OR llm_summary = '' OR llm_summary_status IN ?)", []string{"processing", "failed"}).
-				Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status IN ?)", []string{"processing", "failed"}),
-		).
-		Order("updated_at DESC").
-		Limit(queryLimit).
-		Find(&items)
-	if result.Error != nil {
-		return nil, result.Error
+	type candidate struct {
+		updatedAt    time.Time
+		needsSummary bool
+		row          *db.PodcastItem // nil until its columns are loaded
+	}
+	candidates := map[string]*candidate{}
+	add := func(id string, updatedAt time.Time, needsSummary bool, row *db.PodcastItem) {
+		c := candidates[id]
+		if c == nil {
+			c = &candidate{updatedAt: updatedAt}
+			candidates[id] = c
+		}
+		c.needsSummary = c.needsSummary || needsSummary
+		if row != nil {
+			c.row = row
+		}
+	}
+	latest := func(query *gorm.DB) ([]workQueueCandidate, error) {
+		var rows []workQueueCandidate
+		err := query.Select("id", "updated_at").Order("updated_at DESC").Limit(queryLimit).Scan(&rows).Error
+		return rows, err
 	}
 
-	queued := make([]queuedWorkItem, 0, len(items)*2)
+	waiting, err := latest(transcriptWorkQuery())
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range waiting {
+		add(row.ID, row.UpdatedAt, false, nil)
+	}
+	var missing []db.PodcastItem
+	if err := summaryMissingQuery().Select(summaryMissingColumns).Order("updated_at DESC").Limit(queryLimit).Find(&missing).Error; err != nil {
+		return nil, err
+	}
+	for i := range missing {
+		add(missing[i].ID, missing[i].UpdatedAt, true, &missing[i])
+	}
+	retrying, err := latest(summaryRetryQuery())
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range retrying {
+		add(row.ID, row.UpdatedAt, true, nil)
+	}
+
+	// Keep the queryLimit most recently updated, as the single query did.
+	ids := make([]string, 0, len(candidates))
+	for id := range candidates {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a, b := candidates[ids[i]].updatedAt, candidates[ids[j]].updatedAt
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return ids[i] < ids[j]
+	})
+	if len(ids) > queryLimit {
+		ids = ids[:queryLimit]
+	}
+
+	// Load the remaining columns for episodes waiting for a transcript (they
+	// have none stored to read past), the few whose summary is processing or
+	// failed, and a missing-summary episode whose transcript is queued again.
+	var fetch []string
+	for _, id := range ids {
+		if row := candidates[id].row; row == nil || transcriptNeedsWork(*row) {
+			fetch = append(fetch, id)
+		}
+	}
+	if len(fetch) > 0 {
+		var full []db.PodcastItem
+		if err := db.DB.Select(workQueueItemColumns).Where("id IN ?", fetch).Find(&full).Error; err != nil {
+			return nil, err
+		}
+		for i := range full {
+			candidates[full[i].ID].row = &full[i]
+		}
+	}
+	podcastIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if row := candidates[id].row; row != nil {
+			podcastIDs = append(podcastIDs, row.PodcastID)
+		}
+	}
+	podcastTitles, err := podcastTitlesByID(podcastIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	queued := make([]queuedWorkItem, 0, len(ids)*2)
 	now := time.Now().UTC()
-	for _, item := range items {
+	for _, id := range ids {
+		c := candidates[id]
+		if c.row == nil {
+			continue // deleted since it was picked
+		}
+		item := *c.row
+		item.Podcast.Title = podcastTitles[item.PodcastID]
 		if transcriptNeedsWork(item) {
 			queued = append(queued, queuedWorkItem{
 				item:     buildTranscriptWorkQueueItem(item, now),
 				priority: transcriptWorkPriority(item, now),
 			})
 		}
-		if summaryNeedsWork(item) {
+		if c.needsSummary {
 			queued = append(queued, queuedWorkItem{
 				item:     buildSummaryWorkQueueItem(item),
 				priority: summaryWorkPriority(item),
@@ -410,6 +560,28 @@ func buildWorkQueueItems(limit int) ([]WorkQueueItem, error) {
 		out = append(out, entry.item)
 	}
 	return out, nil
+}
+
+func podcastTitlesByID(podcastIDs []string) (map[string]string, error) {
+	titles := map[string]string{}
+	unique := make([]string, 0, len(podcastIDs))
+	for _, id := range podcastIDs {
+		if _, seen := titles[id]; !seen && id != "" {
+			titles[id] = ""
+			unique = append(unique, id)
+		}
+	}
+	if len(unique) == 0 {
+		return titles, nil
+	}
+	var podcasts []db.Podcast
+	if err := db.DB.Select("id", "title").Where("id IN ?", unique).Find(&podcasts).Error; err != nil {
+		return nil, err
+	}
+	for _, podcast := range podcasts {
+		titles[podcast.ID] = podcast.Title
+	}
+	return titles, nil
 }
 
 func buildTranscriptWorkQueueItem(item db.PodcastItem, now time.Time) WorkQueueItem {
@@ -490,18 +662,41 @@ func countPodcastItems(query *gorm.DB) (int, error) {
 	return int(count), nil
 }
 
+// Status tests on the summary candidates use COALESCE, which means the same as
+// "is null or empty" but stops SQLite choosing idx_podcast_items_summary_list
+// instead: that index finds every episode by status and then reads each one's
+// transcript to test the other conditions.
 func countSummaryBackfillEligible() (int, error) {
-	return countPodcastItems(db.DB.Model(&db.PodcastItem{}).
-		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
-		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(LoadLLMConfig(), time.Now())))
+	return countPodcastItems(summaryCandidateQuery().
+		Where("(COALESCE(llm_summary_status, '') IN ('', 'failed') OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(LoadLLMConfig(), time.Now())))
+}
+
+// hasSummaryQuery uses idx_podcast_items_with_summary. Status tests on it use
+// COALESCE for the reason given above countSummaryBackfillEligible.
+func hasSummaryQuery() *gorm.DB {
+	return db.DB.Model(&db.PodcastItem{}).Where(hasSummaryCondition)
+}
+
+// summaryCandidateQuery matches episodes with a transcript and no summary. It
+// and the queries built on it use idx_podcast_items_summary_missing.
+func summaryCandidateQuery() *gorm.DB {
+	return db.DB.Model(&db.PodcastItem{}).Where(hasCanonicalCondition).Where(noSummaryCondition)
 }
 
 func summaryMissingQuery() *gorm.DB {
-	return db.DB.Model(&db.PodcastItem{}).
-		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
-		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(llm_summary_status IS NULL OR llm_summary_status = '')")
+	return summaryCandidateQuery().Where("COALESCE(llm_summary_status, '') = ''")
+}
+
+// summaryRetryQuery matches episodes with a transcript whose summary is
+// processing or failed. It finds them by status (idx_podcast_items_summary_list)
+// and reads the transcript column only for those rows.
+func summaryRetryQuery() *gorm.DB {
+	return db.DB.Model(&db.PodcastItem{}).Where(hasCanonicalCondition).Where("llm_summary_status IN ?", summaryRetryStatuses)
+}
+
+// transcriptWorkQuery uses idx_podcast_items_no_transcript_work.
+func transcriptWorkQuery() *gorm.DB {
+	return db.DB.Model(&db.PodcastItem{}).Where(noTranscriptJSONCondition).Where("transcript_status IN ?", transcriptWorkStatuses)
 }
 
 func countTranscriptRepairReady(now time.Time) (int, error) {
@@ -537,17 +732,6 @@ func currentWorkQueueConfig() WorkQueueConfig {
 func transcriptNeedsWork(item db.PodcastItem) bool {
 	status := normalizedStatus(item.TranscriptStatus, "")
 	return status == "pending_whisperx" || status == "processing" || status == "failed"
-}
-
-func summaryNeedsWork(item db.PodcastItem) bool {
-	if strings.TrimSpace(item.CanonicalTranscript) == "" {
-		return false
-	}
-	status := normalizedStatus(item.LLMSummaryStatus, "")
-	if status == "processing" || status == "failed" {
-		return true
-	}
-	return strings.TrimSpace(item.LLMSummary) == "" && status == ""
 }
 
 func transcriptWorkPriority(item db.PodcastItem, now time.Time) int {
