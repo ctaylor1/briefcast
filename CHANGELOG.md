@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - `POST /podcasts/:id/download` now answers `202` as soon as it has checked that the podcast exists, and queues the episodes in the background. It used to re-read the feed inside the request, which could hang on a slow host. A missing podcast gets `404`.
 - **Upgrade note (UI):** navigation is now Library, Episodes, Summaries, Activity and Settings. `/downloads` and `/about` redirect to Activity and Settings. The Library table view and the in-page Summaries reader are removed. The stored theme `auto` now follows the system setting; the clock schedule is its own mode.
 - Settings has section links and one save bar instead of a Save button per card. Episode rows are compact at every width, and Downloads shows cards below 1200px.
+- Each run of a background job now logs one `job_started` and one `job_completed` or `job_failed`, all under one `job_id`. Scheduled refresh, retention and transcription runs used to be logged twice, under two job IDs. Runs started from the app, such as a manual refresh, now use these messages instead of `job_finished`, `job_completed_successfully` and `job_completed_with_errors`.
+- Scheduled backups: the app checks every hour and backs up when its newest archive is more than 48 hours old. It used to back up after every 48 hours of uptime, so each restart postponed the next backup.
 
 ### Added
 - Added a startup warning when `PASSWORD` is empty.
@@ -55,6 +57,8 @@ All notable changes to this project will be documented in this file.
 - Summarizing an episode that was deleted after it was loaded no longer writes an orphaned Markdown revision on SQLite, or fails on a foreign key on Postgres.
 - Accessibility: icon buttons have names, toggles announce their state, labels point at their own fields (all fields used to share one id), menus close on Escape or an outside click, and arrow keys scroll the summary reader again.
 - Settings and alternate feeds no longer save blank values after a failed load; the newest request wins when several are in flight; the player honours a start time; and IDs are encoded in request paths.
+- The Activity page's work queue (`GET /settings/repair-work`) answers in about 0.1 s instead of about 50 s on a production-sized library, and no longer holds the SQLite lock long enough to fail other writes. Migrations `2026_11_12_01_00` to `02` add three partial indexes on `podcast_items`. They are additive and take a few seconds to build on the first start.
+- The `transcription_completed` log reports `resumed_from_checkpoint` as the worker recorded it; it said `true` for every job.
 
 ### Removed
 - **Upgrade note (API change):** removed the nine deprecated `GET` aliases that changed state: `/podcasts/:id/download`, `/podcasts/:id/pause`, `/podcasts/:id/unpause`, and `/podcastitems/:id/` `markPlayed`, `markUnplayed`, `bookmark`, `unbookmark`, `download` and `delete`. A link, prefetch or embedded image could trigger them. Use the `POST`, `PATCH` and `DELETE` forms, which the web app already uses.
@@ -66,6 +70,7 @@ All notable changes to this project will be documented in this file.
 - The Python helpers that parse feeds, ID3 tags and audio (local transcription) now get an allow-listed environment instead of the whole app environment. That covers the interpreter, CUDA, model-cache and `LOG_*` settings, and nothing else, so they no longer receive `DATABASE_URL`, `PASSWORD` or API keys. The feed helper passes the feed to feedparser as content, so a feed body shaped like a file path cannot be opened as a file.
 - The worker images now ship `urllib3` 2.8.0 (was 2.7.0), fixing PYSEC-2026-4175, PYSEC-2026-4176 and PYSEC-2026-4177. Other packages in the worker images still have known advisories; see `docs/refactor-assessment/2026-11-05/STATUS.md`.
 - The development tools' lock (`uv.lock`) now has no known advisories. Updated: `virtualenv` 21.14.13, `filelock` 4.2.4, `pip` 26.2.2, `pytest` 9.0.3, `requests` 2.33.1, `urllib3` 2.8.0, `certifi` 2026.10.23, `idna` 3.15, `msgpack` 1.2.4 and `pygments` 2.20.0. `virtualenv` 21 also brings in `python-discovery` 1.6.4 and needs `distlib` 0.4.4 and `packaging` 26.3. These are not shipped in any image.
+- Go modules with known vulnerabilities in code the app calls are updated: `golang.org/x/net` 0.60.0, `golang.org/x/text` 0.42.0, `quic-go` 0.59.1, `pgx/v5` 5.9.2 and `antchfx/xpath` 1.3.9. The app and worker images now build with Go 1.26.11 (was 1.26.0), which fixes about 33 standard-library vulnerabilities, among them GO-2026-6859, an HTTP server crash in `http.MaxBytesReader`, which the request body limit uses.
 
 ## [1.9.4] - 2026-07-11
 

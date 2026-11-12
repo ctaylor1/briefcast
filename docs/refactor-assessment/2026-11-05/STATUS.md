@@ -48,6 +48,12 @@
 | The worker images' `urllib3` 2.7.0 had three advisories. | Fixed: 2.8.0. |
 | The worker locks have 119 more advisories in 12 baseline packages. | **Open** (see below). CI reports them without failing. |
 | `pip-audit` cannot audit the worker's `torch`, `torchaudio`, `torchvision` and `torchcodec`: their `+cpu` and `+cu128` builds are not on PyPI. | **Open** (see below). |
+| Production health check, 2026-11-12: the work-queue snapshot (`GET /settings/repair-work`) took 51.5 s and failed a stats write with `database is locked`. | Fixed: 0.12 s on a production copy ("stop the work-queue snapshot reading every transcript"). |
+| `govulncheck` failed CI on `main`: 9 advisories in 5 modules, and about 33 in Go 1.26.0, which the images built with. | Fixed: modules updated and Go 1.26.11 ("patch Go vulnerabilities"). |
+| Scheduled backups ran after 48 h of uptime, so restarts postponed them (none from 11-09 to 11-12). | Fixed: hourly check against the newest archive's time ("back up whenever the newest archive is 48 hours old"). |
+| Every `transcription_completed` log said `resumed_from_checkpoint: true`. | Fixed: it reports the worker's record. |
+| Scheduled refresh, retention and transcription runs were logged twice, under two job IDs. | Fixed: `service.RunJob` logs each run once. |
+| A Windows Update restart left production down until the next sign-in (Docker Desktop starts at sign-in). | Operator setting: Windows auto sign-in (production `prod\README.txt`). Not a code change. |
 
 ## Open follow-ups
 
