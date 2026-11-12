@@ -249,7 +249,7 @@ var defaultCronJobs = cronJobSet{
 	UpdateAllFileSizes:       service.UpdateAllFileSizes,
 	DownloadMissingImages:    service.DownloadMissingImages,
 	TranscribePendingEpisode: service.TranscribePendingEpisodesJob,
-	CreateBackup:             service.CreateBackup,
+	CreateBackup:             service.CreateBackupIfDue,
 }
 
 func resolveRunningVersion() string {
@@ -329,7 +329,9 @@ func scheduleCronJobs(scheduler *cron.Cron, checkFrequency, whisperxFrequency in
 	}))
 	add(minutes, "DownloadMissingImages", plain(jobs.DownloadMissingImages))
 	add(fmt.Sprintf("@every %dm", whisperxFrequency), "TranscribePendingEpisodes", jobs.TranscribePendingEpisode)
-	add("@every 48h", "CreateBackup", plain(func() error {
+	// Hourly, but it backs up only when the newest archive is older than
+	// service.BackupInterval, so restarts no longer postpone backups.
+	add("@every 1h", "CreateBackup", plain(func() error {
 		_, err := jobs.CreateBackup()
 		return err
 	}))
