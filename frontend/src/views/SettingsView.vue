@@ -84,6 +84,20 @@ const resummarizeBeforeDate = ref("");
 const resummarizeDryRunCount = ref<number | null>(null);
 const summaryJobStatus = ref<SummaryJobStatus | null>(null);
 const summaryJobErrorMessage = ref("");
+const summaryJobStartedHere = ref(false);
+const isStoppingSummaryJob = ref(false);
+const BACKFILL_LIMIT_MAX = 500;
+const backfillLimit = ref("10");
+const isStartingBackfill = ref(false);
+const backfillLimitValue = computed(() => {
+  const value = Number(backfillLimit.value);
+  return Number.isInteger(value) && value >= 1 && value <= BACKFILL_LIMIT_MAX ? value : null;
+});
+const summaryJobProgress = computed(() => {
+  const status = summaryJobStatus.value;
+  if (!status || status.total === 0) return "Finding episodes...";
+  return `${status.completed} of ${status.total} processed, ${status.failed} failed.`;
+});
 const promptHistoryOpen = ref(false);
 const promptHistoryType = ref<"system" | "user">("system");
 const promptHistoryVersions = ref<PromptVersion[]>([]);
@@ -529,6 +543,7 @@ async function startResummarize(): Promise<void> {
     if (resummarizeBeforeDate.value) filter.before = new Date(resummarizeBeforeDate.value).toISOString();
     const result = await settingsApi.startResummarize(filter as import("../types/api").ResummarizeFilter);
     summaryJobStatus.value = result.status;
+    summaryJobStartedHere.value = true;
     summaryJobErrorMessage.value = "";
     scheduleSummaryJobPoll();
     toast.success("Re-summarize job started. Summaries will be regenerated in the background.");
@@ -536,6 +551,40 @@ async function startResummarize(): Promise<void> {
     toast.error(getErrorMessage(error, "Failed to start re-summarize."));
   } finally {
     isResummarizing.value = false;
+  }
+}
+
+async function startBackfill(): Promise<void> {
+  const limit = backfillLimitValue.value;
+  if (limit === null || isStartingBackfill.value) return;
+  isStartingBackfill.value = true;
+  clearAll();
+  try {
+    const result = await settingsApi.backfillSummaries(limit);
+    summaryJobStatus.value = result.status;
+    summaryJobStartedHere.value = true;
+    summaryJobErrorMessage.value = "";
+    scheduleSummaryJobPoll();
+    toast.success(`Summarizing up to ${limit} waiting ${limit === 1 ? "episode" : "episodes"} in the background.`);
+  } catch (error) {
+    toast.error(getErrorMessage(error, "Failed to start summarizing."));
+  } finally {
+    isStartingBackfill.value = false;
+  }
+}
+
+async function stopSummaryJob(): Promise<void> {
+  if (isStoppingSummaryJob.value) return;
+  isStoppingSummaryJob.value = true;
+  try {
+    const result = await settingsApi.stopSummaryJob();
+    summaryJobStatus.value = result.status;
+    scheduleSummaryJobPoll();
+  } catch (error) {
+    toast.error(getErrorMessage(error, "Failed to stop the summary job."));
+    void loadSummaryJobStatus();
+  } finally {
+    isStoppingSummaryJob.value = false;
   }
 }
 
@@ -876,6 +925,36 @@ onUnmounted(() => {
         Changes to prompts only apply to future summarizations. Existing summaries are not affected.
       </UiAlert>
 
+      <hr class="settings-divider" />
+
+      <div class="stack-2">
+        <h4 class="settings-section-subtitle">Summarize waiting episodes</h4>
+        <p class="meta-text">
+          Summarize episodes that have a transcript but no summary yet, newest first.
+          New episodes are summarized automatically once summarization is on.
+        </p>
+      </div>
+
+      <div class="surface-row backfill-actions">
+        <div class="backfill-limit">
+          <UiInput
+            v-model="backfillLimit"
+            type="number"
+            label="Episodes to summarize"
+            min="1"
+            :max="BACKFILL_LIMIT_MAX"
+            inputmode="numeric"
+            :disabled="!summarizationForm.summarizationEnabled"
+            :error="backfillLimitValue === null ? `Enter a whole number from 1 to ${BACKFILL_LIMIT_MAX}.` : ''"
+          />
+        </div>
+        <UiButton
+          :disabled="!summarizationForm.summarizationEnabled || backfillLimitValue === null || isStartingBackfill || summaryJobStatus?.running"
+          @click="startBackfill"
+        >
+          {{ isStartingBackfill ? "Starting..." : "Summarize" }}
+        </UiButton>
+      </div>
 
       <hr class="settings-divider" />
 
@@ -932,13 +1011,26 @@ onUnmounted(() => {
       </div>
       <UiAlert v-if="summaryJobErrorMessage" tone="warning">{{ summaryJobErrorMessage }}</UiAlert>
       <UiAlert v-else-if="summaryJobStatus?.error" tone="warning">{{ summaryJobStatus.error }}</UiAlert>
-      <p v-else-if="summaryJobStatus?.running" class="meta-text">
-        Summary job running: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
+      <div v-else-if="summaryJobStatus?.running" class="surface-row summary-job-status">
+        <p class="meta-text" role="status">
+          {{ summaryJobStatus.stopping ? "Stopping after the episode in progress." : "Summary job running." }}
+          {{ summaryJobProgress }}
+        </p>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          :disabled="summaryJobStatus.stopping || isStoppingSummaryJob"
+          @click="stopSummaryJob"
+        >
+          {{ summaryJobStatus.stopping || isStoppingSummaryJob ? "Stopping..." : "Stop" }}
+        </UiButton>
+      </div>
+      <p v-else-if="summaryJobStatus && summaryJobStatus.total > 0" class="meta-text">
+        Last summary job{{ summaryJobStatus.stopped ? " (stopped)" : "" }}: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
         {{ summaryJobStatus.failed }} failed.
       </p>
-      <p v-else-if="summaryJobStatus && summaryJobStatus.total > 0" class="meta-text">
-        Last summary job: {{ summaryJobStatus.completed }} of {{ summaryJobStatus.total }} processed,
-        {{ summaryJobStatus.failed }} failed.
+      <p v-else-if="summaryJobStatus && summaryJobStartedHere" class="meta-text">
+        No episodes matched, so nothing was summarized.
       </p>
 
       <h4 class="settings-section-subtitle">Model</h4>
@@ -1258,6 +1350,14 @@ onUnmounted(() => {
 .resummarize-actions {
   flex-wrap: wrap;
   align-items: center;
+}
+
+.backfill-actions {
+  align-items: flex-end;
+}
+
+.backfill-limit {
+  width: min(100%, 12rem);
 }
 
 .settings-label-row {

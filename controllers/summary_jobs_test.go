@@ -2,12 +2,15 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ctaylor1/briefcast/db"
 	"github.com/ctaylor1/briefcast/service"
 	"github.com/gin-gonic/gin"
 )
@@ -17,8 +20,127 @@ func summaryJobTestRouter() *gin.Engine {
 	router := gin.New()
 	router.POST("/settings/backfill-summaries", BackfillSummaries)
 	router.GET("/settings/backfill-summaries", GetBackfillSummariesStatus)
+	router.POST("/settings/backfill-summaries/stop", StopSummaryJob)
 	router.POST("/settings/resummarize", ResummarizeSummaries)
 	return router
+}
+
+func waitForSummaryJobStatus(t *testing.T, router *gin.Engine) service.SummaryBackfillStatus {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp := summaryJobRequest(router, http.MethodGet, "/settings/backfill-summaries", "")
+		var status service.SummaryBackfillStatus
+		if err := json.Unmarshal(resp.Body.Bytes(), &status); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		if !status.Running {
+			return status
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for the summary job to finish")
+	return service.SummaryBackfillStatus{}
+}
+
+func createWaitingControllerEpisodes(t *testing.T, count int) {
+	t.Helper()
+	podcast, _ := createControllerPodcastAndItem(t)
+	for i := 0; i < count; i++ {
+		item := db.PodcastItem{
+			PodcastID:           podcast.ID,
+			GUID:                fmt.Sprintf("waiting-%d", i),
+			Title:               fmt.Sprintf("Waiting %d", i),
+			PubDate:             time.Now().UTC().Add(time.Duration(i) * time.Hour),
+			CanonicalTranscript: "a transcript",
+		}
+		if err := db.CreatePodcastItem(&item); err != nil {
+			t.Fatalf("create episode: %v", err)
+		}
+	}
+}
+
+func TestBackfillSummariesHonoursLimit(t *testing.T) {
+	setupControllersTestDB(t)
+	createWaitingControllerEpisodes(t, 3)
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"a summary"}}]}`))
+	}))
+	defer llm.Close()
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", llm.URL)
+	router := summaryJobTestRouter()
+
+	resp := summaryJobRequest(router, http.MethodPost, "/settings/backfill-summaries", `{"limit":2}`)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d %s", resp.Code, resp.Body.String())
+	}
+	if status := waitForSummaryJobStatus(t, router); status.Total != 2 || status.Completed != 2 || status.Failed != 0 {
+		t.Fatalf("expected a run over the two newest episodes, got %+v", status)
+	}
+}
+
+func TestBackfillSummariesRejectsABadLimit(t *testing.T) {
+	setupControllersTestDB(t)
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	router := summaryJobTestRouter()
+	for _, body := range []string{`{"limit":-1}`, `{"limit":"ten"}`, `not json`} {
+		resp := summaryJobRequest(router, http.MethodPost, "/settings/backfill-summaries", body)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: expected 400, got %d %s", body, resp.Code, resp.Body.String())
+		}
+	}
+	if service.GetSummaryBackfillRunning() {
+		t.Fatal("a rejected request must not start a job")
+	}
+}
+
+func TestStopSummaryJobRoute(t *testing.T) {
+	setupControllersTestDB(t)
+	createWaitingControllerEpisodes(t, 2)
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"a summary"}}]}`))
+	}))
+	defer llm.Close()
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", llm.URL)
+	t.Setenv("LLM_CONCURRENCY", "1")
+	router := summaryJobTestRouter()
+
+	if resp := summaryJobRequest(router, http.MethodPost, "/settings/backfill-summaries/stop", ""); resp.Code != http.StatusConflict {
+		t.Fatalf("stop with nothing running: expected 409, got %d %s", resp.Code, resp.Body.String())
+	}
+	if resp := summaryJobRequest(router, http.MethodPost, "/settings/backfill-summaries", ""); resp.Code != http.StatusAccepted {
+		t.Fatalf("start: expected 202, got %d %s", resp.Code, resp.Body.String())
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the LLM request")
+	}
+	resp := summaryJobRequest(router, http.MethodPost, "/settings/backfill-summaries/stop", "")
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("stop: expected 202, got %d %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Status service.SummaryBackfillStatus `json:"status"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil || !body.Status.Stopping {
+		t.Fatalf("expected a stopping status, got %s (err %v)", resp.Body.String(), err)
+	}
+	releaseOnce.Do(func() { close(release) })
+	if status := waitForSummaryJobStatus(t, router); !status.Stopped || status.Completed != 1 || status.Total != 2 {
+		t.Fatalf("expected the job to stop after one episode, got %+v", status)
+	}
 }
 
 func summaryJobRequest(router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {

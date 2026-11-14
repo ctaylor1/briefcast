@@ -532,6 +532,8 @@ export interface SummaryJobStatus {
   completed: number;
   failed: number;
   error?: string;
+  stopping?: boolean;
+  stopped?: boolean;
 }
 
 export interface SummaryJobStartResponse {

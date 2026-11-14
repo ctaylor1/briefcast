@@ -128,7 +128,7 @@ func TestStartSummaryBackfillClearsRunningFlagAfterPanic(t *testing.T) {
 	enableSummaryJobs(t)
 	withNilDatabase(t)
 
-	if _, err := StartSummaryBackfill(); err != nil {
+	if _, err := StartSummaryBackfill(SummaryBackfillOptions{}); err != nil {
 		t.Fatalf("start summary backfill: %v", err)
 	}
 

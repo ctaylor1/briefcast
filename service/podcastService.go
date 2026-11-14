@@ -374,9 +374,10 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 	setting := db.GetOrCreateSetting()
 	llmCfg := LoadLLMConfig()
 	summarizationEnabled := llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != ""
-	// New episodes with a feed transcript are summarized by the summary backfill
-	// after this returns, not here: an LLM call per episode held up the refresh.
-	queuedForSummary := 0
+	// New episodes with a feed transcript are summarized by a backfill of just
+	// those episodes after this returns, not here: an LLM call per episode held up
+	// the refresh.
+	var queuedForSummary []string
 	initialDownloadMode := NormalizeInitialDownloadModeWithDefault(setting.InitialDownloadMode)
 	var allGuids []string
 	for i := 0; i < len(parsed.Entries); i++ {
@@ -535,7 +536,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 				ExportTranscript(&podcastItem)
 			}
 			if summarizationEnabled && transcriptStatus == "available" && strings.TrimSpace(podcastItem.CanonicalTranscript) != "" {
-				queuedForSummary++
+				queuedForSummary = append(queuedForSummary, podcastItem.ID)
 			}
 		}
 	}
@@ -552,9 +553,7 @@ func AddPodcastItems(podcast *db.Podcast, newPodcast bool) error {
 			Logger.Warnw("failed to resolve alternate file URLs during refresh", "podcast_id", podcast.ID, "error", resolveErr)
 		}
 	}
-	if queuedForSummary > 0 {
-		RequestSummaryBackfill()
-	}
+	RequestSummaryBackfill(queuedForSummary)
 	return firstItemErr
 }
 

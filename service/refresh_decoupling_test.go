@@ -71,6 +71,12 @@ json.dump({"feed": {"title": "Stalled"}, "entries": [
 	}
 }
 
+func pendingSummaryCount() int {
+	pendingSummaryMu.Lock()
+	defer pendingSummaryMu.Unlock()
+	return len(pendingSummaryIDs)
+}
+
 func TestRequestSummaryBackfillRunsAgainAfterABusyJob(t *testing.T) {
 	setupRetentionTestDB(t)
 	t.Setenv("LLM_ENABLED", "true")
@@ -78,16 +84,66 @@ func TestRequestSummaryBackfillRunsAgainAfterABusyJob(t *testing.T) {
 	if err := reserveSummaryJob(); err != nil {
 		t.Fatal(err)
 	}
-	RequestSummaryBackfill()
-	if !summaryBackfillRequested.Load() {
+	RequestSummaryBackfill([]string{"episode-a", "episode-b"})
+	if pendingSummaryCount() != 2 {
 		t.Fatal("a request during a running job must be remembered")
 	}
 	finishSummaryJob(0, 0, nil)
 	runRequestedSummaryBackfill()
-	if summaryBackfillRequested.Load() {
+	if pendingSummaryCount() != 0 {
 		t.Fatal("the remembered request was not consumed")
 	}
 	waitForSummaryJobIdle(t)
+}
+
+// A feed refresh asks for its new episodes only, never the whole back catalog.
+func TestRequestSummaryBackfillSummarizesOnlyTheRequestedEpisodes(t *testing.T) {
+	setupRetentionTestDB(t)
+	podcast := createPodcast(t, "requested-only", false)
+	added := db.PodcastItem{PodcastID: podcast.ID, Title: "added", CanonicalTranscript: "new transcript"}
+	older := db.PodcastItem{PodcastID: podcast.ID, Title: "older", CanonicalTranscript: "old transcript"}
+	for _, item := range []*db.PodcastItem{&added, &older} {
+		if err := db.CreatePodcastItem(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"a summary"}}]}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", server.URL)
+
+	RequestSummaryBackfill([]string{added.ID})
+	waitForSummaryJobIdle(t)
+
+	var gotAdded, gotOlder db.PodcastItem
+	if err := db.GetPodcastItemByID(added.ID, &gotAdded); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.GetPodcastItemByID(older.ID, &gotOlder); err != nil {
+		t.Fatal(err)
+	}
+	if gotAdded.LLMSummaryStatus != "available" {
+		t.Fatalf("requested episode was not summarized: status=%q", gotAdded.LLMSummaryStatus)
+	}
+	if gotOlder.LLMSummaryStatus != "" || gotOlder.LLMSummary != "" {
+		t.Fatalf("an episode that was not requested was summarized: status=%q", gotOlder.LLMSummaryStatus)
+	}
+	if status := GetSummaryJobStatus(); status.Total != 1 {
+		t.Fatalf("expected a run over one episode, got %+v", status)
+	}
+}
+
+func TestRequestSummaryBackfillWithNoEpisodesStartsNothing(t *testing.T) {
+	setupRetentionTestDB(t)
+	t.Setenv("LLM_ENABLED", "true")
+	t.Setenv("LLM_API_KEY", "test-key")
+	RequestSummaryBackfill(nil)
+	if GetSummaryBackfillRunning() {
+		t.Fatal("an empty request must not start a summary job")
+	}
 }
 
 func TestJobLockHeartbeatStopIsFinalAndCannotReviveARelease(t *testing.T) {

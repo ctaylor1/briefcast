@@ -21,11 +21,14 @@ export const settingsApi = {
   update(payload: AppSettingsUpdate): Promise<AppSettings> {
     return httpClient.patch<AppSettings, AppSettingsUpdate>("/settings", payload);
   },
-  backfillSummaries(): Promise<SummaryJobStartResponse> {
-    return httpClient.post<SummaryJobStartResponse>("/settings/backfill-summaries");
+  backfillSummaries(limit: number): Promise<SummaryJobStartResponse> {
+    return httpClient.post<SummaryJobStartResponse, { limit: number }>("/settings/backfill-summaries", { limit });
   },
   getBackfillStatus(): Promise<SummaryJobStatus> {
     return httpClient.get<SummaryJobStatus>("/settings/backfill-summaries");
+  },
+  stopSummaryJob(): Promise<SummaryJobStartResponse> {
+    return httpClient.post<SummaryJobStartResponse>("/settings/backfill-summaries/stop");
   },
   previewResummarize(filter: ResummarizeFilter): Promise<ResummarizeResult> {
     return httpClient.post<ResummarizeResult, ResummarizeFilter>("/settings/resummarize", filter);

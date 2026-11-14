@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -262,19 +263,45 @@ func PatchSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settingsFromModel(setting))
 }
 
-// BackfillSummaries kicks off background summarization of all episodes that
-// have a transcript but no summary yet. Returns 409 if already running.
+type backfillSummariesRequest struct {
+	Limit int `json:"limit"`
+}
+
+// BackfillSummaries kicks off background summarization of episodes that have a
+// transcript but no summary yet, newest first. An optional {"limit": N} caps the
+// run at N episodes; without it every waiting episode is included. Returns 409
+// if a summary job is already running.
 func BackfillSummaries(c *gin.Context) {
+	var req backfillSummariesRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Limit < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be zero or more"})
+		return
+	}
 	if !summaryJobConfigured(c) {
 		return
 	}
 
-	status, err := service.StartSummaryBackfill()
+	status, err := service.StartSummaryBackfill(service.SummaryBackfillOptions{Limit: req.Limit})
 	if err != nil {
 		respondSummaryJobStartError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"message": "summary backfill started", "status": status})
+}
+
+// StopSummaryJob asks the running summary job (backfill, re-summarize or repair)
+// to stop once the episodes in progress finish. Returns 409 if none is running.
+func StopSummaryJob(c *gin.Context) {
+	status, err := service.StopSummaryJob()
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"message": "summary job stopping", "status": status})
 }
 
 // GetBackfillSummariesStatus returns progress and the last summary job outcome.

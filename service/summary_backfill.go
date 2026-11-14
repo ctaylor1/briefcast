@@ -18,21 +18,37 @@ type SummaryBackfillStatus struct {
 	Completed int    `json:"completed"`
 	Failed    int    `json:"failed"`
 	Error     string `json:"error,omitempty"`
+	Stopping  bool   `json:"stopping,omitempty"`
+	Stopped   bool   `json:"stopped,omitempty"`
+}
+
+// SummaryBackfillOptions narrows a backfill. The zero value summarizes every
+// episode that is waiting for a summary.
+type SummaryBackfillOptions struct {
+	// Limit caps the run at the newest Limit waiting episodes; 0 means no cap.
+	Limit int
+	// EpisodeIDs restricts the run to these episodes when set.
+	EpisodeIDs []string
 }
 
 var summaryBackfillRunning atomic.Bool
+var summaryJobStopRequested atomic.Bool
 var summaryJobStatusMu sync.RWMutex
 var summaryJobStatus SummaryBackfillStatus
 
 var ErrSummaryJobAlreadyRunning = errors.New("a summary job is already running")
+
+var ErrNoSummaryJobRunning = errors.New("no summary job is running")
 
 var errSummaryJobStopped = errors.New("summary job stopped unexpectedly")
 
 // GetSummaryJobStatus returns a snapshot of the latest summary job.
 func GetSummaryJobStatus() SummaryBackfillStatus {
 	summaryJobStatusMu.RLock()
-	defer summaryJobStatusMu.RUnlock()
-	return summaryJobStatus
+	status := summaryJobStatus
+	summaryJobStatusMu.RUnlock()
+	status.Stopping = status.Running && summaryJobStopRequested.Load()
+	return status
 }
 
 func setSummaryJobStatus(status SummaryBackfillStatus) {
@@ -58,6 +74,7 @@ func reserveSummaryJob() error {
 	if !summaryBackfillRunning.CompareAndSwap(false, true) {
 		return ErrSummaryJobAlreadyRunning
 	}
+	summaryJobStopRequested.Store(false)
 	setSummaryJobStatus(SummaryBackfillStatus{Running: true})
 	return nil
 }
@@ -65,13 +82,30 @@ func reserveSummaryJob() error {
 func finishSummaryJob(succeeded, failed int, err error) {
 	status := GetSummaryJobStatus()
 	status.Running = false
+	status.Stopping = false
+	status.Stopped = summaryJobStopRequested.Load()
 	status.Completed = succeeded + failed
 	status.Failed = failed
 	if err != nil {
 		status.Error = err.Error()
 	}
 	setSummaryJobStatus(status)
+	summaryJobStopRequested.Store(false)
 	summaryBackfillRunning.Store(false)
+}
+
+// StopSummaryJob asks the running summary job to stop. Episodes already sent to
+// the LLM finish; the rest stay waiting for a later run. Episodes queued by a
+// feed refresh during the job are dropped too, so nothing starts right after.
+func StopSummaryJob() (SummaryBackfillStatus, error) {
+	if !summaryBackfillRunning.Load() {
+		return GetSummaryJobStatus(), ErrNoSummaryJobRunning
+	}
+	summaryJobStopRequested.Store(true)
+	pendingSummaryMu.Lock()
+	clear(pendingSummaryIDs)
+	pendingSummaryMu.Unlock()
+	return GetSummaryJobStatus(), nil
 }
 
 // runSummaryJob runs a reserved job and always finishes it. The finish is deferred
@@ -96,7 +130,7 @@ func validateSummaryConfig(cfg LLMConfig) error {
 
 // StartSummaryBackfill reserves the job before returning and reports failures
 // through GetSummaryJobStatus.
-func StartSummaryBackfill() (SummaryBackfillStatus, error) {
+func StartSummaryBackfill(opts SummaryBackfillOptions) (SummaryBackfillStatus, error) {
 	cfg := LoadLLMConfig()
 	if err := validateSummaryConfig(cfg); err != nil {
 		return SummaryBackfillStatus{}, err
@@ -107,34 +141,52 @@ func StartSummaryBackfill() (SummaryBackfillStatus, error) {
 	SafeGo("summary backfill", func() {
 		defer runRequestedSummaryBackfill()
 		_, _, _ = runSummaryJob(func() (int, int, error) {
-			return runSummaryBackfill(cfg, setSummaryJobStatus)
+			return runSummaryBackfill(cfg, opts, setSummaryJobStatus)
 		})
 	})
 	return GetSummaryJobStatus(), nil
 }
 
-// summaryBackfillRequested records a request that arrived while a summary job
-// was running. That job chose its episodes before the new ones existed, so it
-// runs again once it finishes.
-var summaryBackfillRequested atomic.Bool
+// pendingSummaryIDs holds episodes a feed refresh added while a summary job was
+// running. That job chose its episodes before these existed, so they get their
+// own run once it finishes.
+var pendingSummaryMu sync.Mutex
+var pendingSummaryIDs = map[string]struct{}{}
 
-// RequestSummaryBackfill summarizes episodes that are waiting for a summary,
-// now or as soon as the running summary job finishes.
-func RequestSummaryBackfill() {
-	_, err := StartSummaryBackfill()
+// RequestSummaryBackfill summarizes the given episodes, now or as soon as the
+// running summary job finishes. Other waiting episodes are left alone, so a feed
+// refresh never starts a run over the whole back catalog.
+func RequestSummaryBackfill(episodeIDs []string) {
+	if len(episodeIDs) == 0 {
+		return
+	}
+	_, err := StartSummaryBackfill(SummaryBackfillOptions{EpisodeIDs: episodeIDs})
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrSummaryJobAlreadyRunning):
-		summaryBackfillRequested.Store(true)
+		pendingSummaryMu.Lock()
+		for _, id := range episodeIDs {
+			pendingSummaryIDs[id] = struct{}{}
+		}
+		pendingSummaryMu.Unlock()
+		// The running job may have finished before the IDs were recorded.
+		if !summaryBackfillRunning.Load() {
+			runRequestedSummaryBackfill()
+		}
 	default:
 		logging.Sugar().Warnw("summary backfill not started", "error", err)
 	}
 }
 
 func runRequestedSummaryBackfill() {
-	if summaryBackfillRequested.CompareAndSwap(true, false) {
-		RequestSummaryBackfill()
+	pendingSummaryMu.Lock()
+	ids := make([]string, 0, len(pendingSummaryIDs))
+	for id := range pendingSummaryIDs {
+		ids = append(ids, id)
 	}
+	clear(pendingSummaryIDs)
+	pendingSummaryMu.Unlock()
+	RequestSummaryBackfill(ids)
 }
 
 // StartResummarizeSummaries reserves the job before returning and reports
@@ -191,6 +243,9 @@ func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt st
 		SafeGo("summary batch worker", func() {
 			defer wg.Done()
 			for i := range work {
+				if summaryJobStopRequested.Load() {
+					return
+				}
 				if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
 					logger.Warnw("summary failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
 					failedCount.Add(1)
@@ -228,7 +283,7 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 		return 0, 0, err
 	}
 	return runSummaryJob(func() (int, int, error) {
-		return runSummaryBackfill(cfg, func(status SummaryBackfillStatus) {
+		return runSummaryBackfill(cfg, SummaryBackfillOptions{}, func(status SummaryBackfillStatus) {
 			setSummaryJobStatus(status)
 			if progressFn != nil {
 				progressFn(status)
@@ -237,7 +292,7 @@ func BackfillSummaries(progressFn func(status SummaryBackfillStatus)) (succeeded
 	})
 }
 
-func runSummaryBackfill(cfg LLMConfig, progressFn func(SummaryBackfillStatus)) (succeeded int, failed int, err error) {
+func runSummaryBackfill(cfg LLMConfig, opts SummaryBackfillOptions, progressFn func(SummaryBackfillStatus)) (succeeded int, failed int, err error) {
 	logger := logging.Sugar()
 
 	setting := db.GetOrCreateSetting()
@@ -249,17 +304,22 @@ func runSummaryBackfill(cfg LLMConfig, progressFn func(SummaryBackfillStatus)) (
 	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
 
 	var items []db.PodcastItem
-	result := db.DB.
+	query := db.DB.
 		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
 		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(cfg, time.Now())).
-		Order("pub_date DESC").
-		Find(&items)
-	if result.Error != nil {
+		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(cfg, time.Now()))
+	if len(opts.EpisodeIDs) > 0 {
+		query = query.Where("id IN ?", opts.EpisodeIDs)
+	}
+	query = query.Order("pub_date DESC")
+	if opts.Limit > 0 {
+		query = query.Limit(opts.Limit)
+	}
+	if result := query.Find(&items); result.Error != nil {
 		return 0, 0, fmt.Errorf("query failed: %w", result.Error)
 	}
 
-	logger.Infow("summary backfill starting", "episodes", len(items), "concurrency", cfg.Concurrency)
+	logger.Infow("summary backfill starting", "episodes", len(items), "limit", opts.Limit, "requested_episodes", len(opts.EpisodeIDs), "concurrency", cfg.Concurrency)
 	if progressFn != nil {
 		progressFn(SummaryBackfillStatus{Running: true, Total: len(items)})
 	}

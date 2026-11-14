@@ -182,6 +182,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.PATCH("/settings", controllers.PatchSettings)
 	router.POST("/settings/backfill-summaries", controllers.BackfillSummaries)
 	router.GET("/settings/backfill-summaries", controllers.GetBackfillSummariesStatus)
+	router.POST("/settings/backfill-summaries/stop", controllers.StopSummaryJob)
 	router.POST("/settings/resummarize", controllers.ResummarizeSummaries)
 	router.GET("/settings/summary-models", controllers.GetSummaryModels)
 	router.GET("/settings/openrouter-models", controllers.GetOpenRouterModels)
