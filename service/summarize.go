@@ -401,6 +401,10 @@ func llmHTTPClient(cfg LLMConfig) *http.Client {
 	return client
 }
 
+// summaryLLMCall is the provider call SummarizeEpisode makes; tests replace it
+// to simulate a panic inside the call.
+var summaryLLMCall = summarizeTranscriptWithReport
+
 // SummarizeEpisode summarizes a single episode's canonical transcript using the configured LLM.
 // It persists the result (including lineage: model and prompt used) to the database.
 func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string) error {
@@ -452,7 +456,24 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	}); err != nil {
 		return err
 	}
-	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
+	// A panic from here on would leave the episode "processing" until the
+	// stale window passes; record it as a failure, then let it propagate.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			status := "failed"
+			if hasExistingSummary {
+				status = "available"
+			}
+			if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+				"llm_summary_status": status,
+				"llm_summary_error":  "summary panicked: " + trimToLength(fmt.Sprint(recovered), 300),
+			}); updateErr != nil {
+				jobLogger.Warnw("failed to mark summary panic", "podcast_item_id", item.ID, "error", updateErr)
+			}
+			panic(recovered)
+		}
+	}()
+	summary, model, err := summaryLLMCall(transcript, prompt, userPrompt, cfg, report)
 	if err != nil {
 		if hasExistingSummary {
 			item.LLMSummaryStatus = "available"

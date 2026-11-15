@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -261,6 +262,20 @@ func GetSummaryBackfillRunning() bool {
 	return summaryBackfillRunning.Load()
 }
 
+// summarizeEpisodeContained turns a panic in one episode's summary into that
+// episode's error, so the batch worker goes on with the rest instead of
+// ending and silently skipping them. SummarizeEpisode has already recorded
+// the failure on the episode.
+func summarizeEpisodeContained(item *db.PodcastItem, cfg LLMConfig, prompt, userPrompt string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logging.Sugar().Errorw("summary panicked", "podcast_item_id", item.ID, "panic", trimToLength(fmt.Sprint(recovered), 300), "stack", string(debug.Stack()))
+			err = fmt.Errorf("summary panicked: %s", trimToLength(fmt.Sprint(recovered), 300))
+		}
+	}()
+	return SummarizeEpisode(item, cfg, prompt, userPrompt)
+}
+
 func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt string, progressFn func(SummaryBackfillStatus)) (succeeded, failed int) {
 	logger := logging.Sugar()
 	total := len(items)
@@ -293,7 +308,7 @@ func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt st
 				if summaryJobStopRequested.Load() {
 					return
 				}
-				if sumErr := SummarizeEpisode(&items[i], cfg, prompt, userPrompt); sumErr != nil {
+				if sumErr := summarizeEpisodeContained(&items[i], cfg, prompt, userPrompt); sumErr != nil {
 					logger.Warnw("summary failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
 					failedCount.Add(1)
 				} else {
