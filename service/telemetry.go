@@ -475,6 +475,9 @@ type SummariesSnapshot struct {
 	Job             SummaryBackfillStatus `json:"job"`
 	// Queued counts episodes requested while the job runs; they run next.
 	Queued int `json:"queued"`
+	// Server is the LLM server check, present only when the request asked
+	// for it (GET /settings/monitoring?checkLLM=1).
+	Server *LLMServerHealth `json:"server,omitempty"`
 	SummaryActivitySnapshot
 }
 

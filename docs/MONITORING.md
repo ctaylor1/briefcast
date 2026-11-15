@@ -62,6 +62,14 @@ Standard `go_*` and `process_*` metrics are included.
 
 None of it includes transcript, prompt or summary text, or keys.
 
+`GET /settings/monitoring?checkLLM=1` (sent by the Monitoring panel only) also checks the
+LLM server and adds `summaries.server`: reachable, latency, whether `GET /models` lists the
+summary model, and an error class (`timeout`, `refused`, `unauthorized`, `not_found`, ...).
+For `LLM_PROVIDER=ollama` it also reads Ollama's `GET /api/ps`: whether the model is loaded,
+its context length, and `gpu_share` (the part of the model in GPU memory; below 1 means part
+of it runs on the CPU, which is much slower). The result is cached for 60 seconds and goes
+through the same outbound URL policy as summaries.
+
 The database-backed gauges (`briefcast_episodes`, `briefcast_downloaded_episode_transcripts`,
 `briefcast_transcript_backlog_oldest_seconds`) and the panel's completion windows come
 from one grouped scan of the episodes table, cached for 60 seconds. Episode rows store

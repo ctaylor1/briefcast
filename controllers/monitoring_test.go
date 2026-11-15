@@ -34,6 +34,24 @@ func TestMonitoringHandlers(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"transcripts":3`) {
 		t.Fatalf("monitoring: %d %s", rec.Code, rec.Body)
 	}
+	origCheck := checkLLMServer
+	t.Cleanup(func() { checkLLMServer = origCheck })
+	var checks int
+	checkLLMServer = func(context.Context) (service.LLMServerHealth, bool) {
+		checks++
+		return service.LLMServerHealth{Reachable: true, Host: "llm.local:11434"}, true
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/monitoring", nil))
+	if checks != 0 || strings.Contains(rec.Body.String(), `"server"`) {
+		t.Fatalf("the LLM server must only be checked on request: checks=%d %s", checks, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/monitoring?checkLLM=1", nil))
+	if checks != 1 || !strings.Contains(rec.Body.String(), `"server":{`) || !strings.Contains(rec.Body.String(), `"host":"llm.local:11434"`) {
+		t.Fatalf("checkLLM=1 did not include the check: checks=%d %s", checks, rec.Body)
+	}
+
 	buildMonitoringSnapshot = func(context.Context) (service.MonitoringSnapshot, error) {
 		return service.MonitoringSnapshot{}, errors.New("db down with secret detail")
 	}

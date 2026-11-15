@@ -12,15 +12,23 @@ import (
 var (
 	buildMonitoringSnapshot = service.BuildMonitoringSnapshot
 	fetchWorkerMetrics      = service.FetchWorkerMetrics
+	checkLLMServer          = service.CheckLLMServer
 )
 
 // GetMonitoring returns queue state, recent throughput and worker health for the Settings panel.
+// With checkLLM=1 it also checks the LLM server (cached for a minute), so only
+// the Monitoring panel, not every poller, makes that outbound request.
 func GetMonitoring(c *gin.Context) {
 	snapshot, err := buildMonitoringSnapshot(c.Request.Context())
 	if err != nil {
 		controllerLogger.Warnw("monitoring snapshot failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Monitoring data unavailable"})
 		return
+	}
+	if c.Query("checkLLM") == "1" {
+		if health, checked := checkLLMServer(c.Request.Context()); checked {
+			snapshot.Summaries.Server = &health
+		}
 	}
 	c.JSON(http.StatusOK, snapshot)
 }
