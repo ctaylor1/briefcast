@@ -462,6 +462,10 @@ Summarization uses an OpenAI-compatible chat completion API and requires transcr
 - `LLM_MAX_TOKENS`: default `1024`
 - `LLM_TEMPERATURE`: default `0.3`
 - `LLM_TIMEOUT_SECONDS`: default `120`
+- `LLM_REASONING_EFFORT`: optional; sent as `reasoning_effort` when set. Thinking models
+  (for example qwen3.6 on Ollama) count their thinking against `LLM_MAX_TOKENS`, which can
+  end a summary at the limit before it is written. `none` turns thinking off on Ollama for
+  models that support only on or off. Empty (the default) sends nothing.
 - `LLM_SUMMARIZATION_PROMPT`: optional system prompt override
 - `LLM_SUMMARIZATION_USER_PROMPT`: optional user prompt template override
 

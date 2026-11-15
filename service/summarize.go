@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -105,6 +106,10 @@ type LLMConfig struct {
 	Concurrency       int
 	DefaultPrompt     string
 	DefaultUserPrompt string
+	// ReasoningEffort is sent as reasoning_effort when set. "none" turns
+	// thinking off on Ollama for models that support only on or off; thinking
+	// tokens otherwise count against MaxTokens. Empty sends nothing.
+	ReasoningEffort string
 }
 
 // LoadLLMConfig reads LLM settings from environment variables.
@@ -121,14 +126,16 @@ func LoadLLMConfig() LLMConfig {
 		Concurrency:       getEnvInt("LLM_CONCURRENCY", 1),
 		DefaultPrompt:     getEnvString("LLM_SUMMARIZATION_PROMPT", defaultSummarizationPrompt),
 		DefaultUserPrompt: getEnvString("LLM_SUMMARIZATION_USER_PROMPT", defaultUserPrompt),
+		ReasoningEffort:   strings.TrimSpace(os.Getenv("LLM_REASONING_EFFORT")),
 	}
 }
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []openAIChatMessage `json:"messages"`
-	MaxTokens   int                 `json:"max_tokens,omitempty"`
-	Temperature float64             `json:"temperature,omitempty"`
+	Model           string              `json:"model"`
+	Messages        []openAIChatMessage `json:"messages"`
+	MaxTokens       int                 `json:"max_tokens,omitempty"`
+	Temperature     float64             `json:"temperature,omitempty"`
+	ReasoningEffort string              `json:"reasoning_effort,omitempty"`
 }
 
 type openAIChatMessage struct {
@@ -141,6 +148,10 @@ type openAIChatResponse struct {
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
+			// Thinking text, as Ollama ("reasoning") and vLLM-style servers
+			// ("reasoning_content") return it. Only its length is used.
+			Reasoning        string `json:"reasoning"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -225,8 +236,9 @@ func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt 
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: userPrompt + transcript},
 		},
-		MaxTokens:   cfg.MaxTokens,
-		Temperature: cfg.Temperature,
+		MaxTokens:       cfg.MaxTokens,
+		Temperature:     cfg.Temperature,
+		ReasoningEffort: cfg.ReasoningEffort,
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -280,16 +292,17 @@ func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt 
 	if len(chatResp.Choices) == 0 {
 		return "", "", fmt.Errorf("LLM returned no choices")
 	}
+	thinkingChars := len(chatResp.Choices[0].Message.Reasoning) + len(chatResp.Choices[0].Message.ReasoningContent)
 	if chatResp.Choices[0].FinishReason == "length" {
-		return "", "", fmt.Errorf("LLM response reached the output token limit (max_tokens=%d)", cfg.MaxTokens)
+		return "", "", tokenLimitError(cfg, chatResp, thinkingChars)
 	}
 	if chatResp.Choices[0].FinishReason == "content_filter" {
 		return "", "", fmt.Errorf("LLM response was blocked by the provider content filter")
 	}
 
-	summary := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	summary := stripLeadingThinkBlock(chatResp.Choices[0].Message.Content)
 	if summary == "" {
-		metadata := make([]string, 0, 3)
+		metadata := make([]string, 0, 4)
 		if model := strings.TrimSpace(chatResp.Model); model != "" {
 			metadata = append(metadata, "model="+truncateForLog(model, 120))
 		}
@@ -298,6 +311,9 @@ func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt 
 		}
 		if chatResp.Usage != nil {
 			metadata = append(metadata, fmt.Sprintf("tokens=%d/%d/%d", chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, chatResp.Usage.TotalTokens))
+		}
+		if thinkingChars > 0 {
+			metadata = append(metadata, fmt.Sprintf("thinking_chars=%d", thinkingChars))
 		}
 		if len(metadata) > 0 {
 			return "", "", fmt.Errorf("LLM returned empty summary (%s)", strings.Join(metadata, ", "))
@@ -323,6 +339,9 @@ func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt 
 		if cfg.Temperature != 0 {
 			settings["temperature"] = cfg.Temperature
 		}
+		if cfg.ReasoningEffort != "" {
+			settings["reasoning_effort"] = cfg.ReasoningEffort
+		}
 		report["generation_settings"] = settings
 	}
 	if model == "" {
@@ -337,6 +356,38 @@ func llmChatCompletionsURL(baseURL string) (string, error) {
 		return "", fmt.Errorf("invalid LLM base URL: %w", err)
 	}
 	return strings.TrimRight(parsed.String(), "/") + "/chat/completions", nil
+}
+
+// tokenLimitError explains a finish_reason=length response with the token
+// counts the provider reported, and says when thinking used the budget.
+func tokenLimitError(cfg LLMConfig, resp openAIChatResponse, thinkingChars int) error {
+	detail := fmt.Sprintf("max_tokens=%d", cfg.MaxTokens)
+	if resp.Usage != nil {
+		detail += fmt.Sprintf(", prompt_tokens=%d, completion_tokens=%d", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+	}
+	if thinkingChars > 0 {
+		detail += fmt.Sprintf(", thinking_chars=%d", thinkingChars)
+	}
+	message := fmt.Sprintf("LLM response reached the output token limit (%s)", detail)
+	if thinkingChars > 0 && cfg.ReasoningEffort == "" {
+		message += "; the model was thinking, and LLM_REASONING_EFFORT=none turns thinking off"
+	}
+	return errors.New(message)
+}
+
+// stripLeadingThinkBlock removes a leading <think>…</think> block, which some
+// servers leave in the content instead of a separate reasoning field. An
+// unclosed block is left as it is.
+func stripLeadingThinkBlock(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "<think>") {
+		return trimmed
+	}
+	end := strings.Index(trimmed, "</think>")
+	if end < 0 {
+		return trimmed
+	}
+	return strings.TrimSpace(trimmed[end+len("</think>"):])
 }
 
 func llmHTTPClient(cfg LLMConfig) *http.Client {

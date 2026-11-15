@@ -256,3 +256,134 @@ func TestSummarizeTranscriptDoesNotExposeProviderErrorBody(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadLLMConfigReadsReasoningEffort(t *testing.T) {
+	t.Setenv("LLM_REASONING_EFFORT", " none ")
+	if got := LoadLLMConfig().ReasoningEffort; got != "none" {
+		t.Fatalf("expected trimmed reasoning effort, got %q", got)
+	}
+	t.Setenv("LLM_REASONING_EFFORT", "")
+	if got := LoadLLMConfig().ReasoningEffort; got != "" {
+		t.Fatalf("expected no reasoning effort by default, got %q", got)
+	}
+}
+
+func TestSummarizeTranscriptSendsReasoningEffortOnlyWhenSet(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		effort string
+	}{
+		{name: "unset", effort: ""},
+		{name: "none", effort: "none"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var raw map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+					t.Error(err)
+				}
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"summary"},"finish_reason":"stop"}]}`))
+			}))
+			defer server.Close()
+
+			if _, err := SummarizeTranscript("transcript", "prompt", "User: ", LLMConfig{
+				APIKey: "test-key", BaseURL: server.URL, Model: "m", TimeoutSecs: 5, ReasoningEffort: test.effort,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			got, present := raw["reasoning_effort"]
+			if test.effort == "" && present {
+				t.Fatalf("reasoning_effort sent although unset: %v", got)
+			}
+			if test.effort != "" && got != test.effort {
+				t.Fatalf("expected reasoning_effort %q, got %v (present=%v)", test.effort, got, present)
+			}
+		})
+	}
+}
+
+func TestSummarizeTranscriptTokenLimitReportsUsageAndThinking(t *testing.T) {
+	body := `{"choices":[{"message":{"content":"","reasoning":"` + strings.Repeat("x", 500) + `"},"finish_reason":"length"}],"usage":{"prompt_tokens":7000,"completion_tokens":2048,"total_tokens":9048}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	for _, test := range []struct {
+		name     string
+		effort   string
+		wantHint bool
+	}{
+		{name: "thinking left on", effort: "", wantHint: true},
+		{name: "effort already set", effort: "low", wantHint: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := SummarizeTranscript("private transcript", "prompt", "User: ", LLMConfig{
+				APIKey: "test-key", BaseURL: server.URL, Model: "m", MaxTokens: 2048, TimeoutSecs: 5, ReasoningEffort: test.effort,
+			})
+			if err == nil {
+				t.Fatal("expected token limit error")
+			}
+			for _, part := range []string{"max_tokens=2048", "prompt_tokens=7000", "completion_tokens=2048", "thinking_chars=500"} {
+				if !strings.Contains(err.Error(), part) {
+					t.Fatalf("expected %q in error: %v", part, err)
+				}
+			}
+			if hint := strings.Contains(err.Error(), "LLM_REASONING_EFFORT=none"); hint != test.wantHint {
+				t.Fatalf("hint present=%v, want %v: %v", hint, test.wantHint, err)
+			}
+			if strings.Contains(err.Error(), "xxxx") || strings.Contains(err.Error(), "private transcript") {
+				t.Fatalf("error exposed thinking or transcript text: %v", err)
+			}
+		})
+	}
+}
+
+func TestSummarizeTranscriptStripsLeadingThinkBlock(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "closed block", content: "<think>\nplan the answer\n</think>\n\n## Summary", want: "## Summary"},
+		{name: "no block", content: " ## Summary ", want: "## Summary"},
+		{name: "unclosed block kept", content: "<think>never closed", want: "<think>never closed"},
+		{name: "block later in text kept", content: "Intro <think>x</think> rest", want: "Intro <think>x</think> rest"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": test.content}, "finish_reason": "stop"}}})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(payload)
+			}))
+			defer server.Close()
+			got, err := SummarizeTranscript("transcript", "prompt", "User: ", LLMConfig{APIKey: "k", BaseURL: server.URL, Model: "m", TimeoutSecs: 5})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("summary %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSummarizeEpisodeRecordsReasoningEffortInProvenance(t *testing.T) {
+	_, item := seedCharacterizationPodcastItem(t, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"model":"qwen-test","choices":[{"message":{"content":"new summary"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	if err := SummarizeEpisode(&item, LLMConfig{
+		APIKey: "test-key", BaseURL: server.URL, Model: "qwen-test", TimeoutSecs: 5, ReasoningEffort: "none",
+	}, "prompt", "User: "); err != nil {
+		t.Fatalf("summarize episode: %v", err)
+	}
+	var saved db.PodcastItem
+	if err := db.GetPodcastItemByID(item.ID, &saved); err != nil {
+		t.Fatalf("reload episode: %v", err)
+	}
+	if !strings.Contains(saved.SummaryProvenanceJSON, `"reasoning_effort":"none"`) {
+		t.Fatalf("provenance does not record reasoning_effort: %s", saved.SummaryProvenanceJSON)
+	}
+}
