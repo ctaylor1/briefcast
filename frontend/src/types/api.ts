@@ -362,6 +362,83 @@ export interface MonitoringWindow {
   downloads: number;
   transcripts: number;
   transcribed_audio_seconds: number;
+  summaries?: number;
+}
+
+export type SummaryAttemptOutcome = "succeeded" | "failed" | "timed_out" | "token_limit" | "panicked" | "discarded";
+
+/** One LLM summary attempt (identifiers, counts and a shortened error only). */
+export interface SummaryAttempt {
+  episode_id: string;
+  title: string;
+  source: string;
+  model?: string;
+  started_at: string;
+  finished_at?: string;
+  duration_ms: number;
+  outcome?: SummaryAttemptOutcome;
+  finish_reason?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  thinking_chars?: number;
+  error?: string;
+}
+
+export interface OllamaModelState {
+  loaded: boolean;
+  context_length?: number;
+  size_bytes?: number;
+  vram_bytes?: number;
+  /** Share of the model in GPU memory; 1 = fully on the GPU. */
+  gpu_share?: number;
+  error?: string;
+}
+
+export interface LLMServerHealth {
+  checked_at: string;
+  host?: string;
+  reachable: boolean;
+  latency_ms: number;
+  model_listed?: boolean;
+  error_class?: string;
+  error?: string;
+  ollama?: OllamaModelState;
+}
+
+export interface MonitoringSummaries {
+  enabled: boolean;
+  llm_enabled: boolean;
+  api_key_configured: boolean;
+  provider: string;
+  model: string;
+  host?: string;
+  reasoning_effort?: string;
+  max_tokens: number;
+  timeout_seconds: number;
+  concurrency: number;
+  job: SummaryJobStatus;
+  queued: number;
+  server?: LLMServerHealth;
+  in_flight: SummaryAttempt[];
+  recent: SummaryAttempt[];
+  outcomes: Record<string, number>;
+  consecutive_failures: number;
+  last_success_at?: string;
+}
+
+export interface JobRunSummary {
+  name: string;
+  running: boolean;
+  last_started_at?: string;
+  last_finished_at?: string;
+  last_duration_ms: number;
+  last_outcome?: "succeeded" | "failed" | "panicked";
+  last_error?: string;
+  last_success_at?: string;
+  consecutive_failures: number;
+  failing_since?: string;
+  runs: number;
+  failures: number;
 }
 
 export interface MonitoringGPU {
@@ -403,6 +480,8 @@ export interface MonitoringSinceStart {
   avg_speed_ratio: number;
   scheduled_job_failures: Record<string, number>;
   transcript_export_failures: number;
+  summary_attempts?: Record<string, number>;
+  avg_summary_seconds?: number;
 }
 
 export interface MonitoringSnapshot {
@@ -411,11 +490,15 @@ export interface MonitoringSnapshot {
     episodes_by_download_state: Record<string, number>;
     transcripts_by_state: Record<string, number>;
     oldest_pending_seconds: number;
+    /** available, processing, failed, waiting (transcribed, never summarized). */
+    summaries_by_state?: Record<string, number>;
   };
   windows: MonitoringWindow[];
   since_start: MonitoringSinceStart;
   worker: MonitoringWorker;
   assets_free_bytes: number | null;
+  summaries?: MonitoringSummaries;
+  jobs?: JobRunSummary[];
 }
 
 export interface WorkQueueItem {

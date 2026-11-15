@@ -1,19 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getErrorMessage, settingsApi } from "../../lib/api";
 import {
   attentionItems,
+  elapsedSeconds,
   formatBytes,
   formatCount,
   formatDuration,
   formatHours,
   formatSpeed,
+  formatTokens,
+  jobStatus,
   percent,
   stageTimings,
+  summaryOutcomeLabel,
+  summaryOutcomeTone,
+  summarySourceLabel,
+  summaryStatus,
   workerStatus,
   type HealthTone,
 } from "../../lib/monitoring";
-import type { MonitoringSnapshot } from "../../types/api";
+import type { MonitoringSnapshot, SummaryAttempt } from "../../types/api";
 import UiAlert from "../ui/UiAlert.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiButton from "../ui/UiButton.vue";
@@ -24,7 +31,13 @@ const REFRESH_MS = 15_000;
 const snapshot = ref<MonitoringSnapshot | null>(null);
 const loading = ref(false);
 const errorMessage = ref("");
+const stopMessage = ref("");
+const isStoppingSummaries = ref(false);
+// Ticks every second while a summary is in progress, so its elapsed time moves
+// between the 15-second refreshes without extra requests.
+const now = ref(Date.now());
 let timer: number | undefined;
+let ticker: number | undefined;
 
 const badgeTone: Record<HealthTone, "success" | "warning" | "danger" | "neutral"> = {
   ok: "success",
@@ -34,7 +47,74 @@ const badgeTone: Record<HealthTone, "success" | "warning" | "danger" | "neutral"
 };
 
 const status = computed(() => (snapshot.value ? workerStatus(snapshot.value) : null));
-const attention = computed(() => (snapshot.value ? attentionItems(snapshot.value) : []));
+const attention = computed(() => (snapshot.value ? attentionItems(snapshot.value, now.value) : []));
+const summaries = computed(() => snapshot.value?.summaries);
+const summary = computed(() => (snapshot.value ? summaryStatus(snapshot.value) : null));
+const summaryCounts = computed(() => snapshot.value?.queue.summaries_by_state ?? {});
+const recentSummaries = computed(() => summaries.value?.recent ?? []);
+const jobs = computed(() => snapshot.value?.jobs ?? []);
+const ollama = computed(() => summaries.value?.server?.ollama);
+const serverLabel = computed(() => {
+  const s = summaries.value;
+  if (!s) {
+    return "—";
+  }
+  const server = s.server;
+  if (!server) {
+    return s.host || "—";
+  }
+  if (!server.reachable) {
+    return `${server.host ?? s.host ?? ""} · unreachable`;
+  }
+  const model = server.model_listed === false ? " · model missing" : "";
+  return `${server.host ?? s.host ?? ""} · ${formatCount(server.latency_ms)} ms${model}`;
+});
+
+function attemptElapsed(attempt: SummaryAttempt): number {
+  return elapsedSeconds(attempt.started_at, now.value);
+}
+
+function attemptTime(attempt: SummaryAttempt): string {
+  const at = attempt.finished_at ?? attempt.started_at;
+  const date = new Date(at);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+function timeLabel(iso: string | undefined): string {
+  if (!iso) {
+    return "—";
+  }
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+async function stopSummaries(): Promise<void> {
+  isStoppingSummaries.value = true;
+  stopMessage.value = "";
+  try {
+    await settingsApi.stopSummaryJob();
+    await refresh();
+  } catch (error) {
+    stopMessage.value = getErrorMessage(error, "Failed to stop the summary job.");
+  } finally {
+    isStoppingSummaries.value = false;
+  }
+}
+
+watch(
+  () => summaries.value?.in_flight.length ?? 0,
+  (inFlight) => {
+    if (inFlight > 0 && ticker === undefined) {
+      now.value = Date.now();
+      ticker = window.setInterval(() => {
+        now.value = Date.now();
+      }, 1000);
+    } else if (inFlight === 0 && ticker !== undefined) {
+      window.clearInterval(ticker);
+      ticker = undefined;
+    }
+  },
+);
 const stages = computed(() => stageTimings(snapshot.value?.worker.avg_stage_seconds));
 const transcripts = computed(() => snapshot.value?.queue.transcripts_by_state ?? {});
 const episodes = computed(() => snapshot.value?.queue.episodes_by_download_state ?? {});
@@ -54,7 +134,8 @@ async function refresh(): Promise<void> {
   }
   loading.value = true;
   try {
-    snapshot.value = await settingsApi.getMonitoring();
+    snapshot.value = await settingsApi.getMonitoring({ checkLLM: true });
+    now.value = Date.now();
     errorMessage.value = "";
   } catch (error) {
     errorMessage.value = getErrorMessage(error, "Failed to load monitoring data.");
@@ -81,6 +162,10 @@ onBeforeUnmount(() => {
   if (timer !== undefined) {
     window.clearTimeout(timer);
   }
+  if (ticker !== undefined) {
+    window.clearInterval(ticker);
+    ticker = undefined;
+  }
 });
 </script>
 
@@ -91,7 +176,7 @@ onBeforeUnmount(() => {
         <div class="stack-1">
           <h3 class="settings-section-title">Pipeline monitoring</h3>
           <p class="section-subtitle">
-            Downloads, transcription and worker health. Refreshes every 15 seconds{{ updatedLabel ? ` · updated ${updatedLabel}` : "" }}.
+            Downloads, transcription, summaries and worker health. Refreshes every 15 seconds{{ updatedLabel ? ` · updated ${updatedLabel}` : "" }}.
           </p>
         </div>
         <UiButton size="sm" variant="outline" :disabled="loading" @click="refresh">
@@ -129,6 +214,78 @@ onBeforeUnmount(() => {
             <div><dt>State volume free</dt><dd>{{ formatBytes(snapshot.worker.state_free_bytes) }}</dd></div>
           </dl>
           <p v-if="snapshot.worker.reachable" class="meta-text">Worker counts reset when the worker restarts.</p>
+        </UiCard>
+
+        <UiCard v-if="summaries && summary" padding="lg" class="stack-2">
+          <div class="surface-row surface-row--between">
+            <h4 class="monitoring-card__title">AI summaries</h4>
+            <UiBadge :tone="badgeTone[summary.tone]">{{ summary.label }}</UiBadge>
+          </div>
+          <p class="meta-text">{{ summary.detail }}</p>
+          <div v-for="attempt in summaries.in_flight" :key="`${attempt.episode_id}-${attempt.started_at}`" class="stack-1">
+            <div class="monitoring-meter-label">
+              <span class="monitoring-ellipsis" :title="attempt.title">{{ attempt.title }}</span>
+              <span>{{ formatDuration(attemptElapsed(attempt)) }} of {{ formatDuration(summaries.timeout_seconds) }}</span>
+            </div>
+            <div
+              class="monitoring-meter"
+              role="meter"
+              :aria-valuenow="percent(attemptElapsed(attempt), summaries.timeout_seconds)"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-label="`Time used summarizing ${attempt.title}`"
+            >
+              <span :style="{ width: `${percent(attemptElapsed(attempt), summaries.timeout_seconds)}%` }"></span>
+            </div>
+          </div>
+          <div v-if="summaries.job.running" class="surface-row surface-row--between monitoring-job-row">
+            <span class="meta-text" role="status">
+              {{ summaries.job.stopping ? "Stopping after the episode in progress." : "Summary job:" }}
+              {{ formatCount(summaries.job.completed) }} of {{ formatCount(summaries.job.total) }} done,
+              {{ formatCount(summaries.job.failed) }} failed{{ summaries.queued ? `, ${formatCount(summaries.queued)} queued next` : "" }}
+            </span>
+            <UiButton size="sm" variant="outline" :disabled="summaries.job.stopping || isStoppingSummaries" @click="stopSummaries">
+              {{ summaries.job.stopping || isStoppingSummaries ? "Stopping..." : "Stop" }}
+            </UiButton>
+          </div>
+          <UiAlert v-if="stopMessage" tone="warning">{{ stopMessage }}</UiAlert>
+          <dl class="monitoring-stats">
+            <div><dt>Model</dt><dd>{{ summaries.provider }} · {{ summaries.model }}</dd></div>
+            <div><dt>LLM server</dt><dd>{{ serverLabel }}</dd></div>
+            <div v-if="ollama?.loaded">
+              <dt>In GPU memory</dt>
+              <dd>{{ percent(ollama.gpu_share ?? 0, 1) }}% · context {{ formatCount(ollama.context_length) }}</dd>
+            </div>
+            <div><dt>Thinking</dt><dd>{{ summaries.reasoning_effort ? `reasoning_effort=${summaries.reasoning_effort}` : "Model default" }}</dd></div>
+            <div><dt>Output limit · time limit</dt><dd>{{ formatCount(summaries.max_tokens) }} tokens · {{ formatDuration(summaries.timeout_seconds) }}</dd></div>
+            <div><dt>Waiting · failed</dt><dd>{{ formatCount(summaryCounts.waiting) }} · {{ formatCount(summaryCounts.failed) }}</dd></div>
+            <div><dt>Summarized</dt><dd>{{ formatCount(summaryCounts.available) }}</dd></div>
+            <div v-if="since?.summary_attempts">
+              <dt>Since restart: done · failed</dt>
+              <dd>
+                {{ formatCount(since.summary_attempts.succeeded) }} ·
+                {{ formatCount((since.summary_attempts.failed ?? 0) + (since.summary_attempts.timed_out ?? 0) + (since.summary_attempts.token_limit ?? 0) + (since.summary_attempts.panicked ?? 0)) }}
+                (avg {{ formatDuration(since.avg_summary_seconds) }})
+              </dd>
+            </div>
+          </dl>
+        </UiCard>
+
+        <UiCard v-if="recentSummaries.length" padding="lg" class="stack-2">
+          <h4 class="monitoring-card__title">Recent summaries</h4>
+          <ul class="monitoring-list" aria-label="Recent summaries">
+            <li v-for="attempt in recentSummaries" :key="`${attempt.episode_id}-${attempt.started_at}`" class="monitoring-list__item">
+              <div class="surface-row surface-row--between monitoring-list__head">
+                <span class="monitoring-ellipsis monitoring-list__title" :title="attempt.title">{{ attempt.title }}</span>
+                <UiBadge :tone="badgeTone[summaryOutcomeTone(attempt.outcome)]">{{ summaryOutcomeLabel(attempt.outcome) }}</UiBadge>
+              </div>
+              <span class="meta-text">
+                {{ attemptTime(attempt) }} · {{ formatDuration(attempt.duration_ms / 1000) }} · {{ summarySourceLabel(attempt.source) }}{{ formatTokens(attempt) ? ` · ${formatTokens(attempt)}` : "" }}
+              </span>
+              <span v-if="attempt.error" class="meta-text monitoring-list__error">{{ attempt.error }}</span>
+            </li>
+          </ul>
+          <p class="meta-text">Since the app started; the newest {{ formatCount(recentSummaries.length) }}.</p>
         </UiCard>
 
         <UiCard v-if="snapshot.worker.gpus.length" padding="lg" class="stack-2">
@@ -176,7 +333,7 @@ onBeforeUnmount(() => {
           <h4 class="monitoring-card__title">Completed</h4>
           <table class="monitoring-table">
             <thead>
-              <tr><th scope="col"></th><th scope="col">Downloads</th><th scope="col">Transcripts</th><th scope="col">Audio</th></tr>
+              <tr><th scope="col"></th><th scope="col">Downloads</th><th scope="col">Transcripts</th><th scope="col">Audio</th><th scope="col">Summaries</th></tr>
             </thead>
             <tbody>
               <tr v-for="window in snapshot.windows" :key="window.label">
@@ -184,6 +341,7 @@ onBeforeUnmount(() => {
                 <td>{{ formatCount(window.downloads) }}</td>
                 <td>{{ formatCount(window.transcripts) }}</td>
                 <td>{{ formatHours(window.transcribed_audio_seconds) }}</td>
+                <td>{{ formatCount(window.summaries) }}</td>
               </tr>
             </tbody>
           </table>
@@ -210,6 +368,26 @@ onBeforeUnmount(() => {
           <dl class="monitoring-stats">
             <div v-for="stage in stages" :key="stage.stage"><dt>{{ stage.label }}</dt><dd>{{ formatDuration(stage.seconds) }}</dd></div>
           </dl>
+        </UiCard>
+
+        <UiCard v-if="jobs.length" padding="lg" class="stack-2">
+          <h4 class="monitoring-card__title">Background jobs</h4>
+          <ul class="monitoring-list" aria-label="Background jobs">
+            <li v-for="job in jobs" :key="job.name" class="monitoring-list__item">
+              <div class="surface-row surface-row--between monitoring-list__head">
+                <span class="monitoring-ellipsis monitoring-list__title">{{ job.name }}</span>
+                <UiBadge :tone="badgeTone[jobStatus(job).tone]">{{ jobStatus(job).label }}</UiBadge>
+              </div>
+              <span class="meta-text">
+                Last run {{ timeLabel(job.last_finished_at ?? job.last_started_at) }} · {{ formatDuration(job.last_duration_ms / 1000) }} ·
+                {{ formatCount(job.runs) }} runs, {{ formatCount(job.failures) }} failed
+              </span>
+              <span v-if="job.consecutive_failures > 0 && job.last_error" class="meta-text monitoring-list__error">
+                {{ formatCount(job.consecutive_failures) }} in a row since {{ timeLabel(job.failing_since) }}: {{ job.last_error }}
+              </span>
+            </li>
+          </ul>
+          <p class="meta-text">Since the app started.</p>
         </UiCard>
 
         <UiCard padding="lg" class="stack-2">
@@ -319,6 +497,49 @@ onBeforeUnmount(() => {
   height: 100%;
   background: var(--color-accent-hover);
   border-radius: inherit;
+}
+
+.monitoring-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitoring-job-row {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.monitoring-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.monitoring-list__item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.monitoring-list__head {
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.monitoring-list__title {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.monitoring-list__error {
+  overflow-wrap: anywhere;
 }
 
 .monitoring-table {

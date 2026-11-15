@@ -1032,6 +1032,9 @@ onUnmounted(() => {
       <p v-else-if="summaryJobStatus && summaryJobStartedHere" class="meta-text">
         No episodes matched, so nothing was summarized.
       </p>
+      <RouterLink class="meta-text" :to="{ path: '/activity', query: { tab: 'monitoring' } }">
+        See each summary's progress, time taken and errors in Activity → Monitoring
+      </RouterLink>
 
       <h4 class="settings-section-subtitle">Model</h4>
 

@@ -59,7 +59,11 @@ export const settingsApi = {
   startRepairWork(limit = 50): Promise<RepairWorkResponse> {
     return httpClient.post<RepairWorkResponse>("/settings/repair-work", undefined, { params: { limit } });
   },
-  getMonitoring(): Promise<MonitoringSnapshot> {
+  /** checkLLM also checks the LLM server (cached a minute on the server); only the Monitoring panel asks for it. */
+  getMonitoring(options: { checkLLM?: boolean } = {}): Promise<MonitoringSnapshot> {
+    if (options.checkLLM) {
+      return httpClient.get<MonitoringSnapshot>("/settings/monitoring", { params: { checkLLM: 1 } });
+    }
     return httpClient.get<MonitoringSnapshot>("/settings/monitoring");
   },
 };

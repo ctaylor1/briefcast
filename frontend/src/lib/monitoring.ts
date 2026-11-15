@@ -1,4 +1,4 @@
-import type { MonitoringSnapshot } from "../types/api";
+import type { JobRunSummary, MonitoringSnapshot, MonitoringSummaries, SummaryAttempt } from "../types/api";
 
 export type HealthTone = "ok" | "warn" | "bad" | "idle";
 
@@ -94,14 +94,227 @@ export function workerStatus(snapshot: MonitoringSnapshot): StatusItem {
 
 const BACKLOG_WARN_SECONDS = 6 * 3600;
 const LOW_DISK_BYTES = 10 * 1024 ** 3;
+/** Failures in a row before summaries or a job count as failing. */
+export const FAILURE_STREAK = 3;
+const LONG_RUN_SHARE = 0.8;
+const CPU_OFFLOAD_SHARE = 0.99;
+
+const OUTCOME_LABELS: Record<string, string> = {
+  succeeded: "Done",
+  failed: "Failed",
+  timed_out: "Timed out",
+  token_limit: "Hit token limit",
+  panicked: "Crashed",
+  discarded: "Discarded",
+};
+
+const OUTCOME_TONES: Record<string, HealthTone> = {
+  succeeded: "ok",
+  failed: "bad",
+  timed_out: "bad",
+  token_limit: "bad",
+  panicked: "bad",
+  discarded: "idle",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  automatic: "Automatic",
+  backfill: "Summarize waiting",
+  resummarize: "Re-summarize",
+  direct: "Direct",
+};
+
+export function summaryOutcomeLabel(outcome: string | undefined): string {
+  return outcome ? (OUTCOME_LABELS[outcome] ?? outcome) : "In progress";
+}
+
+export function summaryOutcomeTone(outcome: string | undefined): HealthTone {
+  return outcome ? (OUTCOME_TONES[outcome] ?? "warn") : "ok";
+}
+
+export function summarySourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
+/** Seconds from an ISO time to nowMs, never negative. */
+export function elapsedSeconds(startedAt: string, nowMs: number): number {
+  const started = Date.parse(startedAt);
+  return Number.isFinite(started) ? Math.max(0, (nowMs - started) / 1000) : 0;
+}
+
+/** "12,000 → 900 tokens", or "" when the provider reported none. */
+export function formatTokens(attempt: SummaryAttempt): string {
+  if (!attempt.prompt_tokens && !attempt.completion_tokens) {
+    return "";
+  }
+  return `${formatCount(attempt.prompt_tokens)} → ${formatCount(attempt.completion_tokens)} tokens`;
+}
+
+function summariesMisconfigured(s: MonitoringSummaries): string {
+  if (!s.llm_enabled) {
+    return "Summarization is on in Settings, but LLM_ENABLED is not true in the app environment.";
+  }
+  if (!s.api_key_configured) {
+    return "Summarization is on in Settings, but LLM_API_KEY is empty. Any non-empty value works for Ollama.";
+  }
+  return "";
+}
+
+/** The last streak of failed attempts, newest first. */
+function failureStreak(s: MonitoringSummaries): SummaryAttempt[] {
+  const streak: SummaryAttempt[] = [];
+  for (const attempt of s.recent) {
+    if (attempt.outcome === "succeeded") {
+      break;
+    }
+    if (attempt.outcome && attempt.outcome !== "discarded") {
+      streak.push(attempt);
+    }
+  }
+  return streak;
+}
+
+function failureAdvice(s: MonitoringSummaries, streak: SummaryAttempt[]): string {
+  const last = streak[0];
+  if (!last) {
+    return "";
+  }
+  if (streak.every((a) => a.outcome === "token_limit")) {
+    const thinking = streak.some((a) => (a.thinking_chars ?? 0) > 0);
+    return thinking && !s.reasoning_effort
+      ? `The model spent its ${formatCount(s.max_tokens)}-token output limit thinking. Set LLM_REASONING_EFFORT=none to turn thinking off.`
+      : `Answers stop at the ${formatCount(s.max_tokens)}-token output limit (LLM_MAX_TOKENS).`;
+  }
+  if (streak.every((a) => a.outcome === "timed_out")) {
+    return `The LLM did not answer within ${formatDuration(s.timeout_seconds)} (LLM_TIMEOUT_SECONDS). The server may be too slow for this model.`;
+  }
+  return `Last error: ${last.error || summaryOutcomeLabel(last.outcome)}`;
+}
+
+/** Summary pipeline status for the card badge. */
+export function summaryStatus(snapshot: MonitoringSnapshot): StatusItem {
+  const s = snapshot.summaries;
+  if (!s) {
+    return { tone: "idle", label: "Not reported", detail: "This app version does not report summary activity." };
+  }
+  if (!s.enabled) {
+    return { tone: "idle", label: "Off", detail: "Enable summarization in Settings → AI summaries." };
+  }
+  const misconfigured = summariesMisconfigured(s);
+  if (misconfigured) {
+    return { tone: "bad", label: "Misconfigured", detail: misconfigured };
+  }
+  if (s.server && !s.server.reachable) {
+    return { tone: "bad", label: "Server unreachable", detail: s.server.error || "The LLM server did not answer." };
+  }
+  if (s.consecutive_failures >= FAILURE_STREAK) {
+    return { tone: "bad", label: "Failing", detail: `${formatCount(s.consecutive_failures)} attempts in a row failed.` };
+  }
+  if (s.in_flight.length) {
+    const queued = s.queued ? `, ${formatCount(s.queued)} queued` : "";
+    return { tone: "ok", label: "Summarizing", detail: `${formatCount(s.in_flight.length)} in progress${queued}` };
+  }
+  return { tone: "ok", label: "Idle", detail: "Ready. New transcripts are summarized automatically." };
+}
+
+function summaryAttention(snapshot: MonitoringSnapshot, nowMs: number): StatusItem[] {
+  const s = snapshot.summaries;
+  if (!s || !s.enabled) {
+    return [];
+  }
+  const items: StatusItem[] = [];
+  const misconfigured = summariesMisconfigured(s);
+  if (misconfigured) {
+    return [{ tone: "bad", label: "Summaries cannot run", detail: misconfigured }];
+  }
+  const server = s.server;
+  if (server && !server.reachable) {
+    items.push({ tone: "bad", label: "LLM server unreachable", detail: `${server.host ?? "The server"}: ${server.error ?? "no answer"}` });
+  } else if (server?.model_listed === false) {
+    items.push({ tone: "bad", label: "Summary model not on the LLM server", detail: `${s.model} is not in the server's model list. Pull it or change the model.` });
+  }
+  const ollama = server?.ollama;
+  if (ollama?.loaded && ollama.gpu_share != null && ollama.gpu_share < CPU_OFFLOAD_SHARE) {
+    items.push({
+      tone: "warn",
+      label: `${percent(1 - ollama.gpu_share, 1)}% of the model runs on the CPU`,
+      detail: "It does not fit in GPU memory, so summaries are slow. Use a smaller model, or give the GPU more memory.",
+    });
+  }
+  const streak = failureStreak(s);
+  if (s.consecutive_failures >= FAILURE_STREAK) {
+    items.push({ tone: "bad", label: `${formatCount(s.consecutive_failures)} summaries failed in a row`, detail: failureAdvice(s, streak) });
+  }
+  if (s.timeout_seconds > 0) {
+    for (const attempt of s.in_flight) {
+      const elapsed = elapsedSeconds(attempt.started_at, nowMs);
+      if (elapsed > s.timeout_seconds * LONG_RUN_SHARE) {
+        items.push({
+          tone: "warn",
+          label: "Summary close to its time limit",
+          detail: `"${attempt.title}" has run ${formatDuration(elapsed)} of ${formatDuration(s.timeout_seconds)}.`,
+        });
+      }
+    }
+  }
+  const processing = snapshot.queue.summaries_by_state?.processing ?? 0;
+  if (processing > 0 && !s.in_flight.length && !s.job.running) {
+    items.push({
+      tone: "warn",
+      label: `${formatCount(processing)} summary(s) stuck in processing`,
+      detail: "Nothing is summarizing them. Summarize waiting episodes picks them up once they are stale.",
+    });
+  }
+  return items;
+}
+
+/** Badge for one background job's latest run. */
+export function jobStatus(job: JobRunSummary): StatusItem {
+  if (job.running) {
+    return { tone: "ok", label: "Running" };
+  }
+  switch (job.last_outcome) {
+    case "succeeded":
+      return { tone: "ok", label: "OK" };
+    case "panicked":
+      return { tone: "bad", label: "Crashed" };
+    case "failed":
+      return job.consecutive_failures >= FAILURE_STREAK ? { tone: "bad", label: "Failing" } : { tone: "warn", label: "Failed" };
+    default:
+      return { tone: "idle", label: "Not run" };
+  }
+}
+
+/** Jobs that failed FAILURE_STREAK or more times in a row. */
+export function failingJobs(jobs: JobRunSummary[] | undefined): JobRunSummary[] {
+  return (jobs ?? []).filter((job) => job.consecutive_failures >= FAILURE_STREAK);
+}
+
+function formatSince(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
 
 /** Conditions worth attention, most serious first. Empty when everything looks normal. */
-export function attentionItems(snapshot: MonitoringSnapshot): StatusItem[] {
+export function attentionItems(snapshot: MonitoringSnapshot, nowMs = Date.now()): StatusItem[] {
   const items: StatusItem[] = [];
   const worker = workerStatus(snapshot);
   if (worker.tone === "bad") {
     items.push({ tone: "bad", label: `Worker ${worker.label.toLowerCase()}`, detail: worker.detail });
   }
+  const failing = failingJobs(snapshot.jobs);
+  for (const job of failing) {
+    const since = formatSince(job.failing_since);
+    items.push({
+      tone: "bad",
+      label: `${job.name} failing`,
+      detail: `${formatCount(job.consecutive_failures)} runs in a row${since ? ` since ${since}` : ""}${job.last_error ? `: ${job.last_error}` : ""}`,
+    });
+  }
+  items.push(...summaryAttention(snapshot, nowMs));
   const transcripts = snapshot.queue.transcripts_by_state ?? {};
   if ((transcripts.blocked ?? 0) > 0) {
     items.push({ tone: "bad", label: `${formatCount(transcripts.blocked)} transcript(s) blocked`, detail: "Will not retry automatically; see Work Queue." });
@@ -116,7 +329,9 @@ export function attentionItems(snapshot: MonitoringSnapshot): StatusItem[] {
   if (downloadFailures > 0) {
     items.push({ tone: "warn", label: `${formatCount(downloadFailures)} download failure(s) since restart`, detail: "Check Logs for the host and error." });
   }
-  const jobFailures = Object.entries(snapshot.since_start.scheduled_job_failures ?? {}).filter(([, n]) => n > 0);
+  // Jobs already reported as failing above are left out.
+  const failingNames = new Set(failing.map((job) => job.name));
+  const jobFailures = Object.entries(snapshot.since_start.scheduled_job_failures ?? {}).filter(([job, n]) => n > 0 && !failingNames.has(job));
   if (jobFailures.length) {
     items.push({ tone: "warn", label: "Scheduled job failures since restart", detail: jobFailures.map(([job, n]) => `${job} ×${formatCount(n)}`).join(", ") });
   }
