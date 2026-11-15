@@ -16,6 +16,8 @@ func resetServiceTestState() {
 	linkBackfillRunning.Store(false)
 	summaryBackfillRunning.Store(false)
 	setSummaryJobStatus(SummaryBackfillStatus{})
+	resetSummaryActivityForTests()
+	resetJobHistoryForTests()
 	lookupOutboundIPAddrs = net.DefaultResolver.LookupIPAddr
 	resetOutboundRequestLimiterForTests()
 }

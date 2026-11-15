@@ -16,11 +16,11 @@ func panicInSummaryCall(t *testing.T, shouldPanic func(call int32) bool) {
 	t.Helper()
 	original := summaryLLMCall
 	var calls atomic.Int32
-	summaryLLMCall = func(transcript, prompt, userPrompt string, cfg LLMConfig, report map[string]any) (string, string, error) {
+	summaryLLMCall = func(transcript, prompt, userPrompt string, cfg LLMConfig, report map[string]any, details *llmCallDetails) (string, string, error) {
 		if shouldPanic(calls.Add(1)) {
 			panic("synthetic provider client bug")
 		}
-		return original(transcript, prompt, userPrompt, cfg, report)
+		return original(transcript, prompt, userPrompt, cfg, report, details)
 	}
 	t.Cleanup(func() { summaryLLMCall = original })
 }

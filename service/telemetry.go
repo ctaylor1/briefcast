@@ -90,6 +90,9 @@ type QueueSnapshot struct {
 	EpisodesByDownloadState map[string]int64 `json:"episodes_by_download_state"`
 	TranscriptsByState      map[string]int64 `json:"transcripts_by_state"`
 	OldestPendingSeconds    float64          `json:"oldest_pending_seconds"`
+	// SummariesByState counts episodes by llm_summary_status: available,
+	// processing, failed, and waiting (transcribed, never attempted).
+	SummariesByState map[string]int64 `json:"summaries_by_state"`
 }
 
 // Episode rows store full transcripts inline, so SQLite reads most of the table
@@ -160,23 +163,30 @@ func resetPipelineStatsCacheForTests() {
 
 // loadPipelineStats computes queue state and completion windows from the database.
 func loadPipelineStats(now time.Time) (QueueSnapshot, []MonitoringWindow, error) {
-	out := QueueSnapshot{EpisodesByDownloadState: map[string]int64{}, TranscriptsByState: map[string]int64{}}
+	out := QueueSnapshot{EpisodesByDownloadState: map[string]int64{}, TranscriptsByState: map[string]int64{}, SummariesByState: map[string]int64{}}
 	if db.DB == nil {
 		return out, nil, errors.New("database unavailable")
 	}
 	day, week := now.Add(-24*time.Hour), now.Add(-7*24*time.Hour)
 	var rows []struct {
-		DownloadStatus   db.DownloadStatus
-		TranscriptStatus string
-		Blocked          int
-		N                int64
-		DownloadsDay     int64
-		DownloadsWeek    int64
-		TranscriptsDay   int64
-		AudioDay         float64
-		TranscriptsWeek  int64
-		AudioWeek        float64
+		DownloadStatus      db.DownloadStatus
+		TranscriptStatus    string
+		Blocked             int
+		N                   int64
+		DownloadsDay        int64
+		DownloadsWeek       int64
+		TranscriptsDay      int64
+		AudioDay            float64
+		TranscriptsWeek     int64
+		AudioWeek           float64
+		SummariesAvailable  int64
+		SummariesProcessing int64
+		SummariesFailed     int64
+		SummariesWaiting    int64
+		SummariesDay        int64
+		SummariesWeek       int64
 	}
+	// Summary counts read status and date columns only, never summary text.
 	err := db.DB.Model(&db.PodcastItem{}).Where("deleted_at IS NULL").Select(`download_status, transcript_status,
 		CASE WHEN transcript_progress_stage = 'blocked' THEN 1 ELSE 0 END AS blocked, COUNT(*) AS n,
 		SUM(CASE WHEN download_date >= ? THEN 1 ELSE 0 END) AS downloads_day,
@@ -184,8 +194,14 @@ func loadPipelineStats(now time.Time) (QueueSnapshot, []MonitoringWindow, error)
 		SUM(CASE WHEN canonical_updated_at >= ? THEN 1 ELSE 0 END) AS transcripts_day,
 		SUM(CASE WHEN canonical_updated_at >= ? THEN COALESCE(duration, 0) ELSE 0 END) AS audio_day,
 		SUM(CASE WHEN canonical_updated_at >= ? THEN 1 ELSE 0 END) AS transcripts_week,
-		SUM(CASE WHEN canonical_updated_at >= ? THEN COALESCE(duration, 0) ELSE 0 END) AS audio_week`,
-		day, week, day, day, week, week).
+		SUM(CASE WHEN canonical_updated_at >= ? THEN COALESCE(duration, 0) ELSE 0 END) AS audio_week,
+		SUM(CASE WHEN llm_summary_status = 'available' THEN 1 ELSE 0 END) AS summaries_available,
+		SUM(CASE WHEN llm_summary_status = 'processing' THEN 1 ELSE 0 END) AS summaries_processing,
+		SUM(CASE WHEN llm_summary_status = 'failed' THEN 1 ELSE 0 END) AS summaries_failed,
+		SUM(CASE WHEN transcript_status = 'available' AND COALESCE(llm_summary_status, '') = '' THEN 1 ELSE 0 END) AS summaries_waiting,
+		SUM(CASE WHEN llm_summary_status = 'available' AND llm_summary_date >= ? THEN 1 ELSE 0 END) AS summaries_day,
+		SUM(CASE WHEN llm_summary_status = 'available' AND llm_summary_date >= ? THEN 1 ELSE 0 END) AS summaries_week`,
+		day, week, day, day, week, week, day, week).
 		Group("download_status, transcript_status, CASE WHEN transcript_progress_stage = 'blocked' THEN 1 ELSE 0 END").
 		Scan(&rows).Error
 	if err != nil {
@@ -198,7 +214,16 @@ func loadPipelineStats(now time.Time) (QueueSnapshot, []MonitoringWindow, error)
 	for _, state := range []string{"available", "pending_whisperx", "processing", "failed", "blocked"} {
 		out.TranscriptsByState[state] = 0
 	}
+	for _, state := range []string{"available", "processing", "failed", "waiting"} {
+		out.SummariesByState[state] = 0
+	}
 	for _, row := range rows {
+		out.SummariesByState["available"] += row.SummariesAvailable
+		out.SummariesByState["processing"] += row.SummariesProcessing
+		out.SummariesByState["failed"] += row.SummariesFailed
+		out.SummariesByState["waiting"] += row.SummariesWaiting
+		windows[0].Summaries += row.SummariesDay
+		windows[1].Summaries += row.SummariesWeek
 		name, ok := downloadStateNames[row.DownloadStatus]
 		if !ok {
 			name = "other"
@@ -388,6 +413,7 @@ type MonitoringWindow struct {
 	Downloads               int64   `json:"downloads"`
 	Transcripts             int64   `json:"transcripts"`
 	TranscribedAudioSeconds float64 `json:"transcribed_audio_seconds"`
+	Summaries               int64   `json:"summaries"`
 }
 
 // WorkerGPU is one GPU reported by the worker.
@@ -426,12 +452,45 @@ type MonitoringSnapshot struct {
 	SinceStart      telemetry.SinceStart `json:"since_start"`
 	Worker          WorkerSummary        `json:"worker"`
 	AssetsFreeBytes *uint64              `json:"assets_free_bytes"`
+	Summaries       SummariesSnapshot    `json:"summaries"`
+	Jobs            []JobRunSummary      `json:"jobs"`
+	Repair          RepairSnapshot       `json:"repair"`
 }
+
+// SummariesSnapshot is the summary pipeline: configuration, the summary job,
+// attempts in flight and recent results. Counts by state are in Queue.
+type SummariesSnapshot struct {
+	// Enabled is the Settings "Enable summarization" switch.
+	Enabled          bool   `json:"enabled"`
+	LLMEnabled       bool   `json:"llm_enabled"`
+	APIKeyConfigured bool   `json:"api_key_configured"`
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+	// Host is the LLM server's host:port; the base URL path is not shown.
+	Host            string                `json:"host,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	MaxTokens       int                   `json:"max_tokens"`
+	TimeoutSeconds  int                   `json:"timeout_seconds"`
+	Concurrency     int                   `json:"concurrency"`
+	Job             SummaryBackfillStatus `json:"job"`
+	// Queued counts episodes requested while the job runs; they run next.
+	Queued int `json:"queued"`
+	SummaryActivitySnapshot
+}
+
+// RepairSnapshot is the Repair job's state, without the work-queue scan.
+type RepairSnapshot struct {
+	Running   bool           `json:"running"`
+	StartedAt *time.Time     `json:"started_at,omitempty"`
+	LastRun   *RepairWorkRun `json:"last_run,omitempty"`
+}
+
+const monitoringRecentSummaries = 20
 
 // BuildMonitoringSnapshot gathers queue state, recent throughput and worker health.
 func BuildMonitoringSnapshot(ctx context.Context) (MonitoringSnapshot, error) {
 	now := time.Now().UTC()
-	snap := MonitoringSnapshot{GeneratedAt: now, SinceStart: telemetry.Summary()}
+	snap := MonitoringSnapshot{GeneratedAt: now, SinceStart: telemetry.Summary(), Summaries: buildSummariesSnapshot(), Jobs: JobHistorySnapshot(), Repair: repairSnapshot()}
 	queue, windows, err := cachedPipelineStats()
 	if err != nil {
 		return snap, err
@@ -442,6 +501,47 @@ func BuildMonitoringSnapshot(ctx context.Context) (MonitoringSnapshot, error) {
 	}
 	snap.Worker = summarizeWorker(ctx)
 	return snap, nil
+}
+
+func buildSummariesSnapshot() SummariesSnapshot {
+	cfg := LoadLLMConfig()
+	out := SummariesSnapshot{
+		LLMEnabled:              cfg.Enabled,
+		APIKeyConfigured:        strings.TrimSpace(cfg.APIKey) != "",
+		Provider:                cfg.Provider,
+		Model:                   cfg.Model,
+		ReasoningEffort:         cfg.ReasoningEffort,
+		MaxTokens:               cfg.MaxTokens,
+		TimeoutSeconds:          cfg.TimeoutSecs,
+		Concurrency:             max(cfg.Concurrency, 1),
+		Job:                     GetSummaryJobStatus(),
+		SummaryActivitySnapshot: summaryActivitySnapshot(monitoringRecentSummaries),
+	}
+	if u, err := url.Parse(strings.TrimSpace(cfg.BaseURL)); err == nil {
+		out.Host = u.Host
+	}
+	if db.DB != nil {
+		setting := db.GetOrCreateSetting()
+		out.Enabled = setting.SummarizationEnabled
+		out.Model = ResolveSummarizationModel(setting, cfg)
+		if setting.LLMConcurrency > 0 {
+			out.Concurrency = setting.LLMConcurrency
+		}
+	}
+	pendingSummaryMu.Lock()
+	out.Queued = len(pendingSummaryIDs)
+	pendingSummaryMu.Unlock()
+	return out
+}
+
+func repairSnapshot() RepairSnapshot {
+	repairWorkMu.Lock()
+	defer repairWorkMu.Unlock()
+	return RepairSnapshot{
+		Running:   repairWorkRunning,
+		StartedAt: cloneTimePointer(repairWorkStartedAt),
+		LastRun:   cloneRepairWorkRun(repairWorkLastRun),
+	}
 }
 
 func summarizeWorker(ctx context.Context) WorkerSummary {

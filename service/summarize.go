@@ -205,7 +205,7 @@ func SummarizeTranscript(transcript string, prompt string, userPrompt string, cf
 }
 
 func summarizeTranscriptWithModel(transcript string, prompt string, userPrompt string, cfg LLMConfig) (string, string, error) {
-	return summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, nil)
+	return summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, nil, nil)
 }
 
 func preparedSummaryTranscript(transcript string) (string, int) {
@@ -220,7 +220,13 @@ func preparedSummaryTranscript(transcript string) (string, int) {
 	return transcript, length
 }
 
-func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt string, cfg LLMConfig, report map[string]any) (string, string, error) {
+// summarizeTranscriptWithReport calls the provider. When details is not nil it
+// receives what the provider reported (finish reason, token counts, thinking
+// length), on failure as well as on success.
+func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt string, cfg LLMConfig, report map[string]any, details *llmCallDetails) (string, string, error) {
+	if details == nil {
+		details = &llmCallDetails{}
+	}
 	if strings.TrimSpace(transcript) == "" {
 		return "", "", fmt.Errorf("transcript is empty")
 	}
@@ -289,10 +295,15 @@ func summarizeTranscriptWithReport(transcript string, prompt string, userPrompt 
 		return "", "", fmt.Errorf("LLM API returned an error")
 	}
 
+	details.Model = strings.TrimSpace(chatResp.Model)
+	if chatResp.Usage != nil {
+		details.PromptTokens, details.CompletionTokens = chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens
+	}
 	if len(chatResp.Choices) == 0 {
 		return "", "", fmt.Errorf("LLM returned no choices")
 	}
 	thinkingChars := len(chatResp.Choices[0].Message.Reasoning) + len(chatResp.Choices[0].Message.ReasoningContent)
+	details.FinishReason, details.ThinkingChars = chatResp.Choices[0].FinishReason, thinkingChars
 	if chatResp.Choices[0].FinishReason == "length" {
 		return "", "", tokenLimitError(cfg, chatResp, thinkingChars)
 	}
@@ -408,6 +419,12 @@ var summaryLLMCall = summarizeTranscriptWithReport
 // SummarizeEpisode summarizes a single episode's canonical transcript using the configured LLM.
 // It persists the result (including lineage: model and prompt used) to the database.
 func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string) error {
+	return summarizeEpisode(item, cfg, prompt, userPrompt, SummarySourceDirect)
+}
+
+// summarizeEpisode is SummarizeEpisode with the attempt recorded under source
+// for Monitoring.
+func summarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string, source string) (err error) {
 	jobLogger := logging.Sugar()
 	hasExistingSummary := strings.TrimSpace(item.LLMSummary) != ""
 	summarizedTranscript := item.CanonicalTranscript
@@ -456,24 +473,29 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 	}); err != nil {
 		return err
 	}
+	var details llmCallDetails
+	attempt := beginSummaryAttempt(item, source, cfg.Model)
 	// A panic from here on would leave the episode "processing" until the
 	// stale window passes; record it as a failure, then let it propagate.
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			panicErr := fmt.Errorf("summary panicked: %s", trimToLength(fmt.Sprint(recovered), 300))
+			attempt.finish(SummaryOutcomePanicked, details, panicErr)
 			status := "failed"
 			if hasExistingSummary {
 				status = "available"
 			}
 			if updateErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
 				"llm_summary_status": status,
-				"llm_summary_error":  "summary panicked: " + trimToLength(fmt.Sprint(recovered), 300),
+				"llm_summary_error":  panicErr.Error(),
 			}); updateErr != nil {
 				jobLogger.Warnw("failed to mark summary panic", "podcast_item_id", item.ID, "error", updateErr)
 			}
 			panic(recovered)
 		}
+		attempt.finish(classifySummaryAttempt(details, err), details, err)
 	}()
-	summary, model, err := summaryLLMCall(transcript, prompt, userPrompt, cfg, report)
+	summary, model, err := summaryLLMCall(transcript, prompt, userPrompt, cfg, report, &details)
 	if err != nil {
 		if hasExistingSummary {
 			item.LLMSummaryStatus = "available"

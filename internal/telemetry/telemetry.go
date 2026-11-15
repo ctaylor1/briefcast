@@ -80,13 +80,21 @@ var (
 		Name: "briefcast_feed_refreshes_total", Help: "Per-podcast feed refreshes by outcome.",
 	}, []string{"outcome"})
 
+	summaryAttempts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "briefcast_summary_attempts_total",
+		Help: "LLM summary attempts by outcome (succeeded, failed, timed_out, token_limit, panicked, discarded).",
+	}, []string{"outcome"})
+	summaryDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "briefcast_summary_duration_seconds", Help: "Time per LLM summary attempt, any outcome.", Buckets: durationBuckets,
+	})
+
 	registerOnce sync.Once
 )
 
 func init() {
 	registry.MustRegister(info, jobRuns, jobDuration, downloads, downloadDuration, downloadBytes,
 		transcriptions, transcriptionEndToEnd, transcriptionQueue, transcriptionProcessing,
-		transcriptionAudio, transcriptionSpeed, exports, feedRefreshes,
+		transcriptionAudio, transcriptionSpeed, exports, feedRefreshes, summaryAttempts, summaryDuration,
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 }
 
@@ -166,6 +174,12 @@ func ObserveFeedRefresh(err error) {
 	feedRefreshes.WithLabelValues(OutcomeSuccess).Inc()
 }
 
+// ObserveSummaryAttempt records one LLM summary attempt.
+func ObserveSummaryAttempt(outcome string, d time.Duration) {
+	summaryAttempts.WithLabelValues(outcome).Inc()
+	summaryDuration.Observe(d.Seconds())
+}
+
 // ObserveExport records a transcript export write.
 func ObserveExport(err error) {
 	if err != nil {
@@ -189,11 +203,13 @@ type SinceStart struct {
 	AvgSpeedRatio            float64            `json:"avg_speed_ratio"`
 	ScheduledJobFailures     map[string]float64 `json:"scheduled_job_failures"`
 	TranscriptExportFailures float64            `json:"transcript_export_failures"`
+	SummaryAttempts          map[string]float64 `json:"summary_attempts"`
+	AvgSummarySeconds        float64            `json:"avg_summary_seconds"`
 }
 
 // Summary computes SinceStart from the registry.
 func Summary() SinceStart {
-	out := SinceStart{StartedAt: startedAt, Downloads: map[string]float64{}, Transcriptions: map[string]float64{}, ScheduledJobFailures: map[string]float64{}}
+	out := SinceStart{StartedAt: startedAt, Downloads: map[string]float64{}, Transcriptions: map[string]float64{}, ScheduledJobFailures: map[string]float64{}, SummaryAttempts: map[string]float64{}}
 	families, err := registry.Gather()
 	if err != nil {
 		return out
@@ -224,6 +240,10 @@ func Summary() SinceStart {
 					out.ScheduledJobFailures[labelValue(m, "job")] += m.GetCounter().GetValue()
 				}
 			}
+		case "briefcast_summary_attempts_total":
+			sumByLabel(f, "outcome", out.SummaryAttempts)
+		case "briefcast_summary_duration_seconds":
+			out.AvgSummarySeconds = histogramMean(f)
 		case "briefcast_transcript_exports_total":
 			for _, m := range f.GetMetric() {
 				if labelValue(m, "outcome") == OutcomeFailed {

@@ -21,24 +21,29 @@ const (
 // run was logged twice, under two job IDs.
 func RunJob(name string, job func(jobLogger *zap.SugaredLogger) error) error {
 	jobLogger, _ := logging.NewJobSugar(name)
-	return runJobWith(jobLogger, job)
+	return runJobWith(name, jobLogger, job)
 }
 
-func runJobWith(jobLogger *zap.SugaredLogger, job func(*zap.SugaredLogger) error) error {
+// runJobWith also records the run in the job history shown in Monitoring.
+func runJobWith(name string, jobLogger *zap.SugaredLogger, job func(*zap.SugaredLogger) error) error {
 	start := time.Now()
+	recordJobStarted(name, start)
 	jobLogger.Infow("job_started")
 	defer func() {
 		// Log the outcome, then let the scheduler's recovery handle the panic
 		// as before.
 		if recovered := recover(); recovered != nil {
+			recordJobFinished(name, start, JobOutcomePanicked, fmt.Errorf("panic: %v", recovered))
 			jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(recovered))
 			panic(recovered)
 		}
 	}()
 	if err := job(jobLogger); err != nil {
+		recordJobFinished(name, start, JobOutcomeFailed, err)
 		jobLogger.Errorw("job_failed", "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return err
 	}
+	recordJobFinished(name, start, JobOutcomeSucceeded, nil)
 	jobLogger.Infow("job_completed", "duration_ms", time.Since(start).Milliseconds())
 	return nil
 }

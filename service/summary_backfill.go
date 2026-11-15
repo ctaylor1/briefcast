@@ -266,17 +266,17 @@ func GetSummaryBackfillRunning() bool {
 // episode's error, so the batch worker goes on with the rest instead of
 // ending and silently skipping them. SummarizeEpisode has already recorded
 // the failure on the episode.
-func summarizeEpisodeContained(item *db.PodcastItem, cfg LLMConfig, prompt, userPrompt string) (err error) {
+func summarizeEpisodeContained(item *db.PodcastItem, cfg LLMConfig, prompt, userPrompt, source string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			logging.Sugar().Errorw("summary panicked", "podcast_item_id", item.ID, "panic", trimToLength(fmt.Sprint(recovered), 300), "stack", string(debug.Stack()))
 			err = fmt.Errorf("summary panicked: %s", trimToLength(fmt.Sprint(recovered), 300))
 		}
 	}()
-	return SummarizeEpisode(item, cfg, prompt, userPrompt)
+	return summarizeEpisode(item, cfg, prompt, userPrompt, source)
 }
 
-func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt string, progressFn func(SummaryBackfillStatus)) (succeeded, failed int) {
+func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt, source string, progressFn func(SummaryBackfillStatus)) (succeeded, failed int) {
 	logger := logging.Sugar()
 	total := len(items)
 	if total == 0 {
@@ -308,7 +308,7 @@ func summarizeBatch(items []db.PodcastItem, cfg LLMConfig, prompt, userPrompt st
 				if summaryJobStopRequested.Load() {
 					return
 				}
-				if sumErr := summarizeEpisodeContained(&items[i], cfg, prompt, userPrompt); sumErr != nil {
+				if sumErr := summarizeEpisodeContained(&items[i], cfg, prompt, userPrompt, source); sumErr != nil {
 					logger.Warnw("summary failed", "episode_id", items[i].ID, "title", items[i].Title, "error", sumErr)
 					failedCount.Add(1)
 				} else {
@@ -395,7 +395,11 @@ func runSummaryBackfill(cfg LLMConfig, opts SummaryBackfillOptions, progressFn f
 	if progressFn != nil {
 		progressFn(SummaryBackfillStatus{Running: true, Total: len(items)})
 	}
-	succeeded, failed = summarizeBatch(items, cfg, prompt, userPrompt, progressFn)
+	source := SummarySourceBackfill
+	if len(opts.EpisodeIDs) > 0 {
+		source = SummarySourceAutomatic
+	}
+	succeeded, failed = summarizeBatch(items, cfg, prompt, userPrompt, source, progressFn)
 	logger.Infow("summary backfill finished", "succeeded", succeeded, "failed", failed, "total", len(items))
 	return succeeded, failed, nil
 }
@@ -493,7 +497,7 @@ func runResummarizeSummaries(filter ResummarizeFilter, cfg LLMConfig, progressFn
 	if progressFn != nil {
 		progressFn(SummaryBackfillStatus{Running: true, Total: total})
 	}
-	succeeded, failed := summarizeBatch(items, cfg, prompt, userPrompt, progressFn)
+	succeeded, failed := summarizeBatch(items, cfg, prompt, userPrompt, SummarySourceResummarize, progressFn)
 	logger.Infow("re-summarize finished", "succeeded", succeeded, "failed", failed, "total", total)
 	return ResummarizeResult{Total: total, Succeeded: succeeded, Failed: failed}, nil
 }

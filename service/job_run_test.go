@@ -40,7 +40,7 @@ func TestRunJobLogsOneStartAndOneOutcome(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			logger, logs := observedJobLogger()
-			err := runJobWith(logger, tc.job)
+			err := runJobWith("TestJob", logger, tc.job)
 			if (tc.outcome == "job_failed") != errors.Is(err, failure) {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -62,7 +62,7 @@ func TestRunJobLogsAPanicThenLetsTheSchedulerRecover(t *testing.T) {
 			t.Fatalf("expected job_started and job_failed, got %v", counts)
 		}
 	}()
-	_ = runJobWith(logger, func(*zap.SugaredLogger) error { panic("boom") })
+	_ = runJobWith("TestJob", logger, func(*zap.SugaredLogger) error { panic("boom") })
 }
 
 // The scheduled job bodies leave the run's start and outcome to RunJob, so a
@@ -86,7 +86,7 @@ func TestScheduledJobBodiesLeaveStartAndOutcomeToRunJob(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			logger, logs := observedJobLogger()
-			_ = runJobWith(logger, body)
+			_ = runJobWith("TestJob", logger, body)
 			counts := jobMessageCounts(logs)
 			if counts["job_started"] != 1 || counts["job_completed"]+counts["job_failed"] != 1 {
 				t.Fatalf("expected one start and one outcome, got %v", counts)

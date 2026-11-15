@@ -43,8 +43,24 @@ error code). Episode, podcast and job identifiers appear only in log events.
 | `briefcast_transcript_exports_total` | counter | `outcome` | Transcript export writes |
 | `briefcast_scheduled_job_runs_total` | counter | `job`, `outcome` | Scheduled job runs |
 | `briefcast_scheduled_job_duration_seconds` | histogram | `job` | Scheduled job run time |
+| `briefcast_summary_attempts_total` | counter | `outcome` | LLM summary attempts: `succeeded`, `failed`, `timed_out`, `token_limit`, `panicked`, `discarded` (the transcript changed during the call) |
+| `briefcast_summary_duration_seconds` | histogram | | Time per summary attempt, any outcome |
 
 Standard `go_*` and `process_*` metrics are included.
+
+`GET /settings/monitoring` (the panel's data) also reports, from memory since the app started:
+
+- `summaries`: the LLM setup (provider, model, `host` as host:port only, `reasoning_effort`,
+  `max_tokens`, timeout), the summary job, attempts in flight, and the last 20 attempts with
+  outcome, duration, finish reason, token counts and a shortened error.
+- `jobs`: per background job, the last run, its outcome and error, consecutive failures and
+  since when it has been failing.
+- `repair`: whether Repair is running and its last run.
+- `queue.summaries_by_state` and each window's `summaries`, from the same cached scan as the
+  transcript counts (status and date columns only). `waiting` counts transcribed episodes
+  that were never summarized.
+
+None of it includes transcript, prompt or summary text, or keys.
 
 The database-backed gauges (`briefcast_episodes`, `briefcast_downloaded_episode_transcripts`,
 `briefcast_transcript_backlog_oldest_seconds`) and the panel's completion windows come
@@ -90,6 +106,7 @@ Both services log one JSON object per line. Useful event names (`msg` field):
 | app | `summary_queued_after_transcription` | `podcast_item_id`, `replace_existing` (the summary runs in the summary job, not in transcription) |
 | app | `summary backfill starting` / `summary backfill finished` | `episodes`, `limit`, `requested_episodes`, `replacing`; `succeeded`, `failed`, `total` |
 | app | `summary failed` / `summary complete` | `episode_id`, `title`, `error` |
+| app | `summary_attempt_finished` | `podcast_item_id`, `source`, `outcome`, `duration_ms`, `model`, `finish_reason`, `prompt_tokens`, `completion_tokens`, `thinking_chars`, `error` |
 | app | `job_started` / `job_completed` / `job_failed` | `job_name`, `duration_ms` |
 | worker | `worker_job_accepted` | `job_id`, `attempt`, `input_bytes`, `resume_from_checkpoint` |
 | worker | `worker_job_started` | `queue_wait_ms`, `first_run`, `resume_offset_seconds` |
