@@ -666,6 +666,34 @@ func UpdatePodcastItemColumns(id string, columns map[string]interface{}) error {
 	return nil
 }
 
+// ErrTranscriptChanged reports that an episode's canonical transcript changed
+// after a result derived from it (such as a summary) was started.
+var ErrTranscriptChanged = errors.New("the episode's transcript changed")
+
+// UpdatePodcastItemColumnsForTranscript is UpdatePodcastItemColumns for a result
+// derived from canonicalTranscript: it writes only while the episode still has
+// that transcript. It returns ErrTranscriptChanged when the transcript differs
+// and gorm.ErrRecordNotFound when the episode is gone.
+func UpdatePodcastItemColumnsForTranscript(id, canonicalTranscript string, columns map[string]interface{}) error {
+	// The transcript is a query argument: keep it out of SQL logs.
+	tx := DB.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
+		Model(&PodcastItem{}).Where("id = ? AND canonical_transcript = ?", id, canonicalTranscript).Updates(columns)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		exists, err := PodcastItemExists(id)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return gorm.ErrRecordNotFound
+		}
+		return ErrTranscriptChanged
+	}
+	return nil
+}
+
 // GetShowNoteLinksByPodcastItemID returns all links for an episode.
 func GetShowNoteLinksByPodcastItemID(podcastItemID string) ([]ShowNoteLink, error) {
 	var links []ShowNoteLink

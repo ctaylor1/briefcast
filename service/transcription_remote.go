@@ -236,9 +236,9 @@ func transcribeRemoteItem(ctx context.Context, b *httpTranscriptionBackend, l *r
 		return errors.Join(ackErr, err)
 	}
 	ExportTranscript(&item)
-	if err = summarizeRemoteCommittedItem(l, &item); err != nil {
-		logging.Sugar().Warnw("remote_transcription_summary_failed", "podcast_item_id", item.ID, "error", err)
-	}
+	// The summary runs in the summary job, so the next episode's transcription
+	// does not wait for the LLM.
+	queueSummaryAfterTranscript(&item, true)
 	return ackErr
 }
 
@@ -402,16 +402,14 @@ func reconcileRemoteReceipts(ctx context.Context, b *httpTranscriptionBackend, l
 			err = remoteProblem("INVALID_CONFIG", "Receipt identity mismatch", false)
 		} else if e.ReceiptResultSHA256 != nil {
 			// A crash after the transcript commit may precede all downstream
-			// work. Validate the durable receipt before exporting or summarizing,
-			// and retain it until that work has been attempted on recovery.
+			// work. Validate the durable receipt before exporting or queueing the
+			// summary, and retain it until that work has been done on recovery.
 			err = validateRemoteReceipt(l, &item, e)
 			if err == nil {
 				ExportTranscript(&item)
 				// Preserve a completed or manually edited summary across receipts.
 				if strings.TrimSpace(item.LLMSummary) == "" {
-					if summaryErr := summarizeRemoteCommittedItem(l, &item); summaryErr != nil {
-						logging.Sugar().Warnw("remote_transcription_summary_failed", "podcast_item_id", item.ID, "error", summaryErr)
-					}
+					queueSummaryAfterTranscript(&item, false)
 				}
 				err = acknowledgeRemoteItem(ctx, b, l, &item, e)
 			}
@@ -431,64 +429,4 @@ func reconcileRemoteReceipts(ctx context.Context, b *httpTranscriptionBackend, l
 		}
 	}
 	return first
-}
-
-// Existing summary transport/content/export behavior, with column-only writes
-// fenced against generation changes during the external request. Remote jobs
-// must never route through SummarizeEpisode's stale whole-record saves.
-func summarizeRemoteCommittedItem(l *remoteLease, item *db.PodcastItem) error {
-	cfg := LoadLLMConfig()
-	setting := db.GetOrCreateSetting()
-	if !cfg.Enabled || !setting.SummarizationEnabled || strings.TrimSpace(cfg.APIKey) == "" {
-		return nil
-	}
-	cfg.Model = ResolveSummarizationModel(setting, cfg)
-	prompt := ResolveSummarizationPrompt(setting, cfg)
-	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
-	if strings.TrimSpace(item.CanonicalTranscript) == "" {
-		return nil
-	}
-	if err := l.check(); err != nil {
-		return err
-	}
-	transcript, prompt, report, err := prepareSummarySource(item, prompt, userPrompt)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(item.LLMSummary) != "" {
-		if _, err := EpisodeMarkdown(item, "summary"); err != nil {
-			return err
-		}
-	}
-	status := "processing"
-	if strings.TrimSpace(item.LLMSummary) != "" {
-		status = "available"
-	}
-	if err := l.update(item, map[string]any{"llm_summary_status": status}, true); err != nil {
-		return err
-	}
-	summary, model, err := summarizeTranscriptWithReport(transcript, prompt, userPrompt, cfg, report)
-	if err != nil {
-		if status == "processing" {
-			status = "failed"
-		}
-		saveErr := l.update(item, map[string]any{"llm_summary_status": status, "llm_summary_error": trimToLength(err.Error(), 1000)}, true)
-		return errors.Join(err, saveErr)
-	}
-	now, err := time.Parse(time.RFC3339Nano, report["summarized_at"].(string))
-	if err != nil {
-		return err
-	}
-	provenance, err := finishSummaryProvenance(report, cfg)
-	if err != nil {
-		return err
-	}
-	if err = l.update(item, map[string]any{"summary_provenance_json": provenance, "llm_summary": summary, "llm_summary_status": "available", "llm_summary_error": "", "llm_summary_date": &now, "llm_summary_model": model, "llm_summary_prompt": prompt}, true); err != nil {
-		return err
-	}
-	if err = db.GetPodcastItemByID(item.ID, item); err != nil {
-		return err
-	}
-	ExportSummary(item)
-	return nil
 }

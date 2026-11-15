@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,10 @@ type SummaryBackfillOptions struct {
 	Limit int
 	// EpisodeIDs restricts the run to these episodes when set.
 	EpisodeIDs []string
+	// Replace lists requested episodes whose transcript was just committed:
+	// their existing summary describes the old transcript, so it is replaced.
+	// Other episodes are summarized only when they have no summary.
+	Replace []string
 }
 
 var summaryBackfillRunning atomic.Bool
@@ -147,26 +152,64 @@ func StartSummaryBackfill(opts SummaryBackfillOptions) (SummaryBackfillStatus, e
 	return GetSummaryJobStatus(), nil
 }
 
-// pendingSummaryIDs holds episodes a feed refresh added while a summary job was
-// running. That job chose its episodes before these existed, so they get their
-// own run once it finishes.
+// pendingSummaryIDs holds episodes requested while a summary job was running.
+// That job chose its episodes before these were requested, so they get their
+// own run once it finishes. The value is true when the existing summary is
+// to be replaced (see SummaryBackfillOptions.Replace).
 var pendingSummaryMu sync.Mutex
-var pendingSummaryIDs = map[string]struct{}{}
+var pendingSummaryIDs = map[string]bool{}
 
 // RequestSummaryBackfill summarizes the given episodes, now or as soon as the
 // running summary job finishes. Other waiting episodes are left alone, so a feed
 // refresh never starts a run over the whole back catalog.
 func RequestSummaryBackfill(episodeIDs []string) {
+	requestSummaries(episodeIDs, nil)
+}
+
+// RequestSummaryForNewTranscript queues the summary of an episode whose
+// transcript was just committed, replacing a summary of an older transcript.
+// Transcription never waits for the LLM: the summary runs in the summary job,
+// where Stop and the LLM concurrency limit apply.
+func RequestSummaryForNewTranscript(episodeID string) {
+	requestSummaries([]string{episodeID}, []string{episodeID})
+}
+
+// queueSummaryAfterTranscript requests the summary of an episode whose
+// transcript was just committed, when summarization is on and configured.
+// replaceExisting replaces a summary of an older transcript; recovery paths
+// pass false so a completed or edited summary is kept.
+func queueSummaryAfterTranscript(item *db.PodcastItem, replaceExisting bool) {
+	if strings.TrimSpace(item.CanonicalTranscript) == "" {
+		return
+	}
+	cfg := LoadLLMConfig()
+	if !cfg.Enabled || strings.TrimSpace(cfg.APIKey) == "" || !db.GetOrCreateSetting().SummarizationEnabled {
+		return
+	}
+	if replaceExisting {
+		RequestSummaryForNewTranscript(item.ID)
+	} else {
+		RequestSummaryBackfill([]string{item.ID})
+	}
+	logging.Sugar().Infow("summary_queued_after_transcription", "podcast_item_id", item.ID, "replace_existing", replaceExisting)
+}
+
+func requestSummaries(episodeIDs, replace []string) {
 	if len(episodeIDs) == 0 {
 		return
 	}
-	_, err := StartSummaryBackfill(SummaryBackfillOptions{EpisodeIDs: episodeIDs})
+	_, err := StartSummaryBackfill(SummaryBackfillOptions{EpisodeIDs: episodeIDs, Replace: replace})
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrSummaryJobAlreadyRunning):
 		pendingSummaryMu.Lock()
 		for _, id := range episodeIDs {
-			pendingSummaryIDs[id] = struct{}{}
+			if _, ok := pendingSummaryIDs[id]; !ok {
+				pendingSummaryIDs[id] = false
+			}
+		}
+		for _, id := range replace {
+			pendingSummaryIDs[id] = true
 		}
 		pendingSummaryMu.Unlock()
 		// The running job may have finished before the IDs were recorded.
@@ -181,12 +224,16 @@ func RequestSummaryBackfill(episodeIDs []string) {
 func runRequestedSummaryBackfill() {
 	pendingSummaryMu.Lock()
 	ids := make([]string, 0, len(pendingSummaryIDs))
-	for id := range pendingSummaryIDs {
+	var replace []string
+	for id, replaceExisting := range pendingSummaryIDs {
 		ids = append(ids, id)
+		if replaceExisting {
+			replace = append(replace, id)
+		}
 	}
 	clear(pendingSummaryIDs)
 	pendingSummaryMu.Unlock()
-	RequestSummaryBackfill(ids)
+	requestSummaries(ids, replace)
 }
 
 // StartResummarizeSummaries reserves the job before returning and reports
@@ -304,12 +351,22 @@ func runSummaryBackfill(cfg LLMConfig, opts SummaryBackfillOptions, progressFn f
 	userPrompt := ResolveSummarizationUserPrompt(setting, cfg)
 
 	var items []db.PodcastItem
-	query := db.DB.
-		Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''").
-		Where("(llm_summary IS NULL OR llm_summary = '')").
-		Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", summaryProcessingStaleBefore(cfg, time.Now()))
+	staleBefore := summaryProcessingStaleBefore(cfg, time.Now())
+	query := db.DB.Where("canonical_transcript IS NOT NULL AND canonical_transcript <> ''")
 	if len(opts.EpisodeIDs) > 0 {
+		// Requested episodes are summarized unless they already have a summary
+		// (kept unless listed in Replace) or one is in progress.
 		query = query.Where("id IN ?", opts.EpisodeIDs)
+		if len(opts.Replace) > 0 {
+			query = query.Where("(llm_summary IS NULL OR llm_summary = '' OR id IN ?)", opts.Replace)
+		} else {
+			query = query.Where("(llm_summary IS NULL OR llm_summary = '')")
+		}
+		query = query.Where("NOT (COALESCE(llm_summary_status, '') = 'processing' AND updated_at >= ?)", staleBefore)
+	} else {
+		query = query.
+			Where("(llm_summary IS NULL OR llm_summary = '')").
+			Where("(llm_summary_status IS NULL OR llm_summary_status = '' OR llm_summary_status = 'failed' OR (llm_summary_status = 'processing' AND updated_at < ?))", staleBefore)
 	}
 	query = query.Order("pub_date DESC")
 	if opts.Limit > 0 {
@@ -319,7 +376,7 @@ func runSummaryBackfill(cfg LLMConfig, opts SummaryBackfillOptions, progressFn f
 		return 0, 0, fmt.Errorf("query failed: %w", result.Error)
 	}
 
-	logger.Infow("summary backfill starting", "episodes", len(items), "limit", opts.Limit, "requested_episodes", len(opts.EpisodeIDs), "concurrency", cfg.Concurrency)
+	logger.Infow("summary backfill starting", "episodes", len(items), "limit", opts.Limit, "requested_episodes", len(opts.EpisodeIDs), "replacing", len(opts.Replace), "concurrency", cfg.Concurrency)
 	if progressFn != nil {
 		progressFn(SummaryBackfillStatus{Running: true, Total: len(items)})
 	}

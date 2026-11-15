@@ -112,12 +112,23 @@ json.dump({"feed": {"title": "Test feed"}, "entries": [
 }
 
 // waitForSummaryJobIdle waits for a background summary job to finish.
+// waitForSummaryJobIdle waits until no summary job runs and none is queued.
+// A finishing job starts the queued run after clearing its running flag, so
+// idle must hold for a few consecutive checks.
 func waitForSummaryJobIdle(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
-	for GetSummaryBackfillRunning() {
+	for idle := 0; idle < 3; {
 		if time.Now().After(deadline) {
 			t.Fatal("summary job did not finish")
+		}
+		pendingSummaryMu.Lock()
+		pending := len(pendingSummaryIDs)
+		pendingSummaryMu.Unlock()
+		if !GetSummaryBackfillRunning() && pending == 0 {
+			idle++
+		} else {
+			idle = 0
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -175,6 +186,8 @@ json.dump({"segments": [{"start": 0, "end": 1, "text": "Useful transcription."}]
 	if err := TranscribePendingEpisodes(); err != nil {
 		t.Fatalf("transcribe pending episodes: %v", err)
 	}
+	// The summary runs in the summary job after transcription returns.
+	waitForSummaryJobIdle(t)
 	var refreshed db.PodcastItem
 	if err := db.GetPodcastItemByID(item.ID, &refreshed); err != nil {
 		t.Fatalf("reload episode: %v", err)

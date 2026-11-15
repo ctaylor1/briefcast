@@ -252,6 +252,7 @@ print(json.dumps({"provider":"whisperx", "segments_pre_align":segments,
 	if err := TranscribePendingEpisodes(); err != nil {
 		t.Fatalf("resume attempt failed: %v", err)
 	}
+	waitForSummaryJobIdle(t)
 	select {
 	case err := <-observed:
 		if err != nil {
@@ -371,6 +372,7 @@ print(json.dumps({"segments":[{"text":"Committed transcript."}]}))
 	if err := TranscribePendingEpisodes(); err != nil {
 		t.Fatalf("local orchestration surfaces inference errors only: %v", err)
 	}
+	waitForSummaryJobIdle(t)
 	got := loadCharacterizationPodcastItem(t, item.ID)
 	if got.TranscriptStatus != "available" || got.CanonicalTranscript != "Committed transcript." || got.LLMSummaryStatus != "failed" || got.LLMSummaryError == "" {
 		t.Fatalf("downstream failure changed transcript success or lost summary error: %+v", got)

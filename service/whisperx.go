@@ -479,27 +479,9 @@ func transcribePendingEpisodesWith(ctx context.Context, cfg WhisperXConfig, back
 			return
 		}
 
-		// Summarize the transcript if LLM summarization is enabled.
-		llmCfg := LoadLLMConfig()
-		setting := db.GetOrCreateSetting()
-		if llmCfg.Enabled && setting.SummarizationEnabled && strings.TrimSpace(llmCfg.APIKey) != "" {
-			llmCfg.Model = ResolveSummarizationModel(setting, llmCfg)
-			prompt := ResolveSummarizationPrompt(setting, llmCfg)
-			userPrompt := ResolveSummarizationUserPrompt(setting, llmCfg)
-			if sumErr := SummarizeEpisode(&item, llmCfg, prompt, userPrompt); sumErr != nil {
-				jobLogger.Warnw(
-					"episode summarization failed",
-					"podcast_item_id", item.ID,
-					"error", sumErr,
-				)
-			} else {
-				jobLogger.Infow(
-					"episode summarized successfully",
-					"podcast_item_id", item.ID,
-					"summary_length", len(item.LLMSummary),
-				)
-			}
-		}
+		// The summary runs in the summary job, so transcription does not wait
+		// for the LLM.
+		queueSummaryAfterTranscript(&item, true)
 	})
 
 	return firstErr

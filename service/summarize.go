@@ -406,6 +406,7 @@ func llmHTTPClient(cfg LLMConfig) *http.Client {
 func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPrompt string) error {
 	jobLogger := logging.Sugar()
 	hasExistingSummary := strings.TrimSpace(item.LLMSummary) != ""
+	summarizedTranscript := item.CanonicalTranscript
 
 	transcript := strings.TrimSpace(item.CanonicalTranscript)
 	if transcript == "" {
@@ -484,7 +485,9 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		return err
 	}
 	item.SummaryProvenanceJSON = provenance
-	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{
+	// Save only if the transcript is the one that was summarized: a
+	// re-transcription during the LLM call makes this summary stale.
+	if err := db.UpdatePodcastItemColumnsForTranscript(item.ID, summarizedTranscript, map[string]interface{}{
 		"llm_summary":             item.LLMSummary,
 		"llm_summary_status":      item.LLMSummaryStatus,
 		"llm_summary_error":       item.LLMSummaryError,
@@ -493,6 +496,18 @@ func SummarizeEpisode(item *db.PodcastItem, cfg LLMConfig, prompt string, userPr
 		"llm_summary_prompt":      item.LLMSummaryPrompt,
 		"summary_provenance_json": item.SummaryProvenanceJSON,
 	}); err != nil {
+		if errors.Is(err, db.ErrTranscriptChanged) {
+			// Leave the episode waiting (or on its previous summary) for the
+			// summary of the new transcript.
+			reset := ""
+			if hasExistingSummary {
+				reset = "available"
+			}
+			if resetErr := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{"llm_summary_status": reset}); resetErr != nil && !errors.Is(resetErr, gorm.ErrRecordNotFound) {
+				jobLogger.Warnw("failed to reset summary status", "podcast_item_id", item.ID, "error", resetErr)
+			}
+			return fmt.Errorf("summary discarded: %w while it was being summarized", err)
+		}
 		return err
 	}
 	ExportSummary(item)

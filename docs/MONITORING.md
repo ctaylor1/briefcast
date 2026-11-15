@@ -87,6 +87,9 @@ Both services log one JSON object per line. Useful event names (`msg` field):
 | app | `transcription_completed` | `audio_seconds`, `worker_queue_ms`, `processing_ms`, `end_to_end_ms`, `speed_x`, `resumed_from_checkpoint` |
 | app | `transcription_retry_scheduled` / `transcription_failed` | `outcome`, `code`, `retryable`, `http_status`, `retry_count`, `next_attempt` |
 | app | `transcript_exported` | `podcast_item_id` |
+| app | `summary_queued_after_transcription` | `podcast_item_id`, `replace_existing` (the summary runs in the summary job, not in transcription) |
+| app | `summary backfill starting` / `summary backfill finished` | `episodes`, `limit`, `requested_episodes`, `replacing`; `succeeded`, `failed`, `total` |
+| app | `summary failed` / `summary complete` | `episode_id`, `title`, `error` |
 | app | `job_started` / `job_completed` / `job_failed` | `job_name`, `duration_ms` |
 | worker | `worker_job_accepted` | `job_id`, `attempt`, `input_bytes`, `resume_from_checkpoint` |
 | worker | `worker_job_started` | `queue_wait_ms`, `first_run`, `resume_offset_seconds` |

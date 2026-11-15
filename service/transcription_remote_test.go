@@ -369,6 +369,7 @@ func TestRemoteRestartAtResultAndReceiptBoundariesFinishesExports(t *testing.T) 
 			if err = f.run(t); err != nil {
 				t.Fatal(err)
 			}
+			waitForSummaryJobIdle(t)
 			got := loadCharacterizationPodcastItem(t, f.item.ID)
 			if got.TranscriptStatus != "available" || got.TranscriptCheckpointJSON != "" || f.runner.calls.Load() != 1 || f.puts.Load() != 1 {
 				t.Fatal("restart lost the receipt or repeated inference")
@@ -385,6 +386,7 @@ func TestRemoteRestartAtResultAndReceiptBoundariesFinishesExports(t *testing.T) 
 			if err = f.run(t); err != nil {
 				t.Fatal(err)
 			}
+			waitForSummaryJobIdle(t)
 			if summaryCalls.Load() != 1 {
 				t.Fatal("completed recovery summarized again")
 			}
@@ -855,6 +857,7 @@ func TestRemoteSummaryWritesPreserveConcurrentEdits(t *testing.T) {
 	if err := f.run(t); err != nil {
 		t.Fatal(err)
 	}
+	waitForSummaryJobIdle(t)
 	got := loadCharacterizationPodcastItem(t, f.item.ID)
 	if !got.IsPlayed || got.Title != "Edited during summary" || got.LLMSummary != "A safe summary." || got.LLMSummaryStatus != "available" || summaryCalls.Load() != 1 {
 		t.Fatal("summary persistence overwrote library edit")
