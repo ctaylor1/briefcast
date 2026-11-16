@@ -331,6 +331,7 @@ onBeforeUnmount(() => {
 
         <UiCard padding="lg" class="stack-2">
           <h4 class="monitoring-card__title">Completed</h4>
+          <div class="monitoring-table-wrap">
           <table class="monitoring-table">
             <thead>
               <tr><th scope="col"></th><th scope="col">Downloads</th><th scope="col">Transcripts</th><th scope="col">Audio</th><th scope="col">Summaries</th></tr>
@@ -345,6 +346,7 @@ onBeforeUnmount(() => {
               </tr>
             </tbody>
           </table>
+          </div>
           <p class="meta-text">Audio hours use each episode's feed duration.</p>
         </UiCard>
 
@@ -417,6 +419,12 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 }
 
+/* Grid items default to min-width: auto, so a card with a long one-line
+   title would refuse to shrink and push the page wider than a phone. */
+.monitoring-grid > * {
+  min-width: 0;
+}
+
 .monitoring-card__title {
   margin: 0;
   color: var(--color-text-primary);
@@ -480,9 +488,16 @@ onBeforeUnmount(() => {
 .monitoring-meter-label {
   display: flex;
   justify-content: space-between;
+  gap: var(--space-2);
   font-size: var(--font-caption-size);
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* The value ("12 s of 15 m") stays on one line; a long title is shortened instead. */
+.monitoring-meter-label > span:last-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .monitoring-meter {
@@ -540,6 +555,11 @@ onBeforeUnmount(() => {
 
 .monitoring-list__error {
   overflow-wrap: anywhere;
+}
+
+/* Five columns do not fit a phone-width card; the table scrolls inside it. */
+.monitoring-table-wrap {
+  overflow-x: auto;
 }
 
 .monitoring-table {
