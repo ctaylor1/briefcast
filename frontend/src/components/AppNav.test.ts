@@ -12,9 +12,25 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function mountNav(path: string, width = 1280) {
+function monitoringSnapshot(jobFailures: number) {
+  return {
+    generated_at: "2026-11-15T12:00:00Z",
+    queue: { episodes_by_download_state: {}, transcripts_by_state: {}, oldest_pending_seconds: 0 },
+    windows: [],
+    since_start: { started_at: "", downloads: {}, transcriptions: {}, scheduled_job_failures: {} },
+    worker: { configured: false, gpus: [] },
+    assets_free_bytes: null,
+    jobs: [{ name: "TranscribePendingEpisodes", running: false, last_duration_ms: 1, consecutive_failures: jobFailures, last_outcome: "failed", last_error: "boom", runs: jobFailures, failures: jobFailures }],
+  };
+}
+
+async function mountNav(path: string, width = 1280, monitoring?: () => unknown) {
   Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
-  server = fakeServer({ "GET /settings": () => ({}), "PATCH /settings": () => ({}) });
+  server = fakeServer({
+    "GET /settings": () => ({}),
+    "PATCH /settings": () => ({}),
+    ...(monitoring ? { "GET /settings/monitoring": monitoring } : {}),
+  });
   const r = await makeRouter(path, [
     { path: "/", component: { template: "<div />" }, meta: { title: "Library" } },
     { path: "/activity", component: { template: "<div />" }, meta: { title: "Activity" } },
@@ -44,6 +60,25 @@ describe("AppNav", () => {
     const current = wrapper.findAll('.app-sidebar a[aria-current="page"]').map((a) => a.text());
     assert.deepEqual(current, ["Library"], "a podcast page belongs to Library");
     wrapper.unmount();
+  });
+
+  it("puts a dot on Activity, in the sidebar and the phone tabs, only for serious problems", async () => {
+    const failing = await mountNav("/", 1280, () => monitoringSnapshot(3));
+    const sidebarActivity = failing.wrapper.findAll(".app-sidebar nav a").find((a) => a.text().startsWith("Activity"));
+    assert.ok(sidebarActivity?.find(".app-nav__dot").exists(), "sidebar dot");
+    assert.match(sidebarActivity!.text(), /needs attention/);
+    assert.match(sidebarActivity!.attributes("title") ?? "", /TranscribePendingEpisodes failing/);
+    const tabActivity = failing.wrapper.findAll(".app-bottom-tabs a").find((a) => a.text().startsWith("Activity"));
+    assert.ok(tabActivity?.find(".app-nav__dot").exists(), "phone tab dot");
+    assert.equal(failing.wrapper.findAll(".app-nav__dot").length, 2, "no dot on other items");
+    const monitoringRequest = server!.requests.find((r) => r.url === "/settings/monitoring");
+    assert.equal(monitoringRequest?.params, undefined, "the nav never asks for the LLM server check");
+    failing.wrapper.unmount();
+    server?.restore();
+
+    const minor = await mountNav("/", 1280, () => monitoringSnapshot(1));
+    assert.equal(minor.wrapper.findAll(".app-nav__dot").length, 0, "a single failure is not worth a dot");
+    minor.wrapper.unmount();
   });
 
   it("replaces the Menu with a theme toggle that cycles the theme", async () => {

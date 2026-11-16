@@ -1214,6 +1214,24 @@ img {
   flex: 0 0 auto;
 }
 
+/* Holds a nav icon and its attention dot. */
+.app-nav__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.app-nav__dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  box-shadow: 0 0 0 2px var(--color-bg-primary);
+}
+
 .app-sidebar__toggle {
   margin-top: var(--space-2);
   min-height: 44px;

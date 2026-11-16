@@ -15,6 +15,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { useGlobalSearch } from "../composables/useGlobalSearch";
+import { usePipelineAttention } from "../composables/usePipelineAttention";
 import { useTheme } from "../composables/useTheme";
 import { activeNavItem, commandNavItems, librarySubItems, primaryNavItems } from "../lib/navigation";
 import type { LocalSearchResult } from "../types/api";
@@ -45,6 +46,11 @@ type CommandItem = CommandRouteItem | CommandLocalItem;
 const route = useRoute();
 const router = useRouter();
 const { cycleTheme, themeModeLabel, initTheme, themeMode } = useTheme();
+const { problems: pipelineProblems, summary: pipelineProblemSummary } = usePipelineAttention();
+
+function needsAttention(to: string): boolean {
+  return to === "/activity" && pipelineProblems.value.length > 0;
+}
 
 
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
@@ -400,10 +406,14 @@ onBeforeUnmount(() => {
             :to="item.to"
             class="app-nav__link"
             :aria-current="isActive(item.to) ? 'page' : undefined"
-            :title="sidebarExpandedState ? undefined : item.label"
+            :title="needsAttention(item.to) ? `${item.label}: ${pipelineProblemSummary}` : sidebarExpandedState ? undefined : item.label"
           >
-            <UiIcon :name="item.icon" class="app-nav__icon" />
+            <span class="app-nav__icon-wrap">
+              <UiIcon :name="item.icon" class="app-nav__icon" />
+              <span v-if="needsAttention(item.to)" class="app-nav__dot" aria-hidden="true"></span>
+            </span>
             <span class="app-nav__label">{{ item.label }}</span>
+            <span v-if="needsAttention(item.to)" class="sr-only">, needs attention</span>
           </RouterLink>
           <template v-if="item.to === '/'">
             <RouterLink
@@ -471,9 +481,14 @@ onBeforeUnmount(() => {
       :to="item.to"
       class="app-bottom-tabs__link"
       :aria-current="isActive(item.to) ? 'page' : undefined"
+      :title="needsAttention(item.to) ? `${item.label}: ${pipelineProblemSummary}` : undefined"
     >
-      <UiIcon :name="item.icon" class="app-bottom-tabs__icon" :size="20" />
+      <span class="app-nav__icon-wrap">
+        <UiIcon :name="item.icon" class="app-bottom-tabs__icon" :size="20" />
+        <span v-if="needsAttention(item.to)" class="app-nav__dot" aria-hidden="true"></span>
+      </span>
       <span>{{ item.label }}</span>
+      <span v-if="needsAttention(item.to)" class="sr-only">, needs attention</span>
     </RouterLink>
   </nav>
 
