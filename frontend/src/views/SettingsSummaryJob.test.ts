@@ -107,6 +107,20 @@ describe("Settings summary jobs", () => {
     assert.equal(button("Stopping...").attributes("disabled"), "");
   });
 
+  it("names the summary model once and says what the re-summarize filters do", async () => {
+    await mountSettings();
+    const labels = wrapper!.findAll("#settings-summaries label").map((l) => l.text().trim());
+    for (const label of ["Summary model", "Only summaries made by", "Only summaries made before", "Parallel LLM requests"]) {
+      assert.ok(labels.includes(label), `missing label ${label} in ${labels.join(" | ")}`);
+    }
+    const headings = wrapper!.findAll("#settings-summaries h4").map((h) => h.text().trim());
+    assert.ok(!headings.includes("Model"), "no second area called Model");
+    assert.ok(headings.includes("LLM provider and parallel requests"));
+    assert.match(wrapper!.text(), /they do not pick the new model/);
+    const anyModel = wrapper!.get("#resummarize-model").findAll("option")[0];
+    assert.equal(anyModel.text(), "Any model");
+  });
+
   it("says when a finished job was stopped or found nothing", async () => {
     await mountSettings({
       "GET /settings/backfill-summaries": () => ({ running: false, stopped: true, total: 3, completed: 1, failed: 0 }),
