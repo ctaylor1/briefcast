@@ -112,6 +112,8 @@ export interface SummaryResponse {
   summary?: string;
   generatedAt?: string;
   model?: string;
+  /** Why the latest summary attempt failed. */
+  error?: string;
 }
 
 export interface EpisodesFilter {

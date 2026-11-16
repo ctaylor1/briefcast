@@ -64,6 +64,20 @@ export function transcriptPill(status: string): { label: string; tone: BadgeTone
   }
 }
 
+/** The AI summary state shown on an episode row; hidden when there is none yet. */
+export function summaryPill(status: string): { label: string; tone: BadgeTone; visible: boolean } {
+  switch (status) {
+    case "available":
+      return { label: "Summary ready", tone: "success", visible: true };
+    case "processing":
+      return { label: "Summarizing", tone: "info", visible: true };
+    case "failed":
+      return { label: "Summary failed", tone: "danger", visible: true };
+    default:
+      return { label: "No summary", tone: "neutral", visible: false };
+  }
+}
+
 export function hasKnownTotal(item: PodcastItem): boolean {
   return item.DownloadTotalBytes > 0;
 }

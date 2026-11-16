@@ -147,6 +147,11 @@ func GetPodcastItemSummary(c *gin.Context) {
 	if strings.TrimSpace(item.LLMSummaryModel) != "" {
 		payload["model"] = item.LLMSummaryModel
 	}
+	// Why the latest attempt failed. The app writes these errors itself
+	// (provider bodies are never copied in), so they are safe to show.
+	if reason := strings.TrimSpace(item.LLMSummaryError); reason != "" {
+		payload["error"] = reason
+	}
 
 	c.JSON(http.StatusOK, payload)
 }

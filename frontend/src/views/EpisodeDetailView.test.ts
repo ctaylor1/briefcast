@@ -79,6 +79,13 @@ describe("Episode page", () => {
     assert.deepEqual(wrapper!.findAll(".episode-page__toc button").map((b) => b.text()), ["Big idea", "Part one", "Part two"]);
   });
 
+  it("says why a summary failed", async () => {
+    await open(`/episodes/${A}?tab=summary`, {
+      [`GET /podcastitems/${A}/summary`]: () => ({ status: "failed", error: "LLM response reached the output token limit (max_tokens=2048)" }),
+    });
+    assert.match(wrapper!.text(), /Summary generation failed: LLM response reached the output token limit \(max_tokens=2048\)/);
+  });
+
   it("keeps the tab in the URL, so Back and links work", async () => {
     const router = await open(`/episodes/${A}`);
     const transcript = wrapper!.findAll('[role="tab"]').find((t) => t.text() === "Transcript")!;

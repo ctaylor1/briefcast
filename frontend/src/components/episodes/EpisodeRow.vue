@@ -11,6 +11,7 @@ import {
   progressAriaText,
   progressAriaValue,
   progressPercent,
+  summaryPill,
   transcriptPill,
 } from "../../lib/episodeStatus";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 
 const favorited = computed(() => isEpisodeFavorited(props.item));
 const transcript = computed(() => transcriptPill(props.item.TranscriptStatus ?? ""));
+const summary = computed(() => summaryPill(props.item.LLMSummaryStatus ?? ""));
 const resumeAt = computed(() =>
   props.item.PlaybackPositionSeconds && !props.item.IsPlayed ? props.item.PlaybackPositionSeconds : 0,
 );
@@ -71,6 +73,14 @@ const canCancel = computed(
           class="episode-row__state episode-row__state--link"
         >
           {{ transcript.label }}
+        </RouterLink>
+        <RouterLink
+          v-if="summary.visible"
+          :to="{ path: episodePath(item.ID), query: { tab: 'summary' } }"
+          class="episode-row__state episode-row__state--link"
+          :class="{ 'episode-row__state--failed': item.LLMSummaryStatus === 'failed' }"
+        >
+          {{ summary.label }}
         </RouterLink>
         <RouterLink
           v-if="item.HasChapters"
@@ -226,6 +236,10 @@ const canCancel = computed(
 
 .episode-row__state--link:hover {
   text-decoration: underline;
+}
+
+.episode-row__state--failed {
+  color: var(--color-danger);
 }
 
 .episode-row__progress {

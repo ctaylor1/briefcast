@@ -7,6 +7,7 @@ import {
   progressAriaValue,
   progressLabel,
   progressPercent,
+  summaryPill,
   transcriptPill,
 } from "./episodeStatus.ts";
 import { makeEpisode } from "../test-support/fixtures.ts";
@@ -40,5 +41,13 @@ describe("episode status helpers", () => {
     assert.equal(transcriptPill("available").label, "Transcript ready");
     assert.equal(transcriptPill("pending_download").tone, "warning");
     assert.equal(transcriptPill("missing").visible, false);
+  });
+
+  it("show summary state only when one was attempted", () => {
+    assert.deepEqual(summaryPill("available"), { label: "Summary ready", tone: "success", visible: true });
+    assert.equal(summaryPill("processing").label, "Summarizing");
+    assert.equal(summaryPill("failed").tone, "danger");
+    assert.equal(summaryPill("").visible, false);
+    assert.equal(summaryPill("pending").visible, false);
   });
 });

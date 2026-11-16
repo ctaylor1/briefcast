@@ -437,6 +437,25 @@ func TestEpisodeMediaEndpoints(t *testing.T) {
 	if summaryPayload["isFavorited"] != true {
 		t.Fatalf("expected summary payload favorite state, got %+v", summaryPayload)
 	}
+	if _, ok := summaryPayload["error"]; ok {
+		t.Fatalf("a summary without an error must not report one: %+v", summaryPayload)
+	}
+
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{"llm_summary": "", "llm_summary_status": "failed", "llm_summary_error": "LLM response reached the output token limit (max_tokens=2048)"}); err != nil {
+		t.Fatal(err)
+	}
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/podcastitems/"+item.ID+"/summary", nil))
+	summaryPayload = map[string]interface{}{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &summaryPayload); err != nil {
+		t.Fatal(err)
+	}
+	if summaryPayload["status"] != "failed" || summaryPayload["error"] != "LLM response reached the output token limit (max_tokens=2048)" {
+		t.Fatalf("a failed summary must report its reason: %+v", summaryPayload)
+	}
+	if err := db.UpdatePodcastItemColumns(item.ID, map[string]interface{}{"llm_summary": "controller summary", "llm_summary_status": "available", "llm_summary_error": ""}); err != nil {
+		t.Fatal(err)
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/podcastitems/"+item.ID+"/chapters", nil)
 	resp = httptest.NewRecorder()

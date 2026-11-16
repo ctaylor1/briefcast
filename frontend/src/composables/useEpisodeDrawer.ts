@@ -1,6 +1,6 @@
 import { toast } from "../lib/toast";
 import { parseTranscript, type TranscriptAsset, type TranscriptSegment } from "../lib/transcript";
-import { computed, ref } from "vue";
+import { computed, getCurrentScope, onScopeDispose, ref } from "vue";
 import { episodesApi, getErrorMessage, settingsApi } from "../lib/api";
 import {
   DEFAULT_OBSIDIAN_FOLDER,
@@ -10,6 +10,8 @@ import {
 import type { Chapter, ChaptersResponse, PodcastItem, ShowNoteLink, SummaryResponse, TranscriptResponse } from "../types/api";
 
 type DrawerTab = "overview" | "chapters" | "transcript" | "summary" | "links";
+
+const SUMMARY_RECHECK_MS = 15_000;
 
 export function useEpisodeDrawer() {
   const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
@@ -47,7 +49,21 @@ export function useEpisodeDrawer() {
   const drawerSummaryText = ref("");
   const drawerSummaryDate = ref("");
   const drawerSummaryModel = ref("");
+  const drawerSummaryError = ref("");
   const drawerLoadingSummary = ref(false);
+  // While a summary is being generated, its state is re-read every 15 s.
+  let summaryRecheck: ReturnType<typeof setTimeout> | undefined;
+
+  function stopSummaryRecheck(): void {
+    if (summaryRecheck !== undefined) {
+      clearTimeout(summaryRecheck);
+      summaryRecheck = undefined;
+    }
+  }
+  // Leaving the page or closing the component stops the re-check.
+  if (getCurrentScope()) {
+    onScopeDispose(stopSummaryRecheck);
+  }
   const obsidianVault = ref(DEFAULT_OBSIDIAN_VAULT);
   const obsidianFolder = ref(DEFAULT_OBSIDIAN_FOLDER);
 
@@ -129,6 +145,8 @@ export function useEpisodeDrawer() {
     drawerSummaryText.value = "";
     drawerSummaryDate.value = "";
     drawerSummaryModel.value = "";
+    drawerSummaryError.value = "";
+    stopSummaryRecheck();
   }
 
   function openDrawer(item: PodcastItem, tab: DrawerTab = "overview", searchTerm = ""): void {
@@ -142,6 +160,7 @@ export function useEpisodeDrawer() {
 
   function closeDrawer(): void {
     drawerOpen.value = false;
+    stopSummaryRecheck();
   }
 
   async function fetchDrawerData(id: string): Promise<void> {
@@ -232,12 +251,16 @@ export function useEpisodeDrawer() {
     drawerTranscriptText.value = parsed.text;
   }
 
-  async function fetchSummary(id: string): Promise<void> {
-    drawerLoadingSummary.value = true;
-    drawerSummaryText.value = "";
-    drawerSummaryStatus.value = "not_attempted";
-    drawerSummaryDate.value = "";
-    drawerSummaryModel.value = "";
+  async function fetchSummary(id: string, recheck = false): Promise<void> {
+    stopSummaryRecheck();
+    if (!recheck) {
+      drawerLoadingSummary.value = true;
+      drawerSummaryText.value = "";
+      drawerSummaryStatus.value = "not_attempted";
+      drawerSummaryDate.value = "";
+      drawerSummaryModel.value = "";
+      drawerSummaryError.value = "";
+    }
     try {
       const response: SummaryResponse = await episodesApi.getSummary(id);
       if (!isCurrent(id)) {
@@ -252,8 +275,17 @@ export function useEpisodeDrawer() {
       summaryMarkdownFile.value = response.markdownFileName || "summary.md";
       drawerSummaryDate.value = response.generatedAt ?? "";
       drawerSummaryModel.value = response.model ?? "";
+      drawerSummaryError.value = response.error ?? "";
+      if (drawerSummaryStatus.value === "processing") {
+        summaryRecheck = setTimeout(() => {
+          summaryRecheck = undefined;
+          if (isCurrent(id)) {
+            void fetchSummary(id, true);
+          }
+        }, SUMMARY_RECHECK_MS);
+      }
     } catch (error) {
-      if (isCurrent(id)) {
+      if (isCurrent(id) && !recheck) {
         drawerLoadError.value = getErrorMessage(error, "Failed to load summary.");
       }
     } finally {
@@ -407,7 +439,7 @@ export function useEpisodeDrawer() {
       return "Summary generation queued.";
     }
     if (drawerSummaryStatus.value === "failed") {
-      return "Summary generation failed.";
+      return drawerSummaryError.value ? `Summary generation failed: ${drawerSummaryError.value}` : "Summary generation failed.";
     }
     return "No AI summary available.";
   }
@@ -445,6 +477,7 @@ export function useEpisodeDrawer() {
     drawerSummaryText,
     drawerSummaryDate,
     drawerSummaryModel,
+    drawerSummaryError,
     drawerLoadingSummary,
     openDrawer,
     setDrawerTab,

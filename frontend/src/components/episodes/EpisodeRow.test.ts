@@ -49,6 +49,19 @@ describe("EpisodeRow", () => {
     assert.deepEqual(hrefs, ["/episodes/ep%2F1?tab=transcript", "/episodes/ep%2F1?tab=chapters"]);
   });
 
+  it("shows the summary state, linking to the Summary tab", async () => {
+    for (const [status, label] of [["available", "Summary ready"], ["processing", "Summarizing"], ["failed", "Summary failed"]] as const) {
+      const row = await mountRow({ LLMSummaryStatus: status });
+      const link = row.findAll(".episode-row__state--link").find((a) => a.text() === label);
+      assert.ok(link, `${label} missing`);
+      assert.equal(link!.attributes("href"), "/episodes/ep%2F1?tab=summary");
+      assert.equal(link!.classes().includes("episode-row__state--failed"), status === "failed");
+      wrapper?.unmount();
+    }
+    const none = await mountRow({ LLMSummaryStatus: "" });
+    assert.ok(!none.get(".episode-row__meta").text().includes("Summar"));
+  });
+
   it("has one primary action and the rest in a named menu", async () => {
     const row = await mountRow({ DownloadStatus: 3 });
     const group = row.get('[role="group"]');
