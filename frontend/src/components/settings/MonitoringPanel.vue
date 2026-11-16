@@ -33,6 +33,8 @@ const loading = ref(false);
 const errorMessage = ref("");
 const stopMessage = ref("");
 const isStoppingSummaries = ref(false);
+const isSendingTest = ref(false);
+const testMessage = ref<{ tone: "success" | "danger"; text: string } | null>(null);
 // Ticks every second while a summary is in progress, so its elapsed time moves
 // between the 15-second refreshes without extra requests.
 const now = ref(Date.now());
@@ -86,6 +88,21 @@ function timeLabel(iso: string | undefined): string {
   }
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+const notifications = computed(() => snapshot.value?.notifications);
+
+async function sendTestNotification(): Promise<void> {
+  isSendingTest.value = true;
+  testMessage.value = null;
+  try {
+    await settingsApi.sendTestNotification();
+    testMessage.value = { tone: "success", text: "Test notification sent. Check that it arrived." };
+  } catch (error) {
+    testMessage.value = { tone: "danger", text: getErrorMessage(error, "Test notification failed.") };
+  } finally {
+    isSendingTest.value = false;
+  }
 }
 
 async function stopSummaries(): Promise<void> {
@@ -390,6 +407,35 @@ onBeforeUnmount(() => {
             </li>
           </ul>
           <p class="meta-text">Since the app started.</p>
+        </UiCard>
+
+        <UiCard v-if="notifications" padding="lg" class="stack-2">
+          <div class="surface-row surface-row--between">
+            <h4 class="monitoring-card__title">Notifications</h4>
+            <UiBadge :tone="notifications.enabled ? 'success' : notifications.error ? 'danger' : 'neutral'">
+              {{ notifications.enabled ? "On" : notifications.error ? "Misconfigured" : "Off" }}
+            </UiBadge>
+          </div>
+          <p v-if="notifications.enabled" class="meta-text">
+            Problems are pushed to {{ notifications.host }} ({{ notifications.format }}): failing summaries or jobs, an
+            unreachable LLM server or worker, and low disk space. Repeats are limited to one reminder every 6 hours.
+          </p>
+          <p v-else-if="notifications.error" class="meta-text">{{ notifications.error }}</p>
+          <p v-else class="meta-text">
+            Set BRIEFCAST_NOTIFY_URL in the app environment (for example an ntfy topic URL) and restart to get a push
+            message when something here needs attention.
+          </p>
+          <dl v-if="notifications.enabled" class="monitoring-stats">
+            <div><dt>Active alerts</dt><dd>{{ notifications.active.length ? notifications.active.map((a) => a.title).join(", ") : "None" }}</dd></div>
+            <div><dt>Last sent</dt><dd>{{ timeLabel(notifications.last_sent_at) }}</dd></div>
+          </dl>
+          <UiAlert v-if="notifications.last_error" tone="warning">Last delivery failed: {{ notifications.last_error }}</UiAlert>
+          <div v-if="notifications.enabled" class="surface-row">
+            <UiButton size="sm" variant="outline" :disabled="isSendingTest" @click="sendTestNotification">
+              {{ isSendingTest ? "Sending..." : "Send test notification" }}
+            </UiButton>
+          </div>
+          <UiAlert v-if="testMessage" :tone="testMessage.tone">{{ testMessage.text }}</UiAlert>
         </UiCard>
 
         <UiCard padding="lg" class="stack-2">

@@ -19,6 +19,7 @@ const (
 	outboundAllowPrivateEnv           = "BRIEFCAST_ALLOW_PRIVATE_OUTBOUND_URLS"
 	outboundAllowPrivateBriefpointEnv = "BRIEFCAST_ALLOW_PRIVATE_BRIEFPOINT_URLS"
 	outboundAllowPrivateLLMEnv        = "BRIEFCAST_ALLOW_PRIVATE_LLM_URLS"
+	outboundAllowPrivateNotifyEnv     = "BRIEFCAST_ALLOW_PRIVATE_NOTIFY_URLS"
 	outboundMaxResponseBytesEnv       = "BRIEFCAST_MAX_OUTBOUND_RESPONSE_BYTES"
 	defaultOutboundMaxResponseBytes   = int64(20 * 1024 * 1024)
 )
@@ -29,6 +30,7 @@ const (
 	outboundPurposeHTTP       outboundURLPurpose = "http request"
 	outboundPurposeBriefpoint outboundURLPurpose = "briefpoint"
 	outboundPurposeLLM        outboundURLPurpose = "llm"
+	outboundPurposeNotify     outboundURLPurpose = "notification"
 )
 
 type outboundURLPolicy struct {
@@ -49,6 +51,10 @@ func outboundPolicyForPurpose(purpose outboundURLPurpose) outboundURLPolicy {
 	}
 	if purpose == outboundPurposeLLM {
 		allowPrivate = getEnvBool(outboundAllowPrivateLLMEnv, true)
+	}
+	if purpose == outboundPurposeNotify {
+		// Off by default, like feeds: a LAN ntfy server needs it set to true.
+		allowPrivate = getEnvBool(outboundAllowPrivateNotifyEnv, false)
 	}
 	return outboundURLPolicy{
 		purpose:           purpose,

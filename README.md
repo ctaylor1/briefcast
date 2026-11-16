@@ -373,6 +373,10 @@ DB_DRIVER=postgres
 - `BRIEFCAST_ALLOW_PRIVATE_OUTBOUND_URLS`: allow feed/media/image requests to private, loopback, link-local, or hostnames resolving to private addresses; default `false`
 - `BRIEFCAST_ALLOW_PRIVATE_BRIEFPOINT_URLS`: allow Briefpoint requests to private or loopback hosts; default `true`
 - `BRIEFCAST_ALLOW_PRIVATE_LLM_URLS`: allow LLM summary requests to private or loopback hosts for local OpenAI-compatible providers; default `true`
+- `BRIEFCAST_NOTIFY_URL`: optional; where failure notifications are sent (see [docs/MONITORING.md](docs/MONITORING.md#notifications)). Empty (the default) turns them off and makes no requests. Treat it as a secret: an ntfy topic or webhook URL lets anyone who has it post to you.
+- `BRIEFCAST_NOTIFY_FORMAT`: `ntfy`, `discord`, `slack` or `json`; by default inferred from the host (`ntfy.sh` / `ntfy.*`, `discord.com`, `hooks.slack.com`, otherwise `json`)
+- `BRIEFCAST_NOTIFY_TOKEN_FILE`: optional file holding a bearer token for the notification service (an ntfy access token), for example under the config volume
+- `BRIEFCAST_ALLOW_PRIVATE_NOTIFY_URLS`: allow notifications to private or loopback hosts, such as a ntfy server on your LAN; default `false`
 - `BRIEFCAST_MAX_OUTBOUND_RESPONSE_BYTES`: maximum in-memory response size for feed/search/transcript metadata and LLM responses; default `20971520`
 - `BRIEFCAST_USER_AGENT`: `User-Agent` sent on feed, audio, artwork and chart requests; default `Briefcast/1.0 (+https://github.com/ctaylor1/briefcast)`. Printable ASCII, at most 256 characters; an invalid value is ignored with a warning. Keep it an honest identification of your install (name/version plus a contact URL) because hosts use it to attribute download statistics. Shown read-only under **Settings → Configuration → Network Identity**.
 

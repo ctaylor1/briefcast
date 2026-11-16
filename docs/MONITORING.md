@@ -45,6 +45,7 @@ error code). Episode, podcast and job identifiers appear only in log events.
 | `briefcast_scheduled_job_duration_seconds` | histogram | `job` | Scheduled job run time |
 | `briefcast_summary_attempts_total` | counter | `outcome` | LLM summary attempts: `succeeded`, `failed`, `timed_out`, `token_limit`, `panicked`, `discarded` (the transcript changed during the call) |
 | `briefcast_summary_duration_seconds` | histogram | | Time per summary attempt, any outcome |
+| `briefcast_notifications_total` | counter | `outcome` | Failure notifications: `sent`, `failed`, `suppressed` (hourly limit) |
 
 Standard `go_*` and `process_*` metrics are included.
 
@@ -75,6 +76,39 @@ The database-backed gauges (`briefcast_episodes`, `briefcast_downloaded_episode_
 from one grouped scan of the episodes table, cached for 60 seconds. Episode rows store
 full transcripts inline, so on a large library that scan takes several seconds; a stale
 value is served immediately while one background refresh runs.
+
+## Notifications
+
+With `BRIEFCAST_NOTIFY_URL` set, the app checks once a minute and pushes a short message when:
+
+| Condition | When |
+| --- | --- |
+| Summaries failing | 3 summary attempts in a row failed (the message gives the last reason, for example the token limit) |
+| Summaries close to their limit | The last 3 successful summaries each took over 80% of `LLM_TIMEOUT_SECONDS` |
+| A job is failing | A background job failed 3 runs in a row, or has failed for an hour (with its last error) |
+| LLM server unreachable | For 10 minutes, while summarization is on |
+| WhisperX worker down | Unreachable or unhealthy for 10 minutes |
+| Low disk space | Under 10 GB free on the audio and export volume |
+
+Each condition sends one message when it starts, a reminder at most every 6 hours while it
+lasts, and one "Resolved" message. At most 10 messages are sent per hour. The state is kept in
+memory, so after a restart a condition is reported again only once it holds again.
+
+Messages contain the condition, episode titles, counts and shortened errors; never transcript,
+prompt or summary text, keys, or the notification URL. Any link inside an error is cut to its
+scheme and host (`https://www.patreon.com/…`), because a private feed URL can carry an access token. Delivery has a 10-second timeout and two
+retries; failures are logged as `notification_failed` and counted in
+`briefcast_notifications_total{outcome}` (`sent`, `failed`, `suppressed`).
+
+Example with [ntfy](https://ntfy.sh) (free phone app; pick a hard-to-guess topic name):
+
+```text
+BRIEFCAST_NOTIFY_URL=https://ntfy.sh/briefcast-alerts-<random>
+```
+
+Then **Activity → Monitoring → Notifications → Send test notification**
+(`POST /settings/notifications/test`: 202 when sent, 409 when notifications are off).
+For a ntfy server on your LAN also set `BRIEFCAST_ALLOW_PRIVATE_NOTIFY_URLS=true`.
 
 ## Worker metrics (`/metrics/worker`)
 

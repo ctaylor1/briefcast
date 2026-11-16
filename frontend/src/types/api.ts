@@ -499,6 +499,19 @@ export interface MonitoringSnapshot {
   assets_free_bytes: number | null;
   summaries?: MonitoringSummaries;
   jobs?: JobRunSummary[];
+  notifications?: NotificationStatus;
+}
+
+export interface NotificationStatus {
+  enabled: boolean;
+  /** Destination host only; the URL (which holds the topic or webhook key) is never sent. */
+  host?: string;
+  format?: string;
+  /** Set when BRIEFCAST_NOTIFY_URL is set but cannot be used. */
+  error?: string;
+  active: Array<{ key: string; title: string; since: string }>;
+  last_sent_at?: string;
+  last_error?: string;
 }
 
 export interface WorkQueueItem {

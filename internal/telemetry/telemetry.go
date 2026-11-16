@@ -88,13 +88,17 @@ var (
 		Name: "briefcast_summary_duration_seconds", Help: "Time per LLM summary attempt, any outcome.", Buckets: durationBuckets,
 	})
 
+	notifications = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "briefcast_notifications_total", Help: "Failure notifications by outcome (sent, failed, suppressed).",
+	}, []string{"outcome"})
+
 	registerOnce sync.Once
 )
 
 func init() {
 	registry.MustRegister(info, jobRuns, jobDuration, downloads, downloadDuration, downloadBytes,
 		transcriptions, transcriptionEndToEnd, transcriptionQueue, transcriptionProcessing,
-		transcriptionAudio, transcriptionSpeed, exports, feedRefreshes, summaryAttempts, summaryDuration,
+		transcriptionAudio, transcriptionSpeed, exports, feedRefreshes, summaryAttempts, summaryDuration, notifications,
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 }
 
@@ -179,6 +183,9 @@ func ObserveSummaryAttempt(outcome string, d time.Duration) {
 	summaryAttempts.WithLabelValues(outcome).Inc()
 	summaryDuration.Observe(d.Seconds())
 }
+
+// ObserveNotification records one failure notification (sent, failed or suppressed).
+func ObserveNotification(outcome string) { notifications.WithLabelValues(outcome).Inc() }
 
 // ObserveExport records a transcript export write.
 func ObserveExport(err error) {

@@ -161,6 +161,35 @@ describe("MonitoringPanel summaries", () => {
     assert.ok(headers.includes("Summaries"));
   });
 
+  it("shows notifications and sends a test message", async () => {
+    server = fakeServer({
+      "GET /settings/monitoring": () => ({
+        ...snapshot(),
+        notifications: { enabled: true, host: "ntfy.sh", format: "ntfy", active: [{ key: "summaries_failing", title: "3 summaries failed in a row", since: new Date().toISOString() }] },
+      }),
+      "POST /settings/notifications/test": () => ({ message: "Test notification sent" }),
+    });
+    wrapper = mount(MonitoringPanel, { attachTo: document.body });
+    await flushPromises();
+    const text = wrapper.text();
+    assert.ok(text.includes("Problems are pushed to ntfy.sh (ntfy)"));
+    assert.ok(text.includes("3 summaries failed in a row"));
+    const send = wrapper.findAll("button").find((b) => b.text().trim() === "Send test notification");
+    assert.ok(send, "Send test button");
+    await send!.trigger("click");
+    await flushPromises();
+    assert.ok(server.requests.some((r) => r.method === "POST" && r.url === "/settings/notifications/test"));
+    assert.ok(wrapper.text().includes("Test notification sent. Check that it arrived."));
+  });
+
+  it("explains how to turn notifications on", async () => {
+    server = fakeServer({ "GET /settings/monitoring": () => ({ ...snapshot(), notifications: { enabled: false, active: [] } }) });
+    wrapper = mount(MonitoringPanel, { attachTo: document.body });
+    await flushPromises();
+    assert.ok(wrapper.text().includes("Set BRIEFCAST_NOTIFY_URL"));
+    assert.ok(!wrapper.findAll("button").some((b) => b.text().includes("Send test")));
+  });
+
   it("stops the summary job from Monitoring", async () => {
     await mountPanel();
     const stop = wrapper!.findAll("button").find((b) => b.text().trim() === "Stop");

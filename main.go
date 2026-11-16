@@ -64,6 +64,8 @@ func main() {
 
 	service.SafeGo("startup configuration log", assetEnv)
 	service.SafeGo("cron scheduler", intiCron)
+	// Does nothing unless BRIEFCAST_NOTIFY_URL is set.
+	service.StartFailureNotifications()
 
 	srv := newHTTPServer(r)
 	appLogger.Infow("http server listening", "addr", srv.Addr)
@@ -191,6 +193,7 @@ func registerRoutes(router *gin.RouterGroup) {
 	router.POST("/settings/export-all", controllers.ExportAll)
 	router.GET("/settings/export-all", controllers.GetExportAllStatus)
 	router.GET("/settings/monitoring", controllers.GetMonitoring)
+	router.POST("/settings/notifications/test", controllers.SendTestNotification)
 	// Prometheus scrape endpoints (same auth as the rest of the app).
 	router.GET("/metrics", gin.WrapH(telemetry.Handler()))
 	router.GET("/metrics/worker", controllers.GetWorkerMetrics)

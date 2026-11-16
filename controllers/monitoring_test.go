@@ -21,6 +21,30 @@ func monitoringRouter() *gin.Engine {
 	return r
 }
 
+func TestSendTestNotificationRoute(t *testing.T) {
+	orig := sendTestNotification
+	t.Cleanup(func() { sendTestNotification = orig })
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/settings/notifications/test", SendTestNotification)
+	for _, tc := range []struct {
+		err      error
+		wantCode int
+		want     string
+	}{
+		{nil, http.StatusAccepted, "sent"},
+		{service.ErrNotificationsOff, http.StatusConflict, "BRIEFCAST_NOTIFY_URL"},
+		{errors.New("the notification service answered HTTP 403"), http.StatusBadGateway, "HTTP 403"},
+	} {
+		sendTestNotification = func(context.Context) error { return tc.err }
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/settings/notifications/test", nil))
+		if rec.Code != tc.wantCode || !strings.Contains(rec.Body.String(), tc.want) {
+			t.Fatalf("%v: %d %s", tc.err, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestMonitoringHandlers(t *testing.T) {
 	origSnap, origFetch := buildMonitoringSnapshot, fetchWorkerMetrics
 	t.Cleanup(func() { buildMonitoringSnapshot, fetchWorkerMetrics = origSnap, origFetch })

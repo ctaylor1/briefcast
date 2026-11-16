@@ -455,6 +455,7 @@ type MonitoringSnapshot struct {
 	Summaries       SummariesSnapshot    `json:"summaries"`
 	Jobs            []JobRunSummary      `json:"jobs"`
 	Repair          RepairSnapshot       `json:"repair"`
+	Notifications   NotificationStatus   `json:"notifications"`
 }
 
 // SummariesSnapshot is the summary pipeline: configuration, the summary job,
@@ -493,7 +494,7 @@ const monitoringRecentSummaries = 20
 // BuildMonitoringSnapshot gathers queue state, recent throughput and worker health.
 func BuildMonitoringSnapshot(ctx context.Context) (MonitoringSnapshot, error) {
 	now := time.Now().UTC()
-	snap := MonitoringSnapshot{GeneratedAt: now, SinceStart: telemetry.Summary(), Summaries: buildSummariesSnapshot(), Jobs: JobHistorySnapshot(), Repair: repairSnapshot()}
+	snap := MonitoringSnapshot{GeneratedAt: now, SinceStart: telemetry.Summary(), Summaries: buildSummariesSnapshot(), Jobs: JobHistorySnapshot(), Repair: repairSnapshot(), Notifications: NotificationStatusSnapshot()}
 	queue, windows, err := cachedPipelineStats()
 	if err != nil {
 		return snap, err

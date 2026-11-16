@@ -59,6 +59,9 @@ export const settingsApi = {
   startRepairWork(limit = 50): Promise<RepairWorkResponse> {
     return httpClient.post<RepairWorkResponse>("/settings/repair-work", undefined, { params: { limit } });
   },
+  sendTestNotification(): Promise<{ message: string }> {
+    return httpClient.post<{ message: string }>("/settings/notifications/test");
+  },
   /** checkLLM also checks the LLM server (cached a minute on the server); only the Monitoring panel asks for it. */
   getMonitoring(options: { checkLLM?: boolean } = {}): Promise<MonitoringSnapshot> {
     if (options.checkLLM) {

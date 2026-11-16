@@ -13,6 +13,7 @@ var (
 	buildMonitoringSnapshot = service.BuildMonitoringSnapshot
 	fetchWorkerMetrics      = service.FetchWorkerMetrics
 	checkLLMServer          = service.CheckLLMServer
+	sendTestNotification    = service.SendTestNotification
 )
 
 // GetMonitoring returns queue state, recent throughput and worker health for the Settings panel.
@@ -31,6 +32,21 @@ func GetMonitoring(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, snapshot)
+}
+
+// SendTestNotification sends one test message to the configured notification
+// channel (POST /settings/notifications/test).
+func SendTestNotification(c *gin.Context) {
+	err := sendTestNotification(c.Request.Context())
+	switch {
+	case err == nil:
+		c.JSON(http.StatusAccepted, gin.H{"message": "Test notification sent"})
+	case errors.Is(err, service.ErrNotificationsOff):
+		c.JSON(http.StatusConflict, gin.H{"error": "Notifications are off. Set BRIEFCAST_NOTIFY_URL and restart the app."})
+	default:
+		// The service's errors never include the destination URL.
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Test notification failed: " + err.Error()})
+	}
 }
 
 // GetWorkerMetrics relays the WhisperX worker's Prometheus metrics. The worker has
