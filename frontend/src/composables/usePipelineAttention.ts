@@ -12,8 +12,10 @@ let users = 0;
 let timer: number | undefined;
 let polling = false;
 
-async function poll(): Promise<void> {
-  if (polling || document.visibilityState === "hidden") {
+// The first poll runs even while the page reports itself hidden (as some
+// browsers do while a page is still loading); later polls skip hidden tabs.
+async function poll(initial = false): Promise<void> {
+  if (polling || (!initial && document.visibilityState === "hidden")) {
     return;
   }
   polling = true;
@@ -38,7 +40,7 @@ export function usePipelineAttention() {
   onMounted(() => {
     users += 1;
     if (users === 1) {
-      void poll();
+      void poll(true);
       timer = window.setInterval(() => void poll(), POLL_MS);
       document.addEventListener("visibilitychange", onVisibilityChange);
     }

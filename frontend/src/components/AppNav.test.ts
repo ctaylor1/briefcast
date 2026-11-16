@@ -79,6 +79,19 @@ describe("AppNav", () => {
     const minor = await mountNav("/", 1280, () => monitoringSnapshot(1));
     assert.equal(minor.wrapper.findAll(".app-nav__dot").length, 0, "a single failure is not worth a dot");
     minor.wrapper.unmount();
+    server?.restore();
+
+    // A page that is still loading can report itself hidden; the first poll runs anyway.
+    // The own property shadows jsdom's getter until it is deleted again.
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    try {
+      const loading = await mountNav("/", 1280, () => monitoringSnapshot(3));
+      assert.equal(loading.wrapper.findAll(".app-nav__dot").length, 2, "first poll ran while hidden");
+      loading.wrapper.unmount();
+    } finally {
+      delete (document as unknown as { visibilityState?: string }).visibilityState;
+    }
+    assert.equal(document.visibilityState, "visible");
   });
 
   it("replaces the Menu with a theme toggle that cycles the theme", async () => {
